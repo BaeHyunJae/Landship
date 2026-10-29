@@ -40,18 +40,21 @@
 
 언리얼 에셋(`.uasset`, `.umap`)은 병합할 수 없다. 같은 파일을 여러 사람이 동시에 고치지 않도록 폴더마다 담당을 정한다.
 
-- 폴더는 Notion의 Feature 단위로 나눈다. 콘텐츠와 소스에 같은 이름의 폴더를 둔다.
+- 폴더는 Notion의 Feature 단위로 나눈다. 여러 Feature가 함께 쓰는 전투 규칙만 `Combat/`에 둔다. 콘텐츠와 소스에 같은 이름의 폴더를 둔다.
 - 폴더별 담당은 폴더 이름이 아니라 [`.github/CODEOWNERS`](.github/CODEOWNERS)에 적는다. 업무 분장이 바뀌면 이 파일만 고친다. 담당 폴더를 건드린 PR에는 담당자가 리뷰어로 자동 지정된다.
 
 ```
 Content/Landship/          Source/Landship/
-├── Combat/    전투 공통 규칙: 진영, 체력·피해, 교전, 시야 반경, 병종 스탯
-├── Castle/    성 이동, 무장 조준·발사
-├── Troops/    병력 투입, 병종
-├── Controls/  카메라, 선택·명령
-├── Vision/    전장의 안개, 미니맵
-├── Battlefield/  적 거점·분대, 터렛·지뢰, 맵·배치안
-└── Match/     승패 판정, HUD, 전투 알림
+├── Combat/     전투 공통 규칙: 진영, 체력·피해, 기본 공격, 전투 수치, 쿨타임
+├── Castle/     성 이동, 무장 조준·발사
+├── Troops/     병력 투입, 병종, 교전 반응
+├── Controls/   카메라, 선택·명령
+├── Vision/     전장의 안개, 미니맵
+├── Enemies/    적 거점, 적 분대
+├── Obstacles/  경로 장애물: 터렛, 지뢰, 바리케이드
+├── Maps/       전장 맵, 적 배치안
+├── Match/      승패 판정
+└── HUD/        HUD, 전투 알림
 
 Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 ```
