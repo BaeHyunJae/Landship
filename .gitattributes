@@ -1,0 +1,13 @@
+* text=auto
+
+# Source and config stay as text
+*.cpp text
+*.h text
+*.cs text
+*.ini text
+*.uproject text
+*.uplugin text
+*.md text
+
+# All files under Content/ go through Git LFS
+Content/** filter=lfs diff=lfs merge=lfs -text
