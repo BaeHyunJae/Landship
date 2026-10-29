@@ -1,0 +1,24 @@
+# 폴더별 담당. 업무 분장이 바뀌면 이 파일을 고친다(CONTRIBUTING.md의 '폴더와 담당').
+# 아래쪽 줄이 위쪽 줄보다 우선한다.
+# 첫 전투 프로토타입의 기능별 담당은 영역 담당을 정한 뒤 채운다. 그 전까지는 두 사람 모두로 둔다.
+
+# 기본값과 공용 파일
+*                                   @BaeHyunJae @samang22
+
+# 전투 공통 규칙(두 사람 공동)
+/Content/Landship/Combat/           @BaeHyunJae @samang22
+/Source/Landship/Combat/            @BaeHyunJae @samang22
+
+# 기능 폴더
+/Content/Landship/Castle/           @BaeHyunJae @samang22
+/Source/Landship/Castle/            @BaeHyunJae @samang22
+/Content/Landship/Troops/           @BaeHyunJae @samang22
+/Source/Landship/Troops/            @BaeHyunJae @samang22
+/Content/Landship/Controls/         @BaeHyunJae @samang22
+/Source/Landship/Controls/          @BaeHyunJae @samang22
+/Content/Landship/Vision/           @BaeHyunJae @samang22
+/Source/Landship/Vision/            @BaeHyunJae @samang22
+/Content/Landship/Battlefield/      @BaeHyunJae @samang22
+/Source/Landship/Battlefield/       @BaeHyunJae @samang22
+/Content/Landship/Match/            @BaeHyunJae @samang22
+/Source/Landship/Match/             @BaeHyunJae @samang22
