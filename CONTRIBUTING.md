@@ -25,7 +25,7 @@
 - 개발 Task 하나에 PR 하나를 연다.
 - PR 제목 끝에 Notion Task ID를 괄호로 붙인다. 예: `feat(ally): 성 클릭 이동 (TASK-40)`
 - PR 주소는 Notion Task의 ‘산출물 링크’ 속성에 넣는다.
-- PR을 병합한 사람이 Notion Task 상태를 Done으로 바꾼다. 상태 변경은 자동화에 맡기지 않는다.
+- PR 병합은 Task 완료와 같지 않다. Task 담당자가 Notion Task의 완료 기준을 확인한 뒤 직접 Done으로 바꾼다. 상태 변경은 자동화에 맡기지 않는다. Done 조건은 Notion의 프로젝트 사용 및 운영 가이드를 따른다.
 - 구현 범위와 완료 기준은 Notion의 해당 Task가 원본이다.
 
 ## 커밋과 PR 제목
