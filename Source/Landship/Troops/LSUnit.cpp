@@ -1,13 +1,25 @@
 #include "Troops/LSUnit.h"
 
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Logging/StructuredLog.h"
+#include "Controls/LSSelectableComponent.h"
+#include "Controls/LSOrderComponent.h"
+#include "AIController.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 ALSUnit::ALSUnit()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	GetCapsuleComponent()->SetCollisionObjectType(LSCollisionChannels::Unit);
+	// 기본 Pawn 프로필은 Visibility를 무시하므로 전장 클릭 선택용 적중을 명시한다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
+	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
+	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	AIControllerClass = AAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 }
 
 void ALSUnit::BeginPlay()
@@ -16,6 +28,12 @@ void ALSUnit::BeginPlay()
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (IsStatsInitialized())
 	{
+		FLSBasicAttackSettings AttackSettings;
+		AttackSettings.Damage = Stats.AttackPower;
+		AttackSettings.Interval = Stats.AttackInterval;
+		AttackSettings.Range = Stats.AttackRange;
+		BasicAttack->ConfigureAttack(AttackSettings);
+		GetCharacterMovement()->MaxWalkSpeed = Stats.MovementSpeed;
 		UE_LOGFMT(LogLSCombatStats, Display,
 			"[{Function}] {Owner} initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange} DetectionRange={DetectionRange} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
 			("Function", __FUNCTION__), ("Owner", GetPathName()),

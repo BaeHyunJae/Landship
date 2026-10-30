@@ -33,7 +33,7 @@ if not cameras:
     if not camera:
         raise RuntimeError("관찰 카메라 생성에 실패했습니다.")
     camera.set_actor_label("HMH_TestCamera")
-    camera.set_editor_property("auto_activate_for_player", unreal.AutoReceiveInput.PLAYER0)
+    camera.set_editor_property("auto_activate_for_player", unreal.AutoReceiveInput.DISABLED)
 
 if not level_system.save_current_level():
     raise RuntimeError("HMH 레벨 저장에 실패했습니다.")

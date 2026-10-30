@@ -7,6 +7,9 @@
 #include "LSOutpost.generated.h"
 
 class UBoxComponent;
+class ULSBasicAttackComponent;
+class ULSSelectableComponent;
+class ULSOrderComponent;
 
 /** 전투 동작을 붙이기 전에 대상의 초기 수치를 준비한다. */
 UCLASS(Blueprintable)
@@ -16,6 +19,13 @@ class LANDSHIP_API ALSOutpost : public AActor
 
 public:
 	ALSOutpost();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<ULSBasicAttackComponent> BasicAttack;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<ULSSelectableComponent> Selection;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<ULSOrderComponent> Orders;
 
 	/** 초기화 전이나 실패 시에는 출력값을 변경하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")

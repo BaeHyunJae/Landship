@@ -1,8 +1,11 @@
 #include "Enemies/LSOutpost.h"
 
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
+#include "Controls/LSSelectableComponent.h"
+#include "Controls/LSOrderComponent.h"
 
 ALSOutpost::ALSOutpost()
 {
@@ -12,6 +15,11 @@ ALSOutpost::ALSOutpost()
 	Collision->SetBoxExtent(FVector(100.0f));
 	Collision->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	Collision->SetCollisionObjectType(LSCollisionChannels::Building);
+	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
+	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
+	Selection->Kind = ELSSelectionKind::Building;
+	Selection->SetPlayerControlled(false);
+	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
 }
 
 void ALSOutpost::BeginPlay()
@@ -20,6 +28,11 @@ void ALSOutpost::BeginPlay()
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (IsStatsInitialized())
 	{
+		FLSBasicAttackSettings AttackSettings;
+		AttackSettings.Damage = Stats.AttackPower;
+		AttackSettings.Interval = Stats.AttackInterval;
+		AttackSettings.Range = Stats.AttackRange;
+		BasicAttack->ConfigureAttack(AttackSettings);
 		UE_LOGFMT(LogLSCombatStats, Display,
 			"[{Function}] {Owner} initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange}",
 			("Function", __FUNCTION__), ("Owner", GetPathName()),

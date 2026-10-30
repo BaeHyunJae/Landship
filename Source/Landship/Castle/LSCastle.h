@@ -7,8 +7,11 @@
 #include "LSCastle.generated.h"
 
 class UBoxComponent;
+class UFloatingPawnMovement;
+class ULSSelectableComponent;
+class ULSOrderComponent;
 
-/** 전투 동작을 붙이기 전에 대상의 초기 수치를 준비한다. */
+/** 초기 수치를 준비하고 내비게이션 경로를 따라 이동하는 성이다. */
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSCastle : public APawn
 {
@@ -16,6 +19,22 @@ class LANDSHIP_API ALSCastle : public APawn
 
 public:
 	ALSCastle();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<ULSSelectableComponent> Selection;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<ULSOrderComponent> Orders;
+
+	virtual UPawnMovementComponent* GetMovementComponent() const override;
+
+	/** 도달할 수 없는 명령은 기존 이동을 취소하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "Landship|Movement")
+	bool RequestMove(const FVector& Destination);
+
+	UFUNCTION(BlueprintPure, Category = "Landship|Movement")
+	bool IsMoving() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Landship|Movement")
+	void StopMoving();
 
 	/** 초기화 전이나 실패 시에는 출력값을 변경하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
@@ -37,6 +56,12 @@ protected:
 	/** 전투 대상 탐색에 사용하는 건물 충돌 영역이다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<UBoxComponent> Collision;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<UFloatingPawnMovement> Movement;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Movement", meta = (ClampMin = "0.0"))
+	float AcceptanceRadius = 20.0f;
 
 private:
 	/** 현재 전투 상태와 구분되는 초기 수치 복사본이다. */
