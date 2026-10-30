@@ -10,6 +10,7 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Components/CapsuleComponent.h"
 #include "Logging/StructuredLog.h"
+#include "Engine/World.h"
 
 ALSUnit::ALSUnit()
 {
@@ -92,14 +93,43 @@ FString ALSUnit::GetCombatConfigurationError() const
 	return FString();
 }
 
-void ALSUnit::NeutralizeCombat()
+void ALSUnit::Restart()
+{
+	Super::Restart();
+	if (!IsValid(this) || IsActorBeingDestroyed())
+	{
+		return;
+	}
+	FLSHealthSnapshot Snapshot;
+	if (Health->GetInitializationState() == ELSHealthInitializationState::Failed
+		|| (Health->TryGetHealth(Snapshot) && Snapshot.bIsDead))
+	{
+		// 재빙의의 Restart가 기본 이동 모드를 복원한다. 시체의 물리는 유지하고 이동만 다시 막는다.
+		StopCombatMovement();
+	}
+}
+
+void ALSUnit::StopCombatMovement()
 {
 	if (AController* UnitController = GetController())
 	{
 		UnitController->StopMovement();
 	}
+	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return;
+	}
 	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->DisableMovement();
+}
+
+void ALSUnit::NeutralizeCombat()
+{
+	StopCombatMovement();
+	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return;
+	}
 	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{

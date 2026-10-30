@@ -19,6 +19,7 @@ public:
 	virtual ELSFaction GetFaction() const override { return Faction; }
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
+	virtual void Restart() override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
@@ -49,6 +50,7 @@ protected:
 	FDataTableRowHandle StatsRow;
 
 private:
+	void StopCombatMovement();
 	void NeutralizeCombat();
 	void PrepareForDeath();
 
