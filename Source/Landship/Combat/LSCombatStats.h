@@ -30,34 +30,50 @@ namespace LSCombatStats
 	LANDSHIP_API ELSCombatStatsInitResult ReportFailure(const FDataTableRowHandle& Handle,
 		const UObject* Owner, ELSCombatStatsInitResult Result, const TCHAR* Reason);
 
-	/** 행 포인터를 보관하지 않으며, 검증에 성공했을 때만 출력을 바꾼다. */
+	/** 에디터에서도 진단 없이 검사한다. 성공 시 값 복사와 nullptr 이유, 실패 시 출력 보존과 정적 이유 문자열을 반환한다. */
 	template <typename RowT>
-	ELSCombatStatsInitResult TryReadRow(const FDataTableRowHandle& Handle, const UObject* Owner, RowT& OutStats)
+	ELSCombatStatsInitResult InspectRow(const FDataTableRowHandle& Handle, RowT& OutStats, const TCHAR*& OutFailureReason)
 	{
+		OutFailureReason = nullptr;
 		if (!Handle.DataTable)
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::MissingTable, TEXT("MissingTable"));
+			OutFailureReason = TEXT("MissingTable");
+			return ELSCombatStatsInitResult::MissingTable;
 		}
 		if (Handle.RowName.IsNone())
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::MissingRowName, TEXT("MissingRowName"));
+			OutFailureReason = TEXT("MissingRowName");
+			return ELSCombatStatsInitResult::MissingRowName;
 		}
 		if (Handle.DataTable->GetRowStruct() != RowT::StaticStruct())
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::WrongRowStruct, TEXT("WrongRowStruct"));
+			OutFailureReason = TEXT("WrongRowStruct");
+			return ELSCombatStatsInitResult::WrongRowStruct;
 		}
 		const RowT* Row = Handle.DataTable->FindRow<RowT>(Handle.RowName, TEXT("LSCombatStats::TryReadRow"), false);
 		if (!Row)
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::RowNotFound, TEXT("RowNotFound"));
+			OutFailureReason = TEXT("RowNotFound");
+			return ELSCombatStatsInitResult::RowNotFound;
 		}
 
 		const RowT Candidate = *Row;
 		if (const TCHAR* Reason = Validate(Candidate))
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::InvalidValue, Reason);
+			OutFailureReason = Reason;
+			return ELSCombatStatsInitResult::InvalidValue;
 		}
 		OutStats = Candidate;
 		return ELSCombatStatsInitResult::Success;
+	}
+
+	/** 런타임 읽기 실패마다 ensure로 보고한다. 진단 설정과 무관하게 실패 결과와 출력 보존을 유지한다. */
+	template <typename RowT>
+	ELSCombatStatsInitResult TryReadRow(const FDataTableRowHandle& Handle, const UObject* Owner, RowT& OutStats)
+	{
+		const TCHAR* FailureReason = nullptr;
+		const ELSCombatStatsInitResult Result = InspectRow(Handle, OutStats, FailureReason);
+		return Result == ELSCombatStatsInitResult::Success
+			? Result : ReportFailure(Handle, Owner, Result, FailureReason);
 	}
 }

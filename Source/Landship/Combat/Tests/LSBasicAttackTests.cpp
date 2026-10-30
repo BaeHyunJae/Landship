@@ -191,7 +191,7 @@ bool FLSBasicAttackStatConnectionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("거점 공격력 연결"), Outpost->BasicAttack->GetAttackSettings().Damage, OutpostStats.AttackPower);
 	TestEqual(TEXT("거점 공격 간격 연결"), Outpost->BasicAttack->GetAttackSettings().Interval, OutpostStats.AttackInterval);
 	TestEqual(TEXT("거점 사거리 연결"), Outpost->BasicAttack->GetAttackSettings().Range, OutpostStats.AttackRange);
-	TestFalse(TEXT("미연결 대상은 공격 거부"), Unit->BasicAttack->StartAttack(Outpost));
+	TestTrue(TEXT("실제 적 거점 체력 연결 후 공격 허용"), Unit->BasicAttack->StartAttack(Outpost));
 	TestWorld.ForwardErrorMessages(this);
 	return true;
 }

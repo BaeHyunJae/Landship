@@ -41,6 +41,7 @@ void ALSHMHRTSUnit::BeginPlay()
 	Table->AddRow(TEXT("RTSTest"), Row);
 	StatsRow.DataTable = Table;
 	StatsRow.RowName = TEXT("RTSTest");
+	SetInitialFaction(TestTeam == 0 ? ELSFaction::Ally : ELSFaction::Enemy);
 	Selection->SetPlayerControlled(TestTeam == 0);
 	if (UTextRenderComponent* Label = FindComponentByClass<UTextRenderComponent>())
 	{

@@ -34,11 +34,13 @@ bool ULSOrderComponent::CanAttack() const
 {
 	const ULSBasicAttackComponent* Component =
 	    GetOwner() ? GetOwner()->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
-	return Component && Component->IsConfigured() && GetOwner()->Implements<ULSBasicAttackParticipant>();
+	return Component && Component->IsConfigured() && GetOwner()->Implements<ULSBasicAttackParticipant>()
+		&& ILSBasicAttackParticipant::Execute_IsCombatAlive(GetOwner());
 }
 
 bool ULSOrderComponent::CanMove() const
 {
+	if (GetOwner()->Implements<ULSBasicAttackParticipant>() && !ILSBasicAttackParticipant::Execute_IsCombatAlive(GetOwner())) { return false; }
 	FLSUnitStatRow UnitStats;
 	if (const ALSUnit* Unit = Cast<ALSUnit>(GetOwner());
 	    Unit && (!Unit->TryGetStats(UnitStats) || UnitStats.MovementSpeed <= 0))

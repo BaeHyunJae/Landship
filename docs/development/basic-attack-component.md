@@ -16,9 +16,9 @@
 
 투사체·애니메이션 타격 시점·시야 차단·공격 대상 추적 이동·멀티플레이 복제는 이번 구현에 포함하지 않는다. 현재 공격은 즉시 피해 방식이다.
 
-## 팀원의 진영·체력 코드와 연결할 계약
+## 공통 진영·체력 구현과의 연결
 
-공격자와 피격 대상 액터가 모두 `ILSBasicAttackParticipant`를 구현해야 한다. Blueprint에서도 구현할 수 있다. 인터페이스가 없거나 기본 구현인 대상은 공격을 허용하지 않는다. 따라서 현재 일반 유닛·거점은 컴포넌트와 수치가 연결된 상태이며, 실제 전투 체력 감소는 아래 연결이 필요하다.
+유닛·성·거점은 `ILSBasicAttackParticipant`와 팀원의 `ILSFactionInterface`를 함께 구현한다. 기본 공격 인터페이스의 기본 구현은 별도 체력·진영을 소유하지 않고 PR #12의 공통 구현에 위임한다. 생존·HUD 체력은 `ULSHealthComponent::TryGetHealth`, 표적 판정은 `ULSCombatTargetLibrary::CanAutoAttackTarget`, 실제 피해는 `MakeDamageRequest`와 `ApplyDamage`를 사용한다. 인터페이스만 있고 준비된 공통 체력·진영이 없는 액터는 공격을 허용하지 않는다. 단위 테스트의 대역은 해당 인터페이스를 별도로 override한다.
 
 1. `IsCombatAlive`: 체력 기능에서 생존 여부를 조회한다. 공격자와 대상 양쪽에 사용한다.
 2. `CanReceiveBasicAttack(Attacker)`: 서로 다른 진영인지, 피해를 허용하는 대상인지 검사한다. 조회만 수행하며 상태를 변경하지 않는다.
@@ -35,18 +35,19 @@
 3. 수치 초기화 시 `ConfigureAttack(Settings)`에 Damage, Interval, Range를 전달한다. 잘못된 수치는 반영하지 않으며 기존 설정을 유지한다.
 4. 자동 탐색 대상의 충돌 컴포넌트는 Query가 활성화돼 있고 Object Type이 `LSUnit` 또는 `LSBuilding`이어야 한다.
 
-BeginPlay 전에 설정된 컴포넌트는 기본적으로 자동 공격을 시작한다. 런타임에 생성·설정한 경우 `ConfigureAttack` 후 `StartAutoAttack`을 호출한다. `ConfigureAttack` 자체는 공격 명령을 내리지 않는다.
+단독으로 사용하고 BeginPlay 전에 설정된 컴포넌트는 기본적으로 자동 공격을 시작한다. 유닛·거점은 생성자에서 자동 시작을 끄고 명령 컴포넌트가 교전을 제어한다. 런타임에 생성·설정한 경우 `ConfigureAttack` 후 `StartAutoAttack`을 호출한다. `ConfigureAttack` 자체는 공격 명령을 내리지 않는다.
 
 `GetAttackTarget`, `GetAttackSettings`, `GetCooldownRemaining`은 다른 기능이나 UI에서 조회할 수 있다. `StartAttack`과 `StartAutoAttack`의 성공은 명령 수락을 뜻하며 피해 적용 성공을 보장하지 않는다.
 
 ## 검증
 
-`Landship.Combat.BasicAttack`에 다음 자동 검사를 추가했다. 진영·체력은 테스트 전용 액터에서 대체하므로 팀원의 실제 체력 코드까지 검증한 것은 아니다.
+`Landship.Combat.BasicAttack`의 Acquisition·Lifecycle·Settings는 독립적인 테스트 대역을 사용하고, StatConnection과 RealHealthIntegration은 실제 BHJ 테스트 BP와 공통 체력 구현을 사용한다.
 
 - Acquisition: 가장 가까운 적 선택, 가까운 아군 제외, 사망 후 대상 변경, 범위 밖 제외, 재진입 시 재획득, 비활성화.
 - Lifecycle: 즉시 피해, 공격 알림, 쿨타임, 사거리, 알림 중 재진입 방지, 진영 변경, 대상·공격자 사망, 대상 파괴와 타이머 정리.
 - Settings: 0 간격, 음수, NaN, 무한대 거부와 실패 시 기존 수치 유지.
 - StatConnection: 실제 테스트 BP를 생성하여 유닛·거점의 공격력·간격·사거리가 데이터 행에서 컴포넌트로 전달되는지 확인.
+- RealHealthIntegration: 양 진영의 실제 BP 유닛, 성, 거점을 생성해 조작 권한·표적 판정·공통 체력 감소·HUD 조회·사망 후 선택 및 명령 차단·사망 공격자 타이머 정리를 확인한다. 명령 컴포넌트의 Tick이 없어도 독립 자동 공격 타이머가 켜지지 않는지 검사한다.
 
 기존 검사까지 실행하려면 에디터를 종료한 뒤 아래 명령을 사용한다.
 

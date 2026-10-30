@@ -26,6 +26,8 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	GENERATED_BODY()
   public:
 	ULSBasicAttackComponent();
+	/** 명령 컴포넌트가 전투를 제어하는 액터는 생성자에서 자동 시작을 끈다. */
+	void SetAutoAttackOnBeginPlay(bool bEnabled) { bAutoAttackOnBeginPlay = bEnabled; }
 	virtual void Deactivate() override;
 
 	/** 유효한 설정만 반영한다. 재설정으로 진행 중인 쿨타임을 초기화하지 않는다. */

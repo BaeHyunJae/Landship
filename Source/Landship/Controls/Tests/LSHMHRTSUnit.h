@@ -6,7 +6,7 @@
 
 /** HMH 조작 실험 전용. 진영·체력은 팀원 코드 통합 전까지 사용하는 테스트 대역이다. */
 UCLASS(NotBlueprintable)
-class ALSHMHRTSUnit : public ALSUnit, public ILSBasicAttackParticipant
+class ALSHMHRTSUnit : public ALSUnit
 {
 	GENERATED_BODY()
 public:

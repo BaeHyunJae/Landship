@@ -139,7 +139,8 @@ void ULSBasicAttackComponent::UpdateAttack()
 	TGuardValue<bool> ResolvingGuard(bResolvingAttack, true);
 	NextAttackTime = GetWorld()->GetTimeSeconds() + Settings.Interval;
 	const float AppliedDamage = ILSBasicAttackParticipant::Execute_ReceiveBasicAttack(Target, GetOwner(), Settings.Damage);
-	if (FMath::IsFinite(AppliedDamage) && AppliedDamage > 0.0f)
+	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed()
+		&& FMath::IsFinite(AppliedDamage) && AppliedDamage > 0.0f)
 	{
 		OnAttackPerformed.Broadcast(Target, AppliedDamage);
 	}
