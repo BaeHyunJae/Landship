@@ -9,7 +9,7 @@
 
 class UBoxComponent;
 
-/** 전투 동작을 붙이기 전에 대상의 초기 수치를 준비한다. */
+/** 초기 수치·진영·체력과 사망 처리를 소유한다. 공격 실행은 별도 기능에서 담당한다. */
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 {
@@ -19,6 +19,7 @@ public:
 	ALSOutpost();
 
 	virtual ELSFaction GetFaction() const override { return Faction; }
+	/** 전투 준비가 시작되기 전에 지정한다. C++ 지연 생성에서도 사용할 수 있다. */
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
 
@@ -31,6 +32,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
 	bool TryGetStats(FLSOutpostStatRow& OutStats) const;
 
+	/** 초기 수치 읽기의 성공 여부다. 체력 준비 여부는 체력 컴포넌트에서 조회한다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
 	bool IsStatsInitialized() const { return StatsInitResult == ELSCombatStatsInitResult::Success; }
 
@@ -53,6 +55,7 @@ protected:
 	TObjectPtr<UBoxComponent> Collision;
 
 private:
+	/** 실패 시 실행만 차단하며 사망 알림·랙돌·제거를 수행하지 않는다. */
 	void NeutralizeCombat();
 	void PrepareForDeath();
 

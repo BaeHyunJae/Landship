@@ -10,7 +10,7 @@ class LANDSHIP_API ULSCombatTargetLibrary : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
-	/** 자동 표적 선정용이다. 명중 피해에 적용하면 아군 오폭까지 막히므로 구분한다. */
+	/** 서로 다른 진영이며 양측 체력이 준비된 생존 대상만 허용한다. 사거리·시야는 검사하지 않으며 명중 피해의 필터로 쓰지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Combat")
 	static bool CanAutoAttackTarget(const AActor* Source, const AActor* Target);
 };

@@ -30,7 +30,7 @@ namespace LSCombatStats
 	LANDSHIP_API ELSCombatStatsInitResult ReportFailure(const FDataTableRowHandle& Handle,
 		const UObject* Owner, ELSCombatStatsInitResult Result, const TCHAR* Reason);
 
-	/** 행 포인터를 보관하지 않으며, 검증에 성공했을 때만 출력을 바꾼다. */
+	/** 에디터에서도 진단 없이 검사한다. 성공 시 값 복사와 nullptr 이유, 실패 시 출력 보존과 정적 이유 문자열을 반환한다. */
 	template <typename RowT>
 	ELSCombatStatsInitResult InspectRow(const FDataTableRowHandle& Handle, RowT& OutStats, const TCHAR*& OutFailureReason)
 	{
@@ -67,6 +67,7 @@ namespace LSCombatStats
 		return ELSCombatStatsInitResult::Success;
 	}
 
+	/** 런타임 읽기 실패마다 ensure로 보고한다. 진단 설정과 무관하게 실패 결과와 출력 보존을 유지한다. */
 	template <typename RowT>
 	ELSCombatStatsInitResult TryReadRow(const FDataTableRowHandle& Handle, const UObject* Owner, RowT& OutStats)
 	{

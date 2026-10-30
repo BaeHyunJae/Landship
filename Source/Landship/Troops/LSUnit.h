@@ -7,7 +7,7 @@
 #include "Combat/LSFactionInterface.h"
 #include "LSUnit.generated.h"
 
-/** 전투 동작을 붙이기 전에 대상의 초기 수치를 준비한다. */
+/** 초기 수치·진영·체력을 준비하고 사망 시 필수 이동·충돌 처리를 맡는다. 공격 실행은 별도다. */
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 {
@@ -17,19 +17,21 @@ public:
 	ALSUnit();
 
 	virtual ELSFaction GetFaction() const override { return Faction; }
+	/** 전투 준비 시작 전에 지정한다. C++ 지연 생성에서도 쓸 수 있으며 시작 후 변경은 거부한다. */
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
 	virtual void Restart() override;
 
 #if WITH_EDITOR
-	virtual bool CanEditChange(const FProperty* Property) const override;
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+	virtual bool CanEditChange(const FProperty* Property) const override;
 #endif
 
 	/** 초기화 전이나 실패 시에는 출력값을 변경하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
 	bool TryGetStats(FLSUnitStatRow& OutStats) const;
 
+	/** 수치 읽기 성공만 나타낸다. 전투 준비 여부는 체력 컴포넌트에서 확인한다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
 	bool IsStatsInitialized() const { return StatsInitResult == ELSCombatStatsInitResult::Success; }
 
@@ -42,6 +44,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSHealthComponent> Health;
 
+	/** 인간형에서만 켠다. 메시·Physics Asset이 필요하며 사망한 메시는 LSGround와만 충돌한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Death")
 	uint8 bUseRagdoll : 1 = false;
 

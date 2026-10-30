@@ -21,6 +21,7 @@ enum class ELSApplyDamageStatus : uint8
 	RejectedSelfDamageDisabled,
 	RejectedNotReady,
 	RejectedInitializationFailed,
+	/** 수신자/컴포넌트가 제거 중이거나 월드가 종료 중인 정상 수명 거부다. */
 	RejectedInvalidTarget,
 	RejectedInvalidInput,
 	RejectedFriendlyFireDisabled
@@ -61,6 +62,7 @@ struct LANDSHIP_API FLSDamageRequest
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	uint8 bHasSourceFaction : 1 = false;
 
+	/** 보관 여부가 참일 때만 의미가 있다. SourceActor를 바꿔도 갱신되지 않으며, 직접 요청은 유효한 주체의 진영을 조회한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	ELSFaction SourceFaction = ELSFaction::Ally;
 };
@@ -96,6 +98,7 @@ struct LANDSHIP_API FLSDamageResult
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	float CurrentHealth = 0.0f;
 
+	/** 피해 시점에 이미 제거된 주체는 nullptr이다. 알림 중에도 제거될 수 있으므로 사용 전 유효성을 확인한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	TObjectPtr<AActor> SourceActor = nullptr;
 

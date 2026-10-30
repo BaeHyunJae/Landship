@@ -29,6 +29,7 @@ void ALSUnit::BeginPlay()
 	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
 		FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError()))
 	{
+		// 준비 실패는 사망이 아니므로 알림·랙돌·제거 없이 실행과 방해 충돌만 막는다.
 		NeutralizeCombat();
 	}
 	if (IsStatsInitialized())

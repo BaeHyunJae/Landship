@@ -120,6 +120,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	}
 	if (Health.bIsDead)
 	{
+		// 거부 사유가 겹치면 생존 여부를 입력 검사보다 우선한다. 사망 대상은 요청을 더 처리하지 않는다.
 		return {ELSApplyDamageStatus::RejectedDead, 0.0f};
 	}
 	if (!ensureAlwaysMsgf(FMath::IsFinite(Request.DamageAmount) && Request.DamageAmount >= 0.0f
