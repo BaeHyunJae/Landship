@@ -2,11 +2,13 @@
 
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
+#include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/EnsureScope.h"
 #include "Combat/Tests/LSHealthTestObserver.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Troops/LSUnit.h"
 #include "Castle/LSCastle.h"
@@ -55,6 +57,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCombatActorHealthIntegrationTest, "Landship.
 
 bool FLSCombatActorHealthIntegrationTest::RunTest(const FString& Parameters)
 {
+	ULSCombatDeveloperSettings* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bOriginalFriendlyFire = Settings->bAllowFriendlyFire;
+	ON_SCOPE_EXIT { Settings->bAllowFriendlyFire = bOriginalFriendlyFire; };
+	Settings->bAllowFriendlyFire = true;
 	FTestWorldWrapper TestWorld;
 	if (!TestTrue(TEXT("Create game world"), TestWorld.CreateTestWorld(EWorldType::Game)))
 	{

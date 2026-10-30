@@ -1,6 +1,7 @@
 #include "Combat/LSHealthComponent.h"
 
 #include "Combat/LSCombatDeveloperSettings.h"
+#include "Combat/LSFactionInterface.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/DataValidation.h"
@@ -84,6 +85,23 @@ bool ULSHealthComponent::TryGetHealth(FLSHealthSnapshot& OutHealth) const
 	return true;
 }
 
+FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser)
+{
+	FLSDamageRequest Request;
+	Request.DamageAmount = DamageAmount;
+	Request.SourceActor = SourceActor;
+	Request.DamageCauser = DamageCauser;
+	if (IsValid(SourceActor))
+	{
+		if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(SourceActor))
+		{
+			Request.bHasSourceFaction = true;
+			Request.SourceFaction = Faction->GetFaction();
+		}
+	}
+	return Request;
+}
+
 FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Request)
 {
 	AActor* Receiver = GetOwner();
@@ -104,9 +122,10 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	{
 		return {ELSApplyDamageStatus::RejectedDead, 0.0f};
 	}
-	if (!ensureAlwaysMsgf(FMath::IsFinite(Request.DamageAmount) && Request.DamageAmount >= 0.0f,
-		TEXT("[LSHealthComponent::ApplyDamage] Invalid damage: Owner=%s Amount=%g"),
-		*GetPathNameSafe(GetOwner()), Request.DamageAmount))
+	if (!ensureAlwaysMsgf(FMath::IsFinite(Request.DamageAmount) && Request.DamageAmount >= 0.0f
+		&& (!Request.bHasSourceFaction || LSFaction::IsValid(Request.SourceFaction)),
+		TEXT("[LSHealthComponent::ApplyDamage] Invalid damage: Owner=%s Amount=%g HasSourceFaction=%d SourceFaction=%d"),
+		*GetPathNameSafe(GetOwner()), Request.DamageAmount, !!Request.bHasSourceFaction, static_cast<int32>(Request.SourceFaction)))
 	{
 		return {ELSApplyDamageStatus::RejectedInvalidInput, 0.0f};
 	}
@@ -114,9 +133,29 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	{
 		return {ELSApplyDamageStatus::NoEffectZeroDamage, 0.0f};
 	}
-	if (Request.SourceActor == GetOwner() && !GetDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage)
+	const ULSCombatDeveloperSettings* Settings = GetDefault<ULSCombatDeveloperSettings>();
+	const bool bSelfDamage = Request.SourceActor == Receiver;
+	if (bSelfDamage && !Settings->bAllowSelfDamage)
 	{
 		return {ELSApplyDamageStatus::RejectedSelfDamageDisabled, 0.0f};
+	}
+	if (!bSelfDamage && !Settings->bAllowFriendlyFire)
+	{
+		bool bHasSourceFaction = Request.bHasSourceFaction;
+		ELSFaction SourceFaction = Request.SourceFaction;
+		if (!bHasSourceFaction && IsValid(Request.SourceActor))
+		{
+			if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Request.SourceActor))
+			{
+				bHasSourceFaction = true;
+				SourceFaction = Faction->GetFaction();
+			}
+		}
+		const ILSFactionInterface* ReceiverFaction = Cast<ILSFactionInterface>(Receiver);
+		if (bHasSourceFaction && ReceiverFaction && SourceFaction == ReceiverFaction->GetFaction())
+		{
+			return {ELSApplyDamageStatus::RejectedFriendlyFireDisabled, 0.0f};
+		}
 	}
 	const float AppliedDamage = FMath::Min(Request.DamageAmount, Health.CurrentHealth);
 	Health.CurrentHealth -= AppliedDamage;

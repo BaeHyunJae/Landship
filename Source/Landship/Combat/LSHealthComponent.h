@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	FLSApplyDamageResult ApplyDamage(const FLSDamageRequest& Request);
 
+	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영을 보존한다. */
+	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
+	static FLSDamageRequest MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser);
+
 	/** 에디터와 런타임이 같은 제거 설정 검사 규칙을 사용한다. */
 	FString GetConfigurationError() const;
 

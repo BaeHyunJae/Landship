@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/LSFaction.h"
 #include "LSHealthTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -21,7 +22,8 @@ enum class ELSApplyDamageStatus : uint8
 	RejectedNotReady,
 	RejectedInitializationFailed,
 	RejectedInvalidTarget,
-	RejectedInvalidInput
+	RejectedInvalidInput,
+	RejectedFriendlyFireDisabled
 };
 
 USTRUCT(BlueprintType)
@@ -54,6 +56,13 @@ struct LANDSHIP_API FLSDamageRequest
 	/** 발사체·무기·환경 등 직접 피해 원인이다. 없는 경우도 허용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
 	TObjectPtr<AActor> DamageCauser = nullptr;
+
+	/** 지연 공격은 요청 생성 시 보관한 진영으로 주체 제거 뒤에도 오폭을 판정한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	uint8 bHasSourceFaction : 1 = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	ELSFaction SourceFaction = ELSFaction::Ally;
 };
 
 USTRUCT(BlueprintType)

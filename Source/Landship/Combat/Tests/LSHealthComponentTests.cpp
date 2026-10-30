@@ -42,10 +42,16 @@ ULSHealthTestObserver* Observe(ULSHealthComponent* Health)
 	return Observer;
 }
 
-struct FLSScopedSelfDamage
+struct FLSScopedCombatDamageSettings
 {
-	bool bOriginal = GetDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage;
-	~FLSScopedSelfDamage() { GetMutableDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage = bOriginal; }
+	bool bOriginalSelfDamage = GetDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage;
+	bool bOriginalFriendlyFire = GetDefault<ULSCombatDeveloperSettings>()->bAllowFriendlyFire;
+	~FLSScopedCombatDamageSettings()
+	{
+		ULSCombatDeveloperSettings* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+		Settings->bAllowSelfDamage = bOriginalSelfDamage;
+		Settings->bAllowFriendlyFire = bOriginalFriendlyFire;
+	}
 };
 }
 
@@ -112,6 +118,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSHealthReentrantTest, "Landship.Combat.Health
 
 bool FLSHealthReentrantTest::RunTest(const FString& Parameters)
 {
+	FLSScopedCombatDamageSettings RestoreSettings;
+	GetMutableDefault<ULSCombatDeveloperSettings>()->bAllowFriendlyFire = true;
 	FTestWorldWrapper World;
 	if (!TestTrue(TEXT("게임 월드 생성"), World.CreateTestWorld(EWorldType::Game))) return false;
 	ALSHealthTestActor* Source = World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
@@ -154,7 +162,7 @@ bool FLSHealthInputTest::RunTest(const FString& Parameters)
 	ULSHealthComponent* Health = AddHealth(Owner);
 	TestTrue(TEXT("초기화"), Initialize(Health));
 	ULSHealthTestObserver* Observer = Observe(Health);
-	FLSScopedSelfDamage RestoreSettings;
+	FLSScopedCombatDamageSettings RestoreSettings;
 	GetMutableDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage = false;
 	TestEqual(TEXT("자기 피해 설정 꺼짐"), Health->ApplyDamage(Request(20, Owner)).Status, ELSApplyDamageStatus::RejectedSelfDamageDisabled);
 	GetMutableDefault<ULSCombatDeveloperSettings>()->bAllowSelfDamage = true;
@@ -282,6 +290,109 @@ bool FLSHealthRemovalTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(TEXT("0 지연 또는 구독자 제거는 반환 전에 제거 요청"), Owner->IsActorBeingDestroyed());
 			TestEqual(TEXT("제거 후 새 타이머 없음"), Owner->GetLifeSpan(), 0.0f);
+		}
+	}
+	World.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSHealthFriendlyFireTest, "Landship.Combat.Health.FriendlyFire",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSHealthFriendlyFireTest::RunTest(const FString& Parameters)
+{
+	FLSScopedCombatDamageSettings RestoreSettings;
+	ULSCombatDeveloperSettings* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	FTestWorldWrapper World;
+	if (!TestTrue(TEXT("게임 월드 생성"), World.CreateTestWorld(EWorldType::Game))) return false;
+	if (!TestTrue(TEXT("게임 시작"), World.BeginPlayInTestWorld())) return false;
+	for (ELSFaction Faction : {ELSFaction::Ally, ELSFaction::Enemy})
+	{
+		for (bool bAllowSelfDamage : {false, true})
+		{
+			for (bool bAllowFriendlyFire : {false, true})
+			{
+				Settings->bAllowSelfDamage = bAllowSelfDamage;
+				Settings->bAllowFriendlyFire = bAllowFriendlyFire;
+				// 자기 자신·동일 진영의 타인·상대 진영에 두 설정의 네 조합을 각각 적용한다.
+				for (int32 SourceKind = 0; SourceKind < 3; ++SourceKind)
+				{
+					ALSHealthTestActor* Target = World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
+					Target->Faction = Faction;
+					ALSHealthTestActor* Source = SourceKind == 0 ? Target : World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
+					Source->Faction = SourceKind == 2
+						? (Faction == ELSFaction::Ally ? ELSFaction::Enemy : ELSFaction::Ally) : Faction;
+					ULSHealthComponent* Health = AddHealth(Target);
+					TestTrue(TEXT("진영 조합별 체력 초기화"), Initialize(Health));
+					ULSHealthTestObserver* Observer = Observe(Health);
+					const bool bAllowed = SourceKind == 0 ? bAllowSelfDamage : SourceKind == 2 || bAllowFriendlyFire;
+					const ELSApplyDamageStatus ExpectedStatus = bAllowed ? ELSApplyDamageStatus::Applied
+						: SourceKind == 0 ? ELSApplyDamageStatus::RejectedSelfDamageDisabled : ELSApplyDamageStatus::RejectedFriendlyFireDisabled;
+					const FString Case = FString::Printf(TEXT("진영=%d 자기피해=%d 오폭=%d 주체종류=%d"),
+						static_cast<int32>(Faction), bAllowSelfDamage, bAllowFriendlyFire, SourceKind);
+					const FLSApplyDamageResult Result = Health->ApplyDamage(Request(10.0f, Source));
+					TestEqual(Case + TEXT(" 상태"), Result.Status, ExpectedStatus);
+					TestEqual(Case + TEXT(" 실제 감소량"), Result.AppliedDamage, bAllowed ? 10.0f : 0.0f);
+					if (!bAllowed)
+					{
+						const FLSApplyDamageResult Lethal = Health->ApplyDamage(Request(1000.0f, Source));
+						TestEqual(Case + TEXT(" 치명 요청도 거부"), Lethal.Status, ExpectedStatus);
+						TestEqual(Case + TEXT(" 치명 요청 감소 없음"), Lethal.AppliedDamage, 0.0f);
+					}
+					FLSHealthSnapshot Snapshot;
+					TestTrue(Case + TEXT(" 체력 조회"), Health->TryGetHealth(Snapshot));
+					TestEqual(Case + TEXT(" 현재 체력"), Snapshot.CurrentHealth, bAllowed ? 90.0f : 100.0f);
+					TestFalse(Case + TEXT(" 생존 유지"), !!Snapshot.bIsDead);
+					TestEqual(Case + TEXT(" 피격 알림"), Observer->DamageResults.Num(), bAllowed ? 1 : 0);
+					TestEqual(Case + TEXT(" 사망 알림 없음"), Observer->DeathResults.Num(), 0);
+				}
+			}
+		}
+
+		Settings->bAllowSelfDamage = false;
+		Settings->bAllowFriendlyFire = false;
+		ALSHealthTestActor* Target = World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
+		ALSHealthTestActor* SameFactionSource = World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
+		ALSHealthTestActor* OpponentSource = World.GetTestWorld()->SpawnActor<ALSHealthTestActor>();
+		Target->Faction = SameFactionSource->Faction = Faction;
+		OpponentSource->Faction = Faction == ELSFaction::Ally ? ELSFaction::Enemy : ELSFaction::Ally;
+		ULSHealthComponent* Health = AddHealth(Target);
+		TestTrue(TEXT("지연 공격 대상 초기화"), Initialize(Health));
+		ULSHealthTestObserver* Observer = Observe(Health);
+		const FLSDamageRequest CapturedFriendly = ULSHealthComponent::MakeDamageRequest(10.0f, SameFactionSource, nullptr);
+		const FLSDamageRequest CapturedEnemy = ULSHealthComponent::MakeDamageRequest(10.0f, OpponentSource, nullptr);
+		TestEqual(TEXT("기존 직접 요청도 생존 주체 진영으로 오폭 거부"),
+			Health->ApplyDamage(Request(10.0f, SameFactionSource)).Status, ELSApplyDamageStatus::RejectedFriendlyFireDisabled);
+		Settings->bAllowFriendlyFire = true;
+		TestEqual(TEXT("같은 컴포넌트의 다음 요청부터 오폭 허용"),
+			Health->ApplyDamage(Request(10.0f, SameFactionSource)).AppliedDamage, 10.0f);
+		Settings->bAllowFriendlyFire = false;
+		TestEqual(TEXT("같은 컴포넌트에서 다시 오폭 차단"),
+			Health->ApplyDamage(Request(10.0f, SameFactionSource)).Status, ELSApplyDamageStatus::RejectedFriendlyFireDisabled);
+		TestTrue(TEXT("같은 진영 공격 주체 제거"), SameFactionSource->Destroy());
+		TestTrue(TEXT("상대 진영 공격 주체 제거"), OpponentSource->Destroy());
+		TestFalse(TEXT("같은 진영 주체가 실제 무효화됨"), IsValid(SameFactionSource));
+		TestFalse(TEXT("상대 진영 주체가 실제 무효화됨"), IsValid(OpponentSource));
+		TestEqual(TEXT("제거된 같은 진영 주체의 저장된 요청 차단"),
+			Health->ApplyDamage(CapturedFriendly).Status, ELSApplyDamageStatus::RejectedFriendlyFireDisabled);
+		TestEqual(TEXT("제거된 상대 진영 주체의 저장된 요청 허용"),
+			Health->ApplyDamage(CapturedEnemy).AppliedDamage, 10.0f);
+		AActor* Environment = World.GetTestWorld()->SpawnActor<AActor>();
+		TestEqual(TEXT("공격 주체가 없는 환경 피해 허용"),
+			Health->ApplyDamage(ULSHealthComponent::MakeDamageRequest(10.0f, nullptr, Environment)).AppliedDamage, 10.0f);
+		TestEqual(TEXT("공격 주체와 직접 원인이 모두 없는 피해 허용"),
+			Health->ApplyDamage(Request(10.0f)).AppliedDamage, 10.0f);
+		TestEqual(TEXT("진영 인터페이스가 없는 주체의 피해 허용"),
+			Health->ApplyDamage(Request(10.0f, Environment)).AppliedDamage, 10.0f);
+		FLSHealthSnapshot Snapshot;
+		TestTrue(TEXT("설정 변경·주체 제거 후 체력 조회"), Health->TryGetHealth(Snapshot));
+		TestEqual(TEXT("허용된 다섯 요청만 체력 감소"), Snapshot.CurrentHealth, 50.0f);
+		TestEqual(TEXT("차단 요청은 피격 알림 없음"), Observer->DamageResults.Num(), 5);
+		TestEqual(TEXT("차단 요청은 사망 알림 없음"), Observer->DeathResults.Num(), 0);
+		if (Observer->DamageResults.Num() == 5)
+		{
+			TestTrue(TEXT("주체 제거 후 알림은 유효하지 않은 주체를 보관하지 않음"), Observer->DamageResults[1].SourceActor == nullptr);
+			TestTrue(TEXT("환경 피해의 직접 원인 보존"), Observer->DamageResults[2].DamageCauser == Environment);
 		}
 	}
 	World.ForwardErrorMessages(this);
