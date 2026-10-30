@@ -23,6 +23,7 @@ public:
 	FString GetCombatConfigurationError() const;
 
 #if WITH_EDITOR
+	virtual bool CanEditChange(const FProperty* InProperty) const override;
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 

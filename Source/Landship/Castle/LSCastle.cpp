@@ -5,6 +5,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
 #include "Engine/World.h"
+#include "UObject/UnrealType.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Components/BoxComponent.h"
@@ -142,6 +143,15 @@ void ALSCastle::PrepareForDeath()
 }
 
 #if WITH_EDITOR
+bool ALSCastle::CanEditChange(const FProperty* InProperty) const
+{
+	if (InProperty && InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(ALSCastle, Faction) && bFactionLocked)
+	{
+		return false;
+	}
+	return Super::CanEditChange(InProperty);
+}
+
 EDataValidationResult ALSCastle::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);

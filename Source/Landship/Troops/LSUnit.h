@@ -22,6 +22,7 @@ public:
 	virtual void Restart() override;
 
 #if WITH_EDITOR
+	virtual bool CanEditChange(const FProperty* Property) const override;
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 

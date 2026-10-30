@@ -183,5 +183,44 @@ bool FLSCombatDeathHookLifetimeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCombatFactionEditingTest, "Landship.Combat.Review.FactionEditing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSCombatFactionEditingTest::RunTest(const FString& Parameters)
+{
+#if WITH_EDITOR
+	FTestWorldWrapper World;
+	if (!TestTrue(TEXT("게임 월드 생성"), World.CreateTestWorld(EWorldType::Game))) return false;
+	TArray<AActor*> Actors;
+	for (const TCHAR* Path : {
+		TEXT("/Game/Developers/BHJ/CombatStats/BP_TestUnit.BP_TestUnit_C"),
+		TEXT("/Game/Developers/BHJ/CombatStats/BP_TestCastle.BP_TestCastle_C"),
+		TEXT("/Game/Developers/BHJ/CombatStats/BP_TestOutpost.BP_TestOutpost_C")})
+	{
+		UClass* Class = LoadClass<AActor>(nullptr, Path);
+		if (!TestNotNull(TEXT("진영 편집 확인 Blueprint"), Class)) return false;
+		FProperty* Faction = FindFProperty<FProperty>(Class, TEXT("Faction"));
+		if (!TestNotNull(TEXT("진영 프로퍼티"), Faction)) return false;
+		AActor* CDO = Class->GetDefaultObject<AActor>();
+		TestTrue(TEXT("기본값 진영 편집 허용"), CDO->CanEditChange(Faction));
+		FActorSpawnParameters Spawn;
+		Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AActor* Actor = World.GetTestWorld()->SpawnActor<AActor>(Class, FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
+		if (!TestNotNull(TEXT("진영 편집 확인 인스턴스"), Actor)) return false;
+		TestTrue(TEXT("준비 전 인스턴스 진영 편집 허용"), Actor->CanEditChange(Faction));
+		Actors.Add(Actor);
+	}
+	if (!TestTrue(TEXT("게임 시작"), World.BeginPlayInTestWorld())) return false;
+	for (AActor* Actor : Actors)
+	{
+		FProperty* Faction = FindFProperty<FProperty>(Actor->GetClass(), TEXT("Faction"));
+		TestEqual(TEXT("진영 잠금 확인 대상 준비 성공"), Actor->FindComponentByClass<ULSHealthComponent>()->GetInitializationState(), ELSHealthInitializationState::Ready);
+		TestFalse(TEXT("준비 후 인스턴스 진영 편집 잠금"), Actor->CanEditChange(Faction));
+		TestTrue(TEXT("인스턴스 준비 후에도 기본값 편집 허용"), Actor->GetClass()->GetDefaultObject<AActor>()->CanEditChange(Faction));
+	}
+	World.ForwardErrorMessages(this);
+#endif
+	return true;
+}
 
 #endif

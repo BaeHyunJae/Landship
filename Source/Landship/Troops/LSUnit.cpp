@@ -11,6 +11,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Logging/StructuredLog.h"
 #include "Engine/World.h"
+#include "UObject/UnrealType.h"
 
 ALSUnit::ALSUnit()
 {
@@ -176,6 +177,12 @@ void ALSUnit::PrepareForDeath()
 }
 
 #if WITH_EDITOR
+bool ALSUnit::CanEditChange(const FProperty* Property) const
+{
+	return !(bFactionLocked && Property->GetFName() == GET_MEMBER_NAME_CHECKED(ALSUnit, Faction))
+		&& Super::CanEditChange(Property);
+}
+
 EDataValidationResult ALSUnit::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);

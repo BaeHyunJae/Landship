@@ -5,6 +5,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
 #include "Engine/World.h"
+#include "UObject/UnrealType.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
 
@@ -117,6 +118,15 @@ void ALSOutpost::PrepareForDeath()
 }
 
 #if WITH_EDITOR
+bool ALSOutpost::CanEditChange(const FProperty* InProperty) const
+{
+	if (InProperty && InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(ALSOutpost, Faction) && bFactionLocked)
+	{
+		return false;
+	}
+	return Super::CanEditChange(InProperty);
+}
+
 EDataValidationResult ALSOutpost::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
