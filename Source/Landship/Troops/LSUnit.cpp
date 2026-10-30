@@ -35,7 +35,7 @@ void ALSUnit::BeginPlay()
 	if (IsStatsInitialized())
 	{
 		UE_LOGFMT(LogLSCombatStats, Display,
-			"[{Function}] {Owner} initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange} DetectionRange={DetectionRange} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
+			"[{Function}] {Owner} stats initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange} DetectionRange={DetectionRange} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
 			("Function", __FUNCTION__), ("Owner", GetPathName()),
 			("Health", Stats.Health),
 			("AttackPower", Stats.AttackPower),

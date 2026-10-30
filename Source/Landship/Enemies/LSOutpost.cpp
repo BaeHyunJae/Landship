@@ -33,7 +33,7 @@ void ALSOutpost::BeginPlay()
 	if (IsStatsInitialized())
 	{
 		UE_LOGFMT(LogLSCombatStats, Display,
-			"[{Function}] {Owner} initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange}",
+			"[{Function}] {Owner} stats initialized: Health={Health} AttackPower={AttackPower} AttackInterval={AttackInterval} AttackRange={AttackRange}",
 			("Function", __FUNCTION__), ("Owner", GetPathName()),
 			("Health", Stats.Health),
 			("AttackPower", Stats.AttackPower),

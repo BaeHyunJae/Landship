@@ -35,7 +35,7 @@ void ALSCastle::BeginPlay()
 	if (IsStatsInitialized())
 	{
 		UE_LOGFMT(LogLSCombatStats, Display,
-			"[{Function}] {Owner} initialized: Health={Health} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
+			"[{Function}] {Owner} stats initialized: Health={Health} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
 			("Function", __FUNCTION__), ("Owner", GetPathName()),
 			("Health", Stats.Health),
 			("VisionRadius", Stats.VisionRadius),
