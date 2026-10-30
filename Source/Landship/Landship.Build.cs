@@ -27,6 +27,16 @@ public class Landship : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Landship",
+			"Landship/Combat",
+			"Landship/Castle",
+			"Landship/Troops",
+			"Landship/Controls",
+			"Landship/Vision",
+			"Landship/Enemies",
+			"Landship/Obstacles",
+			"Landship/Maps",
+			"Landship/Match",
+			"Landship/HUD",
 			"Landship/Variant_Strategy",
 			"Landship/Variant_Strategy/UI",
 			"Landship/Variant_TwinStick",
