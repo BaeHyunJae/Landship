@@ -13,10 +13,17 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 {
 	GENERATED_BODY()
 
-public:
+  public:
 	ALSUnit();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSSelectableComponent> Selection;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSOrderComponent> Orders;
 
-	virtual ELSFaction GetFaction() const override { return Faction; }
+	virtual ELSFaction GetFaction() const override
+	{
+		return Faction;
+	}
 	/** 전투 준비 시작 전에 지정한다. C++ 지연 생성에서도 쓸 수 있으며 시작 후 변경은 거부한다. */
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
@@ -33,12 +40,21 @@ public:
 
 	/** 수치 읽기 성공만 나타낸다. 전투 준비 여부는 체력 컴포넌트에서 확인한다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
-	bool IsStatsInitialized() const { return StatsInitResult == ELSCombatStatsInitResult::Success; }
+	bool IsStatsInitialized() const
+	{
+		return StatsInitResult == ELSCombatStatsInitResult::Success;
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Stats")
-	ELSCombatStatsInitResult GetStatsInitResult() const { return StatsInitResult; }
+	ELSCombatStatsInitResult GetStatsInitResult() const
+	{
+		return StatsInitResult;
+	}
 
-protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSBasicAttackComponent> BasicAttack;
+
+  protected:
 	virtual void BeginPlay() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
@@ -48,17 +64,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Death")
 	uint8 bUseRagdoll : 1 = false;
 
-
 	/** 수치 자체는 테이블에서 조정하고 여기서는 사용할 행만 지정한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Stats", meta = (RowType = "/Script/Landship.LSUnitStatRow"))
 	FDataTableRowHandle StatsRow;
 
-private:
+  private:
 	void StopCombatMovement();
 	void NeutralizeCombat();
 	void PrepareForDeath();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landship|Combat", meta = (ExposeOnSpawn = "true", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landship|Combat",
+	          meta = (ExposeOnSpawn = "true", AllowPrivateAccess = "true"))
 	ELSFaction Faction = ELSFaction::Ally;
 
 	bool bFactionLocked = false;
@@ -70,4 +86,3 @@ private:
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Stats")
 	ELSCombatStatsInitResult StatsInitResult = ELSCombatStatsInitResult::NotAttempted;
 };
-

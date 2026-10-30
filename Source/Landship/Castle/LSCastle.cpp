@@ -1,7 +1,12 @@
 #include "Castle/LSCastle.h"
+#include "Controls/LSSelectableComponent.h"
+#include "Controls/LSOrderComponent.h"
+#include "Combat/LSBasicAttackComponent.h"
+#include "AIController.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
 #include "Engine/World.h"
@@ -10,16 +15,30 @@
 #include "GameFramework/PawnMovementComponent.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
+#include "GameFramework/FloatingPawnMovement.h"
+#include "NavigationSystem.h"
+#include "NavigationPath.h"
+#include "Navigation/PathFollowingComponent.h"
 
 ALSCastle::ALSCastle()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
+	Selection->Kind = ELSSelectionKind::Castle;
+	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	SetRootComponent(Collision);
 	Collision->SetBoxExtent(FVector(100.0f));
 	Collision->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	Collision->SetCollisionObjectType(LSCollisionChannels::Building);
+	Collision->SetCanEverAffectNavigation(false);
+	Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Movement"));
+	Movement->SetUpdatedComponent(Collision);
+	Movement->NavAgentProps.AgentRadius = 142.0f;
+	Movement->NavAgentProps.AgentHeight = 200.0f;
+	AIControllerClass = AAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 }
 
 void ALSCastle::BeginPlay()
@@ -28,19 +47,22 @@ void ALSCastle::BeginPlay()
 	bFactionLocked = true;
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
-		FLSPrepareCombatDeath::CreateUObject(this, &ALSCastle::PrepareForDeath), GetCombatConfigurationError()))
+	                              FLSPrepareCombatDeath::CreateUObject(this, &ALSCastle::PrepareForDeath),
+	                              GetCombatConfigurationError()))
 	{
 		NeutralizeCombat();
 	}
 	if (IsStatsInitialized())
 	{
 		UE_LOGFMT(LogLSCombatStats, Display,
-			"[{Function}] {Owner} stats initialized: Health={Health} VisionRadius={VisionRadius} MovementSpeed={MovementSpeed}",
-			("Function", __FUNCTION__), ("Owner", GetPathName()),
-			("Health", Stats.Health),
-			("VisionRadius", Stats.VisionRadius),
-			("MovementSpeed", Stats.MovementSpeed));
+		          "[{Function}] {Owner} stats initialized: Health={Health} VisionRadius={VisionRadius} "
+		          "MovementSpeed={MovementSpeed}",
+		          ("Function", __FUNCTION__), ("Owner", GetPathName()), ("Health", Stats.Health),
+		          ("VisionRadius", Stats.VisionRadius), ("MovementSpeed", Stats.MovementSpeed));
 	}
+	Selection->SetPlayerControlled(GetFaction() == ELSFaction::Ally);
+	Movement->MaxSpeed =
+	    Health->GetInitializationState() == ELSHealthInitializationState::Ready ? Stats.MovementSpeed : 0.0f;
 	Super::BeginPlay();
 }
 
@@ -54,10 +76,10 @@ bool ALSCastle::TryGetStats(FLSCastleStatRow& OutStats) const
 	return true;
 }
 
-
 void ALSCastle::SetInitialFaction(ELSFaction InFaction)
 {
-	if (!ensureAlwaysMsgf(!bFactionLocked, TEXT("[LSCastle::SetInitialFaction] Faction is locked: Owner=%s"), *GetPathName()))
+	if (!ensureAlwaysMsgf(!bFactionLocked, TEXT("[LSCastle::SetInitialFaction] Faction is locked: Owner=%s"),
+	                      *GetPathName()))
 	{
 		return;
 	}
@@ -80,10 +102,9 @@ FString ALSCastle::GetCombatConfigurationError() const
 
 void ALSCastle::NeutralizeCombat()
 {
+
 	const auto CanContinue = [this]()
-	{
-		return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown;
-	};
+	{ return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown; };
 	if (!CanContinue())
 	{
 		return;
@@ -96,16 +117,16 @@ void ALSCastle::NeutralizeCombat()
 	{
 		return;
 	}
-	if (UPawnMovementComponent* Movement = GetMovementComponent())
+	if (UPawnMovementComponent* PawnMovement = GetMovementComponent())
 	{
-		Movement->StopMovementImmediately();
+		PawnMovement->StopMovementImmediately();
 		if (!CanContinue())
 		{
 			return;
 		}
-		if (IsValid(Movement))
+		if (IsValid(PawnMovement))
 		{
-			Movement->Deactivate();
+			PawnMovement->Deactivate();
 		}
 	}
 	if (!CanContinue())
@@ -160,7 +181,8 @@ EDataValidationResult ALSCastle::IsDataValid(FDataValidationContext& Context) co
 	if (LSCombatStats::InspectRow(StatsRow, InspectedStats, FailureReason) != ELSCombatStatsInitResult::Success)
 	{
 		Context.AddError(FText::FromString(FString::Printf(TEXT("%s: StatsRow Table=%s Row=%s Reason=%s"),
-			*GetPathName(), *GetPathNameSafe(StatsRow.DataTable), *StatsRow.RowName.ToString(), FailureReason)));
+		                                                   *GetPathName(), *GetPathNameSafe(StatsRow.DataTable),
+		                                                   *StatsRow.RowName.ToString(), FailureReason)));
 		Result = EDataValidationResult::Invalid;
 	}
 	const FString ConfigurationError = GetCombatConfigurationError();
@@ -173,3 +195,47 @@ EDataValidationResult ALSCastle::IsDataValid(FDataValidationContext& Context) co
 }
 #endif
 
+UPawnMovementComponent* ALSCastle::GetMovementComponent() const
+{
+	return Movement;
+}
+
+bool ALSCastle::RequestMove(const FVector& Destination)
+{
+	AAIController* AI = Cast<AAIController>(GetController());
+	UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	if (Destination.ContainsNaN() || !AI || !Navigation || !ULSCombatTargetLibrary::IsCombatAlive(this) ||
+	    !Movement->IsActive() || Movement->MaxSpeed <= 0.0f)
+	{
+		return false;
+	}
+	FNavLocation Goal;
+	if (!Navigation->ProjectPointToNavigation(Destination, Goal, FVector(100.0f, 100.0f, 250.0f)))
+	{
+		return false;
+	}
+	// 도달 불가능한 명령이 진행 중인 이동을 취소하지 않도록 먼저 경로를 검사한다.
+	UNavigationPath* Path =
+	    Navigation->FindPathToLocationSynchronously(GetWorld(), GetNavAgentLocation(), Goal.Location, this);
+	if (!Path || !Path->IsValid() || Path->IsPartial())
+	{
+		return false;
+	}
+	return AI->MoveToLocation(Goal.Location, AcceptanceRadius, true, true, false, false, nullptr, false) !=
+	       EPathFollowingRequestResult::Failed;
+}
+
+bool ALSCastle::IsMoving() const
+{
+	const AAIController* AI = Cast<AAIController>(GetController());
+	return AI && AI->GetMoveStatus() != EPathFollowingStatus::Idle;
+}
+
+void ALSCastle::StopMoving()
+{
+	if (AAIController* AI = Cast<AAIController>(GetController()))
+	{
+		AI->StopMovement();
+	}
+	Movement->StopMovementImmediately();
+}

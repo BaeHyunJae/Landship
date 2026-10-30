@@ -1,4 +1,8 @@
 #include "Enemies/LSOutpost.h"
+#include "Controls/LSSelectableComponent.h"
+#include "Controls/LSOrderComponent.h"
+#include "Combat/LSBasicAttackComponent.h"
+#include "AIController.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
@@ -12,6 +16,11 @@
 ALSOutpost::ALSOutpost()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
+	Selection->Kind = ELSSelectionKind::Building;
+	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
+	BasicAttack->SetAutoAttackOnBeginPlay(false);
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	SetRootComponent(Collision);
@@ -39,6 +48,15 @@ void ALSOutpost::BeginPlay()
 			("AttackPower", Stats.AttackPower),
 			("AttackInterval", Stats.AttackInterval),
 			("AttackRange", Stats.AttackRange));
+	}
+	Selection->SetPlayerControlled(GetFaction() == ELSFaction::Ally);
+	if (Health->GetInitializationState() == ELSHealthInitializationState::Ready)
+	{
+		FLSBasicAttackSettings AttackSettings;
+		AttackSettings.Damage = Stats.AttackPower;
+		AttackSettings.Interval = Stats.AttackInterval;
+		AttackSettings.Range = Stats.AttackRange;
+		BasicAttack->ConfigureAttack(AttackSettings);
 	}
 	Super::BeginPlay();
 }
@@ -79,6 +97,8 @@ FString ALSOutpost::GetCombatConfigurationError() const
 
 void ALSOutpost::NeutralizeCombat()
 {
+	BasicAttack->StopAttack();
+
 	const auto CanContinue = [this]()
 	{
 		return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown;
