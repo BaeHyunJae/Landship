@@ -32,32 +32,47 @@ namespace LSCombatStats
 
 	/** 행 포인터를 보관하지 않으며, 검증에 성공했을 때만 출력을 바꾼다. */
 	template <typename RowT>
-	ELSCombatStatsInitResult TryReadRow(const FDataTableRowHandle& Handle, const UObject* Owner, RowT& OutStats)
+	ELSCombatStatsInitResult InspectRow(const FDataTableRowHandle& Handle, RowT& OutStats, const TCHAR*& OutFailureReason)
 	{
+		OutFailureReason = nullptr;
 		if (!Handle.DataTable)
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::MissingTable, TEXT("MissingTable"));
+			OutFailureReason = TEXT("MissingTable");
+			return ELSCombatStatsInitResult::MissingTable;
 		}
 		if (Handle.RowName.IsNone())
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::MissingRowName, TEXT("MissingRowName"));
+			OutFailureReason = TEXT("MissingRowName");
+			return ELSCombatStatsInitResult::MissingRowName;
 		}
 		if (Handle.DataTable->GetRowStruct() != RowT::StaticStruct())
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::WrongRowStruct, TEXT("WrongRowStruct"));
+			OutFailureReason = TEXT("WrongRowStruct");
+			return ELSCombatStatsInitResult::WrongRowStruct;
 		}
 		const RowT* Row = Handle.DataTable->FindRow<RowT>(Handle.RowName, TEXT("LSCombatStats::TryReadRow"), false);
 		if (!Row)
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::RowNotFound, TEXT("RowNotFound"));
+			OutFailureReason = TEXT("RowNotFound");
+			return ELSCombatStatsInitResult::RowNotFound;
 		}
 
 		const RowT Candidate = *Row;
 		if (const TCHAR* Reason = Validate(Candidate))
 		{
-			return ReportFailure(Handle, Owner, ELSCombatStatsInitResult::InvalidValue, Reason);
+			OutFailureReason = Reason;
+			return ELSCombatStatsInitResult::InvalidValue;
 		}
 		OutStats = Candidate;
 		return ELSCombatStatsInitResult::Success;
+	}
+
+	template <typename RowT>
+	ELSCombatStatsInitResult TryReadRow(const FDataTableRowHandle& Handle, const UObject* Owner, RowT& OutStats)
+	{
+		const TCHAR* FailureReason = nullptr;
+		const ELSCombatStatsInitResult Result = InspectRow(Handle, OutStats, FailureReason);
+		return Result == ELSCombatStatsInitResult::Success
+			? Result : ReportFailure(Handle, Owner, Result, FailureReason);
 	}
 }

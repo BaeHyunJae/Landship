@@ -1,12 +1,18 @@
 #include "Castle/LSCastle.h"
 
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSHealthComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Misc/DataValidation.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
 
 ALSCastle::ALSCastle()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	SetRootComponent(Collision);
 	Collision->SetBoxExtent(FVector(100.0f));
@@ -17,7 +23,13 @@ ALSCastle::ALSCastle()
 void ALSCastle::BeginPlay()
 {
 	// 소유 컴포넌트와 Blueprint의 BeginPlay보다 먼저 조회 결과를 확정한다.
+	bFactionLocked = true;
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
+	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
+		FLSPrepareCombatDeath::CreateUObject(this, &ALSCastle::PrepareForDeath), GetCombatConfigurationError()))
+	{
+		NeutralizeCombat();
+	}
 	if (IsStatsInitialized())
 	{
 		UE_LOGFMT(LogLSCombatStats, Display,
@@ -39,4 +51,74 @@ bool ALSCastle::TryGetStats(FLSCastleStatRow& OutStats) const
 	OutStats = Stats;
 	return true;
 }
+
+
+void ALSCastle::SetInitialFaction(ELSFaction InFaction)
+{
+	if (!ensureAlwaysMsgf(!bFactionLocked, TEXT("[LSCastle::SetInitialFaction] Faction is locked: Owner=%s"), *GetPathName()))
+	{
+		return;
+	}
+	Faction = InFaction;
+}
+
+FString ALSCastle::GetCombatConfigurationError() const
+{
+	if (!LSFaction::IsValid(Faction))
+	{
+		return TEXT("Invalid faction");
+	}
+	TInlineComponentArray<ULSHealthComponent*> HealthComponents(this);
+	if (HealthComponents.Num() != 1 || HealthComponents[0] != Health)
+	{
+		return TEXT("Exactly one owned health subobject is required");
+	}
+	return FString();
+}
+
+void ALSCastle::NeutralizeCombat()
+{
+	if (AController* CastleController = GetController())
+	{
+		CastleController->StopMovement();
+	}
+	if (UPawnMovementComponent* Movement = GetMovementComponent())
+	{
+		Movement->StopMovementImmediately();
+		Movement->Deactivate();
+	}
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		Primitive->SetCanEverAffectNavigation(false);
+		Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
+void ALSCastle::PrepareForDeath()
+{
+	NeutralizeCombat();
+}
+
+#if WITH_EDITOR
+EDataValidationResult ALSCastle::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+	FLSCastleStatRow InspectedStats;
+	const TCHAR* FailureReason = nullptr;
+	if (LSCombatStats::InspectRow(StatsRow, InspectedStats, FailureReason) != ELSCombatStatsInitResult::Success)
+	{
+		Context.AddError(FText::FromString(FString::Printf(TEXT("%s: StatsRow Table=%s Row=%s Reason=%s"),
+			*GetPathName(), *GetPathNameSafe(StatsRow.DataTable), *StatsRow.RowName.ToString(), FailureReason)));
+		Result = EDataValidationResult::Invalid;
+	}
+	const FString ConfigurationError = GetCombatConfigurationError();
+	if (!ConfigurationError.IsEmpty())
+	{
+		Context.AddError(FText::FromString(FString::Printf(TEXT("%s: %s"), *GetPathName(), *ConfigurationError)));
+		Result = EDataValidationResult::Invalid;
+	}
+	return Result;
+}
+#endif
 
