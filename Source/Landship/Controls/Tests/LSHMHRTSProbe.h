@@ -9,16 +9,20 @@ UCLASS(NotBlueprintable)
 class ALSHMHRTSProbe : public AActor
 {
 	GENERATED_BODY()
-public:
+  public:
 	ALSHMHRTSProbe();
 	virtual void Tick(float DeltaSeconds) override;
-protected:
+
+  protected:
 	virtual void BeginPlay() override;
-private:
+
+  private:
 	void Check(bool bPassed, const TCHAR* Message);
 	void Finish();
 	void SetStage(int32 NewStage);
 	void HoldTestEnemy(ALSHMHRTSUnit* Unit);
+	float ReadHealth(const AActor* Unit);
+	void ApplyTestDamage(AActor* Target, AActor* Source, float Damage);
 	UPROPERTY(Transient)
 	TObjectPtr<ALSHMHRTSUnit> Ally;
 	UPROPERTY(Transient)

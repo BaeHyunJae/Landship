@@ -24,11 +24,11 @@ def ensure_actor(label, cls, location):
 
 for i, point in enumerate([(-1000, -500, 96), (-850, -250, 96), (-900, 50, 96), (-1050, 250, 96)]):
     unit = ensure_actor('HMH_RTS_Ally_' + str(i), unit_class, point)
-    unit.set_editor_property('test_team', 0)
+    unit.set_editor_property('faction', unreal.LSFaction.ALLY)
     unit.set_editor_property('tags', [unreal.Name('RTSAlly' + str(i))])
 for i, point in enumerate([(700, -500, 96), (900, 300, 96)]):
     unit = ensure_actor('HMH_RTS_Enemy_' + str(i), unit_class, point)
-    unit.set_editor_property('test_team', 1)
+    unit.set_editor_property('faction', unreal.LSFaction.ENEMY)
     unit.set_editor_property('tags', [unreal.Name('RTSEnemy' + str(i))])
 ensure_actor('HMH_RTS_Probe', probe_class, (0, 0, 0))
 for actor in actors.get_all_level_actors():

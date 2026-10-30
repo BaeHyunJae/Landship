@@ -13,7 +13,6 @@
 #include "Widgets/SViewport.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSRTSHUD.h"
-#include "Combat/LSBasicAttackParticipant.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "InputKeyEventArgs.h"

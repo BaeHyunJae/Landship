@@ -12,15 +12,21 @@ bool ULSCombatTargetLibrary::CanAutoAttackTarget(const AActor* Source, const AAc
 	}
 	const ILSFactionInterface* SourceFaction = Cast<ILSFactionInterface>(Source);
 	const ILSFactionInterface* TargetFaction = Cast<ILSFactionInterface>(Target);
-	if (!SourceFaction || !TargetFaction || !LSFaction::IsValid(SourceFaction->GetFaction())
-		|| !LSFaction::IsValid(TargetFaction->GetFaction()) || SourceFaction->GetFaction() == TargetFaction->GetFaction())
+	if (!SourceFaction || !TargetFaction || !LSFaction::IsValid(SourceFaction->GetFaction()) ||
+	    !LSFaction::IsValid(TargetFaction->GetFaction()) || SourceFaction->GetFaction() == TargetFaction->GetFaction())
 	{
 		return false;
 	}
-	const ULSHealthComponent* SourceHealth = Source->FindComponentByClass<ULSHealthComponent>();
-	const ULSHealthComponent* TargetHealth = Target->FindComponentByClass<ULSHealthComponent>();
-	FLSHealthSnapshot SourceState;
-	FLSHealthSnapshot TargetState;
-	return SourceHealth && TargetHealth && SourceHealth->TryGetHealth(SourceState)
-		&& TargetHealth->TryGetHealth(TargetState) && !SourceState.bIsDead && !TargetState.bIsDead;
+	return IsCombatAlive(Source) && IsCombatAlive(Target);
+}
+
+bool ULSCombatTargetLibrary::IsCombatAlive(const AActor* Target)
+{
+	if (!IsValid(Target) || Target->IsActorBeingDestroyed())
+	{
+		return false;
+	}
+	const ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
+	FLSHealthSnapshot Snapshot;
+	return Health && Health->TryGetHealth(Snapshot) && !Snapshot.bIsDead;
 }

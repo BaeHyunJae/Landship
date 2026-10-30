@@ -5,6 +5,9 @@
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSRTSCameraPawn.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSHealthComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Misc/CommandLine.h"
@@ -123,7 +126,7 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 				      TEXT("부대 두 번 선택 시 화면 복귀"));
 			}
 		}
-		PreviousHealth = Enemy->TestHealth;
+		PreviousHealth = ReadHealth(Enemy);
 		FLSOrder Move;
 		Move.Kind = ELSOrderKind::Move;
 		Move.Destination = FVector(1100, -600, 0);
@@ -139,8 +142,7 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 	else if (Stage == 1 && Ally->Orders->GetOrderKind() == ELSOrderKind::Idle && Ally->Orders->GetQueuedCount() == 0)
 	{
 		Check(FVector::Dist2D(Ally->GetActorLocation(), FinalGoal) < 130, TEXT("장애물 우회와 예약 경유지 도착"));
-		Check(Enemy->TestHealth == PreviousHealth, TEXT("일반 이동 중 공격하지 않음"));
-		Ally->TestHealth = 200;
+		Check(ReadHealth(Enemy) == PreviousHealth, TEXT("일반 이동 중 공격하지 않음"));
 		Enemy->SetActorLocation(Ally->GetActorLocation() + FVector(600, 0, 0));
 		FLSOrder Attack;
 		Attack.Kind = ELSOrderKind::AttackTarget;
@@ -149,10 +151,10 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 		Position = Ally->GetActorLocation();
 		SetStage(2);
 	}
-	else if (Stage == 2 && Enemy->TestHealth < PreviousHealth)
+	else if (Stage == 2 && ReadHealth(Enemy) < PreviousHealth)
 	{
 		Check(FVector::Dist2D(Position, Ally->GetActorLocation()) > 100, TEXT("지정 대상에게 접근 후 공격"));
-		PreviousHealth = Enemy->TestHealth;
+		PreviousHealth = ReadHealth(Enemy);
 		FLSOrder Move;
 		Move.Kind = ELSOrderKind::Move;
 		Move.Destination = FVector(650, 1100, 0);
@@ -162,31 +164,32 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 	}
 	else if (Stage == 3 && StageTime > 0.3f)
 	{
-		Check(Enemy->TestHealth == PreviousHealth, TEXT("교체 이후 추가 피해 없음"));
+		Check(ReadHealth(Enemy) == PreviousHealth, TEXT("교체 이후 추가 피해 없음"));
 		FLSOrder Hold;
 		Hold.Kind = ELSOrderKind::Hold;
 		Ally->Orders->SubmitOrder(Hold);
 		Position = Ally->GetActorLocation();
-		Enemy->SetActorLocation(Position + FVector(400, 0, 0));
-		PreviousHealth = Enemy->TestHealth;
+		Enemy->SetActorLocation(Position + FVector(Ally->BasicAttack->GetAttackSettings().Range + 140, 0, 0));
+		PreviousHealth = ReadHealth(Enemy);
 		SetStage(4);
 	}
 	else if (Stage == 4 && StageTime > 0.5f)
 	{
 		Check(FVector::Dist2D(Position, Ally->GetActorLocation()) < 5,
 		      TEXT("위치 사수는 사거리 밖 적을 추적하지 않음"));
-		Check(Enemy->TestHealth == PreviousHealth, TEXT("위치 사수 사거리 제한"));
-		Enemy->SetActorLocation(Position + FVector(180, 0, 0));
+		Check(ReadHealth(Enemy) == PreviousHealth, TEXT("위치 사수 사거리 제한"));
+		Enemy->SetActorLocation(Position + FVector(Ally->BasicAttack->GetAttackSettings().Range * 0.7f, 0, 0));
 		SetStage(5);
 	}
-	else if (Stage == 5 && Enemy->TestHealth < PreviousHealth)
+	else if (Stage == 5 && ReadHealth(Enemy) < PreviousHealth)
 	{
 		Check(FVector::Dist2D(Position, Ally->GetActorLocation()) < 5, TEXT("위치 사수는 이동 없이 사거리 안 적 공격"));
-		Enemy->TestHealth = 0;
-		Enemy->SetActorEnableCollision(false);
-		Ally->TestHealth = 200;
+		ApplyTestDamage(Enemy, Ally, ReadHealth(Enemy));
+		Check(!Enemy->Selection->IsSelectable(), TEXT("공통 사망 후 선택 차단"));
+		Check(Enemy->GetMesh()->IsSimulatingPhysics(), TEXT("공통 사망 훅의 인간형 랙돌 실행"));
+		Check(Enemy->GetLifeSpan() > 0, TEXT("공통 사망 후 제거 타이머 등록"));
 		SecondEnemy->SetActorLocation(Position + FVector(350, 0, 0));
-		SecondEnemy->TestHealth = 20;
+		ApplyTestDamage(SecondEnemy, Ally, ReadHealth(SecondEnemy) - Ally->BasicAttack->GetAttackSettings().Damage);
 		FinalGoal = Position + FVector(900, 300, 0);
 		FLSOrder Move;
 		Move.Kind = ELSOrderKind::AttackMove;
@@ -199,7 +202,8 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 	}
 	else if (Stage == 6 && Ally->Orders->GetOrderKind() == ELSOrderKind::Idle && Ally->Orders->GetQueuedCount() == 0)
 	{
-		Check(SecondEnemy->TestHealth <= 0, TEXT("공격 이동 도중 적 처치"));
+		Check(!ULSCombatTargetLibrary::IsCombatAlive(SecondEnemy),
+		      TEXT("공통 체력의 사망 판정으로 공격 이동 중 적 처치 확인"));
 		Check(FVector::Dist2D(Ally->GetActorLocation(), FinalGoal) < 130,
 		      TEXT("교전 종료 후 원래 목적지와 예약 목적지까지 이동"));
 		AActor* Building = GetWorld()->SpawnActor<AActor>();
@@ -246,7 +250,8 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 			BoundaryOrder.Destination = RawGoal;
 			if (!Ally->Orders->SubmitOrder(BoundaryOrder))
 			{
-				UE_LOG(LogTemp, Display, TEXT("HMH_BOUNDARY rejected raw=%s projected=%s agent=%s"), *RawGoal.ToString(), *Projected.Location.ToString(), *Ally->GetNavAgentLocation().ToString());
+				UE_LOG(LogTemp, Display, TEXT("HMH_BOUNDARY rejected raw=%s projected=%s agent=%s"),
+				       *RawGoal.ToString(), *Projected.Location.ToString(), *Ally->GetNavAgentLocation().ToString());
 				continue;
 			}
 			bFoundBoundary = true;
@@ -270,18 +275,22 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 		MoveOrder.Kind = ELSOrderKind::Move;
 		MoveOrder.Destination = FVector(500, 1000, 0);
 		Check(Ally->Orders->SubmitOrder(MoveOrder), TEXT("이전 요청 ID 재현용 이동"));
-		UPathFollowingComponent* PathFollowing = CastChecked<AAIController>(Ally->GetController())->GetPathFollowingComponent();
+		UPathFollowingComponent* PathFollowing =
+		    CastChecked<AAIController>(Ally->GetController())->GetPathFollowingComponent();
 		const FAIRequestID OldRequestId = PathFollowing->GetCurrentRequestId();
 		MoveOrder.Destination = FVector(800, 1000, 0);
 		Check(Ally->Orders->SubmitOrder(MoveOrder), TEXT("새 이동 요청으로 교체"));
-		PathFollowing->OnRequestFinished.Broadcast(OldRequestId, FPathFollowingResult(EPathFollowingResult::Success, 0));
+		PathFollowing->OnRequestFinished.Broadcast(OldRequestId,
+		                                           FPathFollowingResult(EPathFollowingResult::Success, 0));
 		SetStage(9);
 	}
 	else if (Stage == 9 && StageTime > 0.15f)
 	{
-		Check(Ally->Orders->GetOrderKind() == ELSOrderKind::Move, TEXT("예전 이동 완료 이벤트가 새 명령을 종료하지 않음"));
+		Check(Ally->Orders->GetOrderKind() == ELSOrderKind::Move,
+		      TEXT("예전 이동 완료 이벤트가 새 명령을 종료하지 않음"));
 		// 길 막힘 결과를 경로 추적 컴포넌트에 주입해 실패 처리 경로를 재현한다.
-		UPathFollowingComponent* PathFollowing = CastChecked<AAIController>(Ally->GetController())->GetPathFollowingComponent();
+		UPathFollowingComponent* PathFollowing =
+		    CastChecked<AAIController>(Ally->GetController())->GetPathFollowingComponent();
 		PathFollowing->OnPathFinished(FPathFollowingResult(EPathFollowingResult::Blocked, 0));
 		Check(!Ally->Orders->DidLastMovementSucceed(), TEXT("Blocked 결과를 도착 성공과 구분"));
 		SetStage(10);
@@ -289,6 +298,36 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 	else if (Stage == 10 && StageTime > 0.2f)
 	{
 		Check(Ally->Orders->GetOrderKind() == ELSOrderKind::Idle, TEXT("실패한 이동 명령 종료"));
+		SetStage(11);
+	}
+	else if (Stage == 11 && StageTime > 11.0f)
+	{
+		Check(!IsValid(Enemy) && !IsValid(SecondEnemy), TEXT("공통 10초 제거 정책으로 사망 유닛 제거"));
 		Finish();
 	}
+}
+
+float ALSHMHRTSProbe::ReadHealth(const AActor* Unit)
+{
+	const ULSHealthComponent* Health = IsValid(Unit) ? Unit->FindComponentByClass<ULSHealthComponent>() : nullptr;
+	FLSHealthSnapshot Snapshot;
+	if (!Health || !Health->TryGetHealth(Snapshot))
+	{
+		Check(false, TEXT("공통 체력 스냅샷 조회 실패"));
+		return 0.0f;
+	}
+	return Snapshot.CurrentHealth;
+}
+
+void ALSHMHRTSProbe::ApplyTestDamage(AActor* Target, AActor* Source, float Damage)
+{
+	ULSHealthComponent* Health = IsValid(Target) ? Target->FindComponentByClass<ULSHealthComponent>() : nullptr;
+	if (!Health)
+	{
+		Check(false, TEXT("공통 피해 대상 체력 없음"));
+		return;
+	}
+	const FLSApplyDamageResult Result =
+	    Health->ApplyDamage(ULSHealthComponent::MakeDamageRequest(Damage, Source, Source));
+	Check(Result.Status == ELSApplyDamageStatus::Applied, TEXT("시나리오 준비 피해를 공통 API로 적용"));
 }

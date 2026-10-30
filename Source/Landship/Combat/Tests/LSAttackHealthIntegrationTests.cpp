@@ -1,7 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Combat/LSBasicAttackComponent.h"
-#include "Combat/LSBasicAttackParticipant.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -66,11 +65,10 @@ bool FLSAttackHealthIntegrationTest::RunTest(const FString& Parameters)
 	Outpost->Orders->SetComponentTickEnabled(false);
 	TestTrue(TEXT("아군 병력 조작 가능"), Source->Selection->CanPlayerControl());
 	TestFalse(TEXT("적 병력은 정보 확인만 가능"), Enemy->Selection->CanPlayerControl());
-	TestTrue(TEXT("성 체력 조회 연결"), ILSBasicAttackParticipant::Execute_IsCombatAlive(Castle));
-	TestTrue(TEXT("거점 체력 조회 연결"), ILSBasicAttackParticipant::Execute_IsCombatAlive(Outpost));
-	TestFalse(TEXT("같은 진영 성 자동 표적 제외"),
-	          ILSBasicAttackParticipant::Execute_CanReceiveBasicAttack(Castle, Source));
-	TestTrue(TEXT("적 거점 자동 표적 허용"), ILSBasicAttackParticipant::Execute_CanReceiveBasicAttack(Outpost, Source));
+	TestTrue(TEXT("성 체력 조회 연결"), ULSCombatTargetLibrary::IsCombatAlive(Castle));
+	TestTrue(TEXT("거점 체력 조회 연결"), ULSCombatTargetLibrary::IsCombatAlive(Outpost));
+	TestFalse(TEXT("같은 진영 성 자동 표적 제외"), ULSCombatTargetLibrary::CanAutoAttackTarget(Source, Castle));
+	TestTrue(TEXT("적 거점 자동 표적 허용"), ULSCombatTargetLibrary::CanAutoAttackTarget(Source, Outpost));
 	ULSBasicAttackComponent* Attack = Source->FindComponentByClass<ULSBasicAttackComponent>();
 	FLSBasicAttackSettings Settings;
 	Settings.Damage = 10;
@@ -93,12 +91,10 @@ bool FLSAttackHealthIntegrationTest::RunTest(const FString& Parameters)
 	FLSHealthSnapshot After;
 	EnemyHealth->TryGetHealth(After);
 	TestEqual(TEXT("팀원 체력 컴포넌트에서 피해 차감"), After.CurrentHealth, Before.CurrentHealth - 10);
-	float Current = -1;
-	float Maximum = -1;
-	TestTrue(TEXT("HUD 조회 인터페이스 연결"),
-	         ILSBasicAttackParticipant::Execute_GetCombatHealth(Enemy, Current, Maximum));
-	TestEqual(TEXT("HUD 체력과 실제 체력 일치"), Current, After.CurrentHealth);
-	TestEqual(TEXT("HUD 최대 체력 일치"), Maximum, After.MaxHealth);
+	FLSHealthSnapshot DisplaySnapshot;
+	TestTrue(TEXT("HUD와 동일한 공통 스냅샷 조회"), EnemyHealth->TryGetHealth(DisplaySnapshot));
+	TestEqual(TEXT("HUD 체력과 실제 체력 일치"), DisplaySnapshot.CurrentHealth, After.CurrentHealth);
+	TestEqual(TEXT("HUD 최대 체력 일치"), DisplaySnapshot.MaxHealth, After.MaxHealth);
 	TestTrue(TEXT("사망 처리 전 적 공격 활성화"), Enemy->BasicAttack->StartAttack(Source));
 	EnemyHealth->ApplyDamage(ULSHealthComponent::MakeDamageRequest(After.MaxHealth, Source, Source));
 	TestFalse(TEXT("사망 대상 선택 제외"), Enemy->Selection->IsSelectable());

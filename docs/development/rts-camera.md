@@ -25,7 +25,7 @@ BoundsMin/Max는 카메라가 바라보는 초점의 XY 경계다. 현재 기본
 ## 검증 결과와 남은 확인
 
 - Development Editor 빌드 성공.
-- `Landship` 자동 검사 13개 통과. 카메라 검사 2개와 기존 전투·기반 검사 11개다.
+- 공통 전투 코드 교체 후 `Landship` 자동 검사 31개 통과. 카메라 검사 2개도 포함된다. 최신 결과는 `Saved/Automation/CommonCombatReplacement/index.json`을 따른다.
 - BoundsAndMovement: 기본 GameMode 연결, 화면 기준 이동, 대각선 속도, 초점 경계·높이, 최소·최대 줌, 잘못된 입력 거부, 드래그 방향 검사.
 - EdgeInput: 중앙·양 모서리·창 밖·최소화·가장자리 이동 비활성 설정 검사.
 - HMH 실제 실행에서 새 카메라 시점과 마우스 휠 줌 확인.

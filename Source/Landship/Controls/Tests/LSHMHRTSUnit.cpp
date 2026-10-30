@@ -1,23 +1,37 @@
 #include "Controls/Tests/LSHMHRTSUnit.h"
-#include "Controls/LSSelectableComponent.h"
+
 #include "Combat/LSBasicAttackComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "Components/TextRenderComponent.h"
+#include "Combat/LSHealthComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Engine/StaticMesh.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/TextRenderComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
 
 ALSHMHRTSUnit::ALSHMHRTSUnit()
 {
-	UStaticMeshComponent* Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TestBody"));
-	Body->SetupAttachment(RootComponent);
-	Body->SetRelativeScale3D(FVector(0.65f, 0.65f, 1.2f));
-	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Body->SetCanEverAffectNavigation(false);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	Body->SetStaticMesh(Cube.Object);
+	static ConstructorHelpers::FObjectFinder<UDataTable> UnitStats(
+	    TEXT("/Game/Landship/Combat/Data/DT_UnitStats.DT_UnitStats"));
+	StatsRow.DataTable = UnitStats.Object;
+	StatsRow.RowName = TEXT("PrototypeTest");
+	// PR의 인간형 예시와 같은 메시·Physics Asset을 사용한다. 사망 물리는 부모가 수행한다.
+	static ConstructorHelpers::FClassFinder<ALSUnit> Humanoid(TEXT("/Game/Developers/BHJ/CombatStats/BP_TestHumanoid"));
+	if (Humanoid.Class)
+	{
+		const ALSUnit* Template = Humanoid.Class->GetDefaultObject<ALSUnit>();
+		const USkeletalMeshComponent* TemplateMesh = Template->GetMesh();
+		GetMesh()->SetSkeletalMeshAsset(TemplateMesh->GetSkeletalMeshAsset());
+		GetMesh()->SetPhysicsAsset(TemplateMesh->GetPhysicsAsset());
+		GetMesh()->SetRelativeTransform(TemplateMesh->GetRelativeTransform());
+		for (int32 Index = 0; Index < TemplateMesh->GetNumMaterials(); ++Index)
+		{
+			GetMesh()->SetMaterial(Index, TemplateMesh->GetMaterial(Index));
+		}
+	}
+	bUseRagdoll = true;
 	GetCapsuleComponent()->SetCanEverAffectNavigation(false);
+	GetMesh()->SetCanEverAffectNavigation(false);
 	UTextRenderComponent* Label = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TestLabel"));
 	Label->SetupAttachment(RootComponent);
 	Label->SetRelativeLocation(FVector(0, 0, 100));
@@ -28,62 +42,31 @@ ALSHMHRTSUnit::ALSHMHRTSUnit()
 
 void ALSHMHRTSUnit::BeginPlay()
 {
-	UDataTable* Table = NewObject<UDataTable>(this);
-	Table->RowStruct = FLSUnitStatRow::StaticStruct();
-	FLSUnitStatRow Row;
-	Row.Health = 200;
-	Row.AttackPower = 20;
-	Row.AttackInterval = 0.4f;
-	Row.AttackRange = 260;
-	Row.DetectionRange = 650;
-	Row.VisionRadius = 1800;
-	Row.MovementSpeed = 400;
-	Table->AddRow(TEXT("RTSTest"), Row);
-	StatsRow.DataTable = Table;
-	StatsRow.RowName = TEXT("RTSTest");
-	SetInitialFaction(TestTeam == 0 ? ELSFaction::Ally : ELSFaction::Enemy);
-	Selection->SetPlayerControlled(TestTeam == 0);
+	Super::BeginPlay();
 	if (UTextRenderComponent* Label = FindComponentByClass<UTextRenderComponent>())
 	{
-		Label->SetText(FText::FromString(TestTeam == 0 ? TEXT("ALLY TEST") : TEXT("ENEMY TEST")));
-		Label->SetTextRenderColor(TestTeam == 0 ? FColor::Cyan : FColor::Red);
+		const bool bAlly = GetFaction() == ELSFaction::Ally;
+		Label->SetText(FText::FromString(bAlly ? TEXT("ALLY") : TEXT("ENEMY")));
+		Label->SetTextRenderColor(bAlly ? FColor::Cyan : FColor::Red);
 	}
-	Super::BeginPlay();
 	BasicAttack->OnAttackPerformed.AddDynamic(this, &ALSHMHRTSUnit::ObserveAttack);
+	Health->OnDiedEvent.AddDynamic(this, &ALSHMHRTSUnit::ObserveDeath);
 }
 
-bool ALSHMHRTSUnit::IsCombatAlive_Implementation() const { return TestHealth > 0; }
-
-bool ALSHMHRTSUnit::CanReceiveBasicAttack_Implementation(AActor* Attacker) const
+void ALSHMHRTSUnit::ObserveDeath(const FLSDamageResult& Damage)
 {
-	const ALSHMHRTSUnit* Source = Cast<ALSHMHRTSUnit>(Attacker);
-	return Source && Source->TestTeam != TestTeam && Source->TestHealth > 0 && TestHealth > 0;
-}
-
-float ALSHMHRTSUnit::ReceiveBasicAttack_Implementation(AActor* Attacker, float Damage)
-{
-	if (!CanReceiveBasicAttack_Implementation(Attacker) || !FMath::IsFinite(Damage) || Damage <= 0) { return 0; }
-	const float Applied = FMath::Min(TestHealth, Damage);
-	TestHealth -= Applied;
-	if (TestHealth <= 0)
+	// 체력이나 충돌은 수정하지 않고 공통 사망 알림의 표시만 담당한다.
+	if (UTextRenderComponent* Label = FindComponentByClass<UTextRenderComponent>())
 	{
-		SetActorEnableCollision(false);
-		if (UTextRenderComponent* Label = FindComponentByClass<UTextRenderComponent>()) { Label->SetText(FText::FromString(TEXT("DEAD TEST"))); }
+		Label->SetText(FText::FromString(TEXT("DEAD")));
 	}
-	return Applied;
-}
-
-bool ALSHMHRTSUnit::GetCombatHealth_Implementation(float& Current, float& Maximum) const
-{
-	Current = TestHealth;
-	Maximum = 200;
-	return true;
 }
 
 void ALSHMHRTSUnit::ObserveAttack(AActor* Target, float AppliedDamage)
 {
 	if (IsValid(Target))
 	{
-		DrawDebugLine(GetWorld(), GetActorLocation(), Target->GetActorLocation(), TestTeam == 0 ? FColor::Cyan : FColor::Red, false, 0.15f, 0, 3);
+		DrawDebugLine(GetWorld(), GetActorLocation(), Target->GetActorLocation(),
+		              GetFaction() == ELSFaction::Ally ? FColor::Cyan : FColor::Red, false, 0.15f, 0, 3);
 	}
 }

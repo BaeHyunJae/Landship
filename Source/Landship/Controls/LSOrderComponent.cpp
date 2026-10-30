@@ -1,6 +1,6 @@
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
-#include "Combat/LSBasicAttackParticipant.h"
+#include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Troops/LSUnit.h"
@@ -34,13 +34,15 @@ bool ULSOrderComponent::CanAttack() const
 {
 	const ULSBasicAttackComponent* Component =
 	    GetOwner() ? GetOwner()->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
-	return Component && Component->IsConfigured() && GetOwner()->Implements<ULSBasicAttackParticipant>()
-		&& ILSBasicAttackParticipant::Execute_IsCombatAlive(GetOwner());
+	return Component && Component->IsConfigured() && ULSCombatTargetLibrary::IsCombatAlive(GetOwner());
 }
 
 bool ULSOrderComponent::CanMove() const
 {
-	if (GetOwner()->Implements<ULSBasicAttackParticipant>() && !ILSBasicAttackParticipant::Execute_IsCombatAlive(GetOwner())) { return false; }
+	if (!ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
+	{
+		return false;
+	}
 	FLSUnitStatRow UnitStats;
 	if (const ALSUnit* Unit = Cast<ALSUnit>(GetOwner());
 	    Unit && (!Unit->TryGetStats(UnitStats) || UnitStats.MovementSpeed <= 0))
@@ -245,10 +247,7 @@ bool ULSOrderComponent::IsMoving() const
 
 bool ULSOrderComponent::IsHostile(AActor* Target) const
 {
-	return IsValid(Target) && !Target->IsActorBeingDestroyed() && Target != GetOwner() &&
-	       Target->Implements<ULSBasicAttackParticipant>() &&
-	       ILSBasicAttackParticipant::Execute_IsCombatAlive(Target) &&
-	       ILSBasicAttackParticipant::Execute_CanReceiveBasicAttack(Target, GetOwner());
+	return ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Target);
 }
 
 bool ULSOrderComponent::IsInAttackRange(AActor* Target) const
@@ -361,8 +360,7 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	{
 		return;
 	}
-	if (GetOwner()->Implements<ULSBasicAttackParticipant>() &&
-	    !ILSBasicAttackParticipant::Execute_IsCombatAlive(GetOwner()))
+	if (!ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
 		PendingOrders.Reset();
 		BeginOrder(FLSOrder());

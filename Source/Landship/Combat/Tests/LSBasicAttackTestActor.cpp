@@ -1,7 +1,7 @@
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 
 #include "Combat/LSBasicAttackComponent.h"
-#include "Components/SceneComponent.h"
+#include "Combat/LSHealthComponent.h"
 #include "Components/SphereComponent.h"
 #include "Combat/LSCollisionChannels.h"
 
@@ -14,29 +14,48 @@ ALSBasicAttackTestActor::ALSBasicAttackTestActor()
 	Collision->SetCollisionObjectType(LSCollisionChannels::Unit);
 	Collision->SetCollisionResponseToAllChannels(ECR_Overlap);
 	Attack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("Attack"));
+	HealthComponent = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
 }
 
-bool ALSBasicAttackTestActor::IsCombatAlive_Implementation() const
+void ALSBasicAttackTestActor::SetInitialFaction(ELSFaction InFaction)
 {
-	return Health > 0.0f;
-}
-
-bool ALSBasicAttackTestActor::CanReceiveBasicAttack_Implementation(AActor* Attacker) const
-{
-	const ALSBasicAttackTestActor* Source = Cast<ALSBasicAttackTestActor>(Attacker);
-	return Source && Source->Team != Team && !bImmune;
-}
-
-float ALSBasicAttackTestActor::ReceiveBasicAttack_Implementation(AActor* Attacker, float Damage)
-{
-	if (!IsCombatAlive_Implementation() || !CanReceiveBasicAttack_Implementation(Attacker))
+	if (!ensureAlwaysMsgf(!bFactionLocked, TEXT("Test faction is locked")))
 	{
-		return 0.0f;
+		return;
 	}
-	const float Applied = FMath::Min(Health, Damage);
-	Health -= Applied;
+	Faction = InFaction;
+}
+
+void ALSBasicAttackTestActor::BeginPlay()
+{
+	bFactionLocked = true;
+	HealthComponent->InitializeHealth(
+	    ELSCombatStatsInitResult::Success, 100.0f,
+	    FLSPrepareCombatDeath::CreateUObject(this, &ALSBasicAttackTestActor::PrepareForDeath), FString());
+	HealthComponent->OnDamagedEvent.AddDynamic(this, &ALSBasicAttackTestActor::ObserveDamage);
+	HealthComponent->OnDiedEvent.AddDynamic(this, &ALSBasicAttackTestActor::ObserveDamage);
+	Super::BeginPlay();
+}
+
+float ALSBasicAttackTestActor::GetCurrentHealth() const
+{
+	FLSHealthSnapshot Snapshot;
+	return HealthComponent->TryGetHealth(Snapshot) ? Snapshot.CurrentHealth : 0.0f;
+}
+
+FLSApplyDamageResult ALSBasicAttackTestActor::ApplyTestDamage(float Amount, AActor* Source)
+{
+	return HealthComponent->ApplyDamage(ULSHealthComponent::MakeDamageRequest(Amount, Source, Source));
+}
+
+void ALSBasicAttackTestActor::PrepareForDeath()
+{
+	Attack->StopAttack();
+}
+
+void ALSBasicAttackTestActor::ObserveDamage(const FLSDamageResult& Damage)
+{
 	++HitsReceived;
-	return Applied;
 }
 
 void ALSBasicAttackTestActor::ObserveAttack(AActor* Target, float AppliedDamage)

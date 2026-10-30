@@ -13,6 +13,10 @@
 ALSHMHMovementCastle::ALSHMHMovementCastle()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	static ConstructorHelpers::FObjectFinder<UDataTable> CastleStats(
+	    TEXT("/Game/Landship/Combat/Data/DT_CastleStats.DT_CastleStats"));
+	StatsRow.DataTable = CastleStats.Object;
+	StatsRow.RowName = TEXT("PrototypeTest");
 	UStaticMeshComponent* Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TestCastleMesh"));
 	Mesh->SetupAttachment(RootComponent);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -24,16 +28,6 @@ ALSHMHMovementCastle::ALSHMHMovementCastle()
 
 void ALSHMHMovementCastle::BeginPlay()
 {
-	// 개인 테스트 맵에서만 유효한 수치를 공급하여 공용 데이터 에셋을 수정하지 않는다.
-	UDataTable* Table = NewObject<UDataTable>(this);
-	Table->RowStruct = FLSCastleStatRow::StaticStruct();
-	FLSCastleStatRow Row;
-	Row.Health = 100.0f;
-	Row.VisionRadius = 1500.0f;
-	Row.MovementSpeed = 400.0f;
-	Table->AddRow(TEXT("MovementTest"), Row);
-	StatsRow.DataTable = Table;
-	StatsRow.RowName = TEXT("MovementTest");
 	Super::BeginPlay();
 	if (UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
 	{
@@ -81,7 +75,10 @@ void ALSHMHMovementCastle::Tick(float DeltaSeconds)
 	if (Stage == 0 && StageTime > 1.0f)
 	{
 		Check(!IsMoving(), TEXT("시작 시 정지"));
-		Check(Cast<UFloatingPawnMovement>(GetMovementComponent())->MaxSpeed == 400.0f, TEXT("행의 이동 속도 반영"));
+		FLSCastleStatRow ExpectedStats;
+		Check(TryGetStats(ExpectedStats) &&
+		          Cast<UFloatingPawnMovement>(GetMovementComponent())->MaxSpeed == ExpectedStats.MovementSpeed,
+		      TEXT("공식 DataTable 행의 이동 속도 반영"));
 		Check(RequestMove(Start + FVector(1400, 0, -100)), TEXT("최초 경로 요청"));
 		Check(IsMoving(), TEXT("요청 후 이동 상태"));
 		Stage = 1;

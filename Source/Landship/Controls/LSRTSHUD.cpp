@@ -2,7 +2,7 @@
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
-#include "Combat/LSBasicAttackParticipant.h"
+#include "Combat/LSHealthComponent.h"
 #include "Engine/Canvas.h"
 
 FBox2D ALSRTSHUD::InfoPanel() const
@@ -145,17 +145,16 @@ void ALSRTSHUD::DrawHUD()
 				DrawLine(A.X, A.Y, B.X, B.Y, bControlled ? FLinearColor::Green : FLinearColor::Red, 2);
 			}
 		}
-		float Current = 0;
-		float Max = 0;
+		FLSHealthSnapshot HealthSnapshot;
+		const ULSHealthComponent* Health = Actor->FindComponentByClass<ULSHealthComponent>();
 		FVector2D Screen;
-		if (Actor->Implements<ULSBasicAttackParticipant>() &&
-		    ILSBasicAttackParticipant::Execute_GetCombatHealth(Actor, Current, Max) && Max > 0 &&
+		if (Health && Health->TryGetHealth(HealthSnapshot) && HealthSnapshot.MaxHealth > 0 &&
 		    Controller->ProjectWorldLocationToScreen(Actor->GetActorLocation() + FVector(0, 0, HalfHeight + 20),
 		                                             Screen))
 		{
 			DrawRect(FLinearColor::Black, Screen.X - 30, Screen.Y, 60, 6);
 			DrawRect(bControlled ? FLinearColor::Green : FLinearColor::Red, Screen.X - 29, Screen.Y + 1,
-			         58 * FMath::Clamp(Current / Max, 0.0f, 1.0f), 4);
+			         58 * FMath::Clamp(HealthSnapshot.CurrentHealth / HealthSnapshot.MaxHealth, 0.0f, 1.0f), 4);
 		}
 	}
 	for (const FBox2D& Box : {InfoPanel(), CommandPanel()})
@@ -170,11 +169,12 @@ void ALSRTSHUD::DrawHUD()
 		const bool bControlled = First->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl();
 		DrawText(First->GetName() + (bControlled ? TEXT(" [CONTROL]") : TEXT(" [INSPECT ONLY]")), FLinearColor::White,
 		         Info.X, Info.Y + 22);
-		float Current = 0;
-		float Max = 0;
-		const bool bHealth = First->Implements<ULSBasicAttackParticipant>() &&
-		                     ILSBasicAttackParticipant::Execute_GetCombatHealth(First, Current, Max);
-		DrawText(bHealth ? FString::Printf(TEXT("HP %.0f / %.0f"), Current, Max) : TEXT("HP: -- (not connected)"),
+		FLSHealthSnapshot HealthSnapshot;
+		const ULSHealthComponent* Health = First->FindComponentByClass<ULSHealthComponent>();
+		const bool bHealth = Health && Health->TryGetHealth(HealthSnapshot);
+		DrawText(bHealth
+		             ? FString::Printf(TEXT("HP %.0f / %.0f"), HealthSnapshot.CurrentHealth, HealthSnapshot.MaxHealth)
+		             : TEXT("HP: -- (not connected)"),
 		         FLinearColor::White, Info.X, Info.Y + 44);
 		if (const ULSOrderComponent* Orders = First->FindComponentByClass<ULSOrderComponent>())
 		{
