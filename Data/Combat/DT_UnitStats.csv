@@ -1,0 +1,2 @@
+Name,Health,AttackPower,AttackInterval,AttackRange,DetectionRange,VisionRadius,MovementSpeed
+PrototypeTest,111,12,1.25,450,600,900,300
