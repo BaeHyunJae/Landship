@@ -130,5 +130,58 @@ bool FLSCombatDeadRepossessTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCombatDeathHookLifetimeTest, "Landship.Combat.Review.DeathHookLifetime",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSCombatDeathHookLifetimeTest::RunTest(const FString& Parameters)
+{
+	UClass* UnitClass = LoadClass<ALSUnit>(nullptr, TEXT("/Game/Developers/BHJ/CombatStats/BP_TestHumanoid.BP_TestHumanoid_C"));
+	if (!TestNotNull(TEXT("인간형 Blueprint"), UnitClass)) return false;
+	FTestWorldWrapper World;
+	if (!TestTrue(TEXT("게임 월드 생성"), World.CreateTestWorld(EWorldType::Game))) return false;
+	ALSUnit* Unit = SpawnReviewUnit(World.GetTestWorld(), UnitClass, FVector(0, 0, 500));
+	if (!TestNotNull(TEXT("콜백 대상 유닛"), Unit)) return false;
+	ULSHealthComponent* Health = Unit->FindComponentByClass<ULSHealthComponent>();
+	Health->bDestroyOnDeath = true;
+	Health->DestroyDelay = 10.0f;
+	if (!TestTrue(TEXT("게임 시작"), World.BeginPlayInTestWorld())) return false;
+	ULSHealthTestObserver* Observer = ReviewObserver(World.GetTestWorld(), Health);
+	bool bCollisionCallbackRan = false;
+	Observer->CollisionCallback = [&](UPrimitiveComponent* Component)
+	{
+		if (bCollisionCallbackRan) return;
+		bCollisionCallbackRan = true;
+		TestEqual(TEXT("충돌 해제 콜백에서 아직 공개 사망 알림 없음"), Observer->DeathResults.Num(), 0);
+		TestTrue(TEXT("네이티브 사망 처리 중 실제 소유자 제거"), Unit->Destroy());
+	};
+	Unit->GetCapsuleComponent()->OnComponentCollisionSettingsChangedEvent.AddDynamic(Observer, &ULSHealthTestObserver::OnCollisionChanged);
+	FLSHealthSnapshot Before;
+	TestTrue(TEXT("사망 전 체력 조회"), Health->TryGetHealth(Before));
+	const FLSApplyDamageResult Result = Health->ApplyDamage(ReviewDamage(100000.0f));
+	TestTrue(TEXT("실제 충돌 변경 콜백 실행"), bCollisionCallbackRan);
+	TestFalse(TEXT("콜백이 대상 수명을 종료함"), IsValid(Unit));
+	TestEqual(TEXT("이미 적용된 요청 상태 유지"), Result.Status, ELSApplyDamageStatus::Applied);
+	TestEqual(TEXT("이미 적용된 실제 감소량 유지"), Result.AppliedDamage, Before.CurrentHealth);
+	TestEqual(TEXT("훅 안에서 제거되면 늦은 공개 사망 알림 없음"), Observer->DeathResults.Num(), 0);
+	TestEqual(TEXT("제거된 대상의 새 수명 타이머 없음"), Unit->GetLifeSpan(), 0.0f);
+
+	AActor* Owner = World.GetTestWorld()->SpawnActor<AActor>();
+	ULSHealthComponent* Isolated = NewObject<ULSHealthComponent>(Owner);
+	Owner->AddInstanceComponent(Isolated);
+	Isolated->RegisterComponent();
+	Isolated->bDestroyOnDeath = true;
+	Isolated->DestroyDelay = 10.0f;
+	TestTrue(TEXT("독립 체력 준비"), Isolated->InitializeHealth(ELSCombatStatsInitResult::Success, 100.0f,
+		FLSPrepareCombatDeath::CreateLambda([Owner] { Owner->Destroy(); }), FString()));
+	ULSHealthTestObserver* IsolatedObserver = ReviewObserver(World.GetTestWorld(), Isolated);
+	const FLSApplyDamageResult IsolatedResult = Isolated->ApplyDamage(ReviewDamage(200.0f));
+	TestEqual(TEXT("독립 훅 제거도 원래 감소량 반환"), IsolatedResult.AppliedDamage, 100.0f);
+	TestFalse(TEXT("독립 훅에서 실제 제거됨"), IsValid(Owner));
+	TestEqual(TEXT("독립 훅 제거 후 공개 사망 알림 없음"), IsolatedObserver->DeathResults.Num(), 0);
+	TestEqual(TEXT("독립 훅 제거 후 타이머 없음"), Owner->GetLifeSpan(), 0.0f);
+	World.ForwardErrorMessages(this);
+	return true;
+}
+
 
 #endif

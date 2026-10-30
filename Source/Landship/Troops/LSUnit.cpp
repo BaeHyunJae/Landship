@@ -133,21 +133,44 @@ void ALSUnit::NeutralizeCombat()
 	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{
+		if (!IsValid(Primitive))
+		{
+			continue;
+		}
 		Primitive->SetCanEverAffectNavigation(false);
 		Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		// 충돌 변경은 동기 overlap 콜백에서 소유자를 제거하거나 월드를 종료할 수 있다.
+		if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
+		{
+			return;
+		}
 	}
 }
 
 void ALSUnit::PrepareForDeath()
 {
 	NeutralizeCombat();
+	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return;
+	}
 	if (bUseRagdoll)
 	{
 		USkeletalMeshComponent* UnitMesh = GetMesh();
+		const auto CanContinueRagdoll = [this, UnitMesh]
+		{
+			return IsValid(this) && !IsActorBeingDestroyed() && IsValid(UnitMesh)
+				&& GetWorld() && !GetWorld()->bIsTearingDown;
+		};
+		if (!CanContinueRagdoll()) { return; }
 		UnitMesh->SetCollisionObjectType(ECC_PhysicsBody);
+		if (!CanContinueRagdoll()) { return; }
 		UnitMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		if (!CanContinueRagdoll()) { return; }
 		UnitMesh->SetCollisionResponseToChannel(LSCollisionChannels::Ground, ECR_Block);
+		if (!CanContinueRagdoll()) { return; }
 		UnitMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		if (!CanContinueRagdoll()) { return; }
 		UnitMesh->SetSimulatePhysics(true);
 	}
 }

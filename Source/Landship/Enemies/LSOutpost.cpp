@@ -4,6 +4,7 @@
 #include "Combat/LSHealthComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
+#include "Engine/World.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
 
@@ -77,10 +78,35 @@ FString ALSOutpost::GetCombatConfigurationError() const
 
 void ALSOutpost::NeutralizeCombat()
 {
+	const auto CanContinue = [this]()
+	{
+		return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown;
+	};
+	if (!CanContinue())
+	{
+		return;
+	}
 	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{
+		if (!CanContinue())
+		{
+			return;
+		}
+		if (!IsValid(Primitive))
+		{
+			continue;
+		}
 		Primitive->SetCanEverAffectNavigation(false);
+		if (!CanContinue())
+		{
+			return;
+		}
+		if (!IsValid(Primitive))
+		{
+			continue;
+		}
+		// 충돌 변경 중 외부 콜백이 액터나 다른 컴포넌트를 제거할 수 있다.
 		Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 }

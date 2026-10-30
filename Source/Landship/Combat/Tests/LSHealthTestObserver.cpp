@@ -17,3 +17,11 @@ void ULSHealthTestObserver::OnDeath(const FLSDamageResult& Damage)
 		DeathCallback(Damage);
 	}
 }
+
+void ULSHealthTestObserver::OnCollisionChanged(UPrimitiveComponent* ChangedComponent)
+{
+	if (CollisionCallback)
+	{
+		CollisionCallback(ChangedComponent);
+	}
+}

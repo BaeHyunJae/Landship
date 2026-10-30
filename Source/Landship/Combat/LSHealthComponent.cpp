@@ -173,10 +173,16 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	}
 
 	// 상태 확정과 필수 처리가 끝난 대상만 공개 사망 알림에서 관찰할 수 있다.
-	PrepareDeathEvent.Execute();
 	TWeakObjectPtr<AActor> WeakOwner(GetOwner());
-	OnDiedEvent.Broadcast(Damage);
+	PrepareDeathEvent.Execute();
 	AActor* Owner = WeakOwner.Get();
+	// 필수 훅도 충돌 변경 콜백을 일으킨다. 그 안에서 끝난 수신자에게 공개 알림을 보내지 않는다.
+	if (!IsValid(this) || !IsValid(Owner) || Owner->IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return {ELSApplyDamageStatus::Applied, AppliedDamage};
+	}
+	OnDiedEvent.Broadcast(Damage);
+	Owner = WeakOwner.Get();
 	if (IsValid(this) && IsValid(Owner) && !Owner->IsActorBeingDestroyed()
 		&& GetWorld() && !GetWorld()->bIsTearingDown && bDestroyOnDeath)
 	{

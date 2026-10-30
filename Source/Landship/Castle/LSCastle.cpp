@@ -4,6 +4,7 @@
 #include "Combat/LSHealthComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
+#include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Components/BoxComponent.h"
@@ -78,19 +79,59 @@ FString ALSCastle::GetCombatConfigurationError() const
 
 void ALSCastle::NeutralizeCombat()
 {
+	const auto CanContinue = [this]()
+	{
+		return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown;
+	};
+	if (!CanContinue())
+	{
+		return;
+	}
 	if (AController* CastleController = GetController())
 	{
 		CastleController->StopMovement();
 	}
+	if (!CanContinue())
+	{
+		return;
+	}
 	if (UPawnMovementComponent* Movement = GetMovementComponent())
 	{
 		Movement->StopMovementImmediately();
-		Movement->Deactivate();
+		if (!CanContinue())
+		{
+			return;
+		}
+		if (IsValid(Movement))
+		{
+			Movement->Deactivate();
+		}
+	}
+	if (!CanContinue())
+	{
+		return;
 	}
 	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{
+		if (!CanContinue())
+		{
+			return;
+		}
+		if (!IsValid(Primitive))
+		{
+			continue;
+		}
 		Primitive->SetCanEverAffectNavigation(false);
+		if (!CanContinue())
+		{
+			return;
+		}
+		if (!IsValid(Primitive))
+		{
+			continue;
+		}
+		// 충돌 변경 중 외부 콜백이 액터나 다른 컴포넌트를 제거할 수 있다.
 		Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 }

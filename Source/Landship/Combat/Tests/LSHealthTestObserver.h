@@ -6,6 +6,8 @@
 #include "GameFramework/Actor.h"
 #include "LSHealthTestObserver.generated.h"
 
+class UPrimitiveComponent;
+
 /** 동적 알림을 실제 반영 함수로 받아 순서와 요청별 결과를 관찰한다. */
 UCLASS()
 class ULSHealthTestObserver : public UObject
@@ -16,12 +18,16 @@ public:
 	TArray<FLSDamageResult> DeathResults;
 	TFunction<void(const FLSDamageResult&)> DamageCallback;
 	TFunction<void(const FLSDamageResult&)> DeathCallback;
+	TFunction<void(UPrimitiveComponent*)> CollisionCallback;
 
 	UFUNCTION()
 	void OnDamage(const FLSDamageResult& Damage);
 
 	UFUNCTION()
 	void OnDeath(const FLSDamageResult& Damage);
+
+	UFUNCTION()
+	void OnCollisionChanged(UPrimitiveComponent* ChangedComponent);
 };
 
 /** 콘텐츠 수치나 BeginPlay에 의존하지 않고 진영과 피해의 경계를 검사한다. */
