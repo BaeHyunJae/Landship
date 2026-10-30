@@ -7,6 +7,7 @@
 #include "Enemies/LSOutpost.h"
 #include "Troops/LSUnit.h"
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSHealthComponent.h"
 #include "Components/PrimitiveComponent.h"
 
 namespace
@@ -45,6 +46,15 @@ bool CheckBlueprintTarget(FAutomationTestBase& Test, const TCHAR* BlueprintPath,
 	Test.TestEqual(TEXT("시작 전 미시도 상태"), Target->GetStatsInitResult(), ELSCombatStatsInitResult::NotAttempted);
 	Test.TestFalse(TEXT("시작 전 조회 거부"), Target->TryGetStats(Actual));
 	Test.TestEqual(TEXT("조회 실패 시 출력 유지"), Actual.Health, 4242.0f);
+	ULSHealthComponent* Health = Target->template FindComponentByClass<ULSHealthComponent>();
+	if (!Test.TestNotNull(TEXT("공통 체력 컴포넌트"), Health))
+	{
+		return false;
+	}
+	FLSHealthSnapshot HealthBeforePlay;
+	HealthBeforePlay.CurrentHealth = 4242.0f;
+	Test.TestFalse(TEXT("시작 전 체력 조회 거부"), Health->TryGetHealth(HealthBeforePlay));
+	Test.TestEqual(TEXT("시작 전 체력 조회 출력 유지"), HealthBeforePlay.CurrentHealth, 4242.0f);
 	const UPrimitiveComponent* Collision = Cast<UPrimitiveComponent>(Target->GetRootComponent());
 	if (Test.TestNotNull(TEXT("대상 충돌 루트"), Collision))
 	{
@@ -53,6 +63,7 @@ bool CheckBlueprintTarget(FAutomationTestBase& Test, const TCHAR* BlueprintPath,
 
 	bool bObservedPawnBeginPlay = false;
 	bool bReadyDuringPawnBeginPlay = false;
+	bool bHealthReadyDuringPawnBeginPlay = false;
 	FDelegateHandle ReadinessProbe;
 	if constexpr (TIsDerivedFrom<ActorT, APawn>::Value)
 	{
@@ -62,6 +73,8 @@ bool CheckBlueprintTarget(FAutomationTestBase& Test, const TCHAR* BlueprintPath,
 			{
 				bObservedPawnBeginPlay = true;
 				bReadyDuringPawnBeginPlay = Target->IsStatsInitialized();
+				FLSHealthSnapshot Snapshot;
+				bHealthReadyDuringPawnBeginPlay = Health->TryGetHealth(Snapshot) && Snapshot.CurrentHealth == Expected->Health;
 			}
 		});
 	}
@@ -77,8 +90,13 @@ bool CheckBlueprintTarget(FAutomationTestBase& Test, const TCHAR* BlueprintPath,
 	{
 		Test.TestTrue(TEXT("부모 BeginPlay 시점 관찰"), bObservedPawnBeginPlay);
 		Test.TestTrue(TEXT("부모 BeginPlay 안에서 이미 수치 준비됨"), bReadyDuringPawnBeginPlay);
+		Test.TestTrue(TEXT("부모 BeginPlay 안에서 이미 체력 준비됨"), bHealthReadyDuringPawnBeginPlay);
 	}
 	Test.TestTrue(TEXT("시작 후 수치 조회"), Target->TryGetStats(Actual));
+	FLSHealthSnapshot InitialHealth;
+	Test.TestTrue(TEXT("시작 후 체력 조회"), Health->TryGetHealth(InitialHealth));
+	Test.TestEqual(TEXT("초기 현재 체력 일치"), InitialHealth.CurrentHealth, Expected->Health);
+	Test.TestEqual(TEXT("초기 최대 체력 일치"), InitialHealth.MaxHealth, Expected->Health);
 	Test.TestTrue(TEXT("모든 필드가 테이블 행과 일치"), RowT::StaticStruct()->CompareScriptStruct(&Actual, Expected, 0));
 	// Blueprint에서 사용하는 동일한 반영 함수를 호출하여 노출 경로도 확인한다.
 	struct FIsInitializedParameters { bool ReturnValue = false; } Parameters;
