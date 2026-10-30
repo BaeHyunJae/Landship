@@ -16,14 +16,19 @@ struct FLSControlGroup
 };
 
 UENUM()
-enum class ELSCommandInput : uint8 { None, Move, Attack };
+enum class ELSCommandInput : uint8
+{
+	None,
+	Move,
+	Attack
+};
 
-/** 성 좌클릭 선택과 지면 우클릭 이동 명령을 처리한다. */
+/** RTS 카메라 입력, 공통 선택과 부대 지정 및 선택 대상의 명령 전달을 처리한다. */
 UCLASS()
 class LANDSHIP_API ALSPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-public:
+  public:
 	ALSPlayerController();
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
@@ -35,21 +40,29 @@ public:
 	void UseControlGroup(int32 Number, bool bAssign);
 	bool IssueSelectionOrder(ELSOrderKind Kind, const FVector& Location, AActor* Target, bool bQueue);
 	bool GetSelectionBox(FVector2D& Start, FVector2D& End) const;
-	ELSCommandInput GetPendingInput() const { return PendingInput; }
-	void SetPendingInput(ELSCommandInput Input) { CancelInput(); PendingInput = Input; }
+	ELSCommandInput GetPendingInput() const
+	{
+		return PendingInput;
+	}
+	void SetPendingInput(ELSCommandInput Input)
+	{
+		CancelInput();
+		PendingInput = Input;
+	}
 	void ArmAttack();
 	void ArmMove();
 	void StopSelected();
 	void HoldSelected();
 	void CancelInput();
 	void FocusSelection();
+	bool GetOrderMarker(FVector& OutLocation, FLinearColor& OutColor) const;
 
-protected:
+  protected:
 	virtual void BeginPlay() override;
 	virtual void PlayerTick(float DeltaSeconds) override;
 	virtual void SetupInputComponent() override;
 
-private:
+  private:
 	void OnSelectPressed();
 	void OnSelectReleased();
 	void SelectSameType();
@@ -78,6 +91,9 @@ private:
 	ELSCommandInput PendingInput = ELSCommandInput::None;
 	int32 LastGroup = INDEX_NONE;
 	double LastGroupTime = -1;
+	FVector OrderMarkerLocation = FVector::ZeroVector;
+	FLinearColor OrderMarkerColor = FLinearColor::Green;
+	double OrderMarkerExpiresAt = -1;
 
 	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AActor>> SelectedActors;

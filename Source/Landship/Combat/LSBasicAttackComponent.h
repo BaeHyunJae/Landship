@@ -24,7 +24,7 @@ UCLASS(ClassGroup = (Landship), meta = (BlueprintSpawnableComponent))
 class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 {
 	GENERATED_BODY()
-public:
+  public:
 	ULSBasicAttackComponent();
 	virtual void Deactivate() override;
 
@@ -36,7 +36,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
 	bool StartAttack(AActor* Target);
 
-	/** 사거리 안에서 가장 가까운 유효한 적을 계속 다시 선택한다. */
+	/** 현재 대상이 유효하면 유지하고, 대상을 잃었을 때 사거리 안의 적을 탐색한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
 	bool StartAutoAttack();
 
@@ -44,24 +44,33 @@ public:
 	void StopAttack();
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
-	AActor* GetAttackTarget() const { return AttackTarget.Get(); }
+	AActor* GetAttackTarget() const
+	{
+		return AttackTarget.Get();
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
 	float GetCooldownRemaining() const;
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
-	FLSBasicAttackSettings GetAttackSettings() const { return Settings; }
+	FLSBasicAttackSettings GetAttackSettings() const
+	{
+		return Settings;
+	}
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
-	bool IsConfigured() const { return bConfigured; }
+	bool IsConfigured() const
+	{
+		return bConfigured;
+	}
 
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Attack")
 	FLSBasicAttackPerformed OnAttackPerformed;
 
-protected:
+  protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-private:
+  private:
 	bool IsValidCombatPair(AActor* Target) const;
 	void UpdateAttack();
 	void StartAttackTimer();

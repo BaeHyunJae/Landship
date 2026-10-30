@@ -15,13 +15,12 @@
 #include "Controls/LSRTSHUD.h"
 #include "Combat/LSBasicAttackParticipant.h"
 #include "EngineUtils.h"
-#include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "InputKeyEventArgs.h"
 
 namespace
 {
-	TAutoConsoleVariable<int32> CVarRTSInputDebug(TEXT("LS.RTS.InputDebug"), 0, TEXT("RTS 선택 입력 진단"));
+TAutoConsoleVariable<int32> CVarRTSInputDebug(TEXT("LS.RTS.InputDebug"), 0, TEXT("RTS 선택 입력 진단"));
 }
 
 ALSPlayerController::ALSPlayerController()
@@ -34,7 +33,8 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (Params.Event == IE_Pressed && CanUseWorldInput())
 	{
-		const FKey Numbers[] = { EKeys::Zero, EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine };
+		const FKey Numbers[] = {EKeys::Zero, EKeys::One, EKeys::Two,   EKeys::Three, EKeys::Four,
+		                        EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine};
 		for (int32 Number = 0; Number < UE_ARRAY_COUNT(Numbers); ++Number)
 		{
 			if (Params.Key == Numbers[Number])
@@ -42,17 +42,25 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 				// Ctrl가 같은 프레임에 떼어져도 부대 지정 입력을 잃지 않는다.
 				const bool bAssign = FSlateApplication::Get().GetModifierKeys().IsControlDown();
 				UseControlGroup(Number, bAssign);
-				if (CVarRTSInputDebug.GetValueOnGameThread()) { UE_LOG(LogTemp, Display, TEXT("RTS_INPUT group=%d assign=%d selected=%d"), Number, bAssign, GetSelectedActors().Num()); }
+				if (CVarRTSInputDebug.GetValueOnGameThread())
+				{
+					UE_LOG(LogTemp, Display, TEXT("RTS_INPUT group=%d assign=%d selected=%d"), Number, bAssign,
+					       GetSelectedActors().Num());
+				}
 				return true;
 			}
 		}
 	}
 	if (Params.Key == EKeys::LeftMouseButton && Params.Event == IE_Pressed)
 	{
-		float X, Y;
+		float X;
+		float Y;
 		// 프레임 안에 드래그가 끝나도 누른 시점의 좌표가 끝점으로 바뀌지 않게 한다.
 		bHasPressedMousePosition = GetMousePosition(X, Y);
-		if (bHasPressedMousePosition) { PressedMousePosition = FVector2D(X, Y); }
+		if (bHasPressedMousePosition)
+		{
+			PressedMousePosition = FVector2D(X, Y);
+		}
 	}
 	return Super::InputKey(Params);
 }
@@ -60,15 +68,22 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 void ALSPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
-	for (bool bShift : { false, true })
+	for (bool bShift : {false, true})
 	{
-		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_Pressed, this, &ALSPlayerController::OnSelectPressed);
-		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_Released, this, &ALSPlayerController::OnSelectReleased);
-		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_DoubleClick, this, &ALSPlayerController::SelectSameType);
-		InputComponent->BindKey(FInputChord(EKeys::RightMouseButton, bShift, false, false, false), IE_Pressed, this, &ALSPlayerController::OnRightClick);
-		InputComponent->BindKey(FInputChord(EKeys::A, bShift, false, false, false), IE_Pressed, this, &ALSPlayerController::ArmAttack);
-		InputComponent->BindKey(FInputChord(EKeys::M, bShift, false, false, false), IE_Pressed, this, &ALSPlayerController::ArmMove);
-		InputComponent->BindKey(FInputChord(EKeys::Escape, bShift, false, false, false), IE_Pressed, this, &ALSPlayerController::CancelInput);
+		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_Pressed, this,
+		                        &ALSPlayerController::OnSelectPressed);
+		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_Released, this,
+		                        &ALSPlayerController::OnSelectReleased);
+		InputComponent->BindKey(FInputChord(EKeys::LeftMouseButton, bShift, false, false, false), IE_DoubleClick, this,
+		                        &ALSPlayerController::SelectSameType);
+		InputComponent->BindKey(FInputChord(EKeys::RightMouseButton, bShift, false, false, false), IE_Pressed, this,
+		                        &ALSPlayerController::OnRightClick);
+		InputComponent->BindKey(FInputChord(EKeys::A, bShift, false, false, false), IE_Pressed, this,
+		                        &ALSPlayerController::ArmAttack);
+		InputComponent->BindKey(FInputChord(EKeys::M, bShift, false, false, false), IE_Pressed, this,
+		                        &ALSPlayerController::ArmMove);
+		InputComponent->BindKey(FInputChord(EKeys::Escape, bShift, false, false, false), IE_Pressed, this,
+		                        &ALSPlayerController::CancelInput);
 	}
 	InputComponent->BindKey(EKeys::S, IE_Pressed, this, &ALSPlayerController::StopSelected);
 	InputComponent->BindKey(EKeys::H, IE_Pressed, this, &ALSPlayerController::HoldSelected);
@@ -85,24 +100,38 @@ void ALSPlayerController::BeginPlay()
 		Mode.SetHideCursorDuringCapture(false);
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(Mode);
-		if (Cast<ALSRTSCameraPawn>(GetPawn())) { SetViewTarget(GetPawn()); }
+		if (Cast<ALSRTSCameraPawn>(GetPawn()))
+		{
+			SetViewTarget(GetPawn());
+		}
 	}
 }
 
 bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD) const
 {
 	const UGameViewportClient* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
-	if (!IsLocalController() || !Client || !Client->Viewport || !Client->Viewport->HasFocus()
-		|| !Client->Viewport->IsForegroundWindow() || !FSlateApplication::IsInitialized()) { return false; }
-	const FWidgetPath Path = FSlateApplication::Get().LocateWindowUnderMouse(FSlateApplication::Get().GetCursorPos(),
-		FSlateApplication::Get().GetInteractiveTopLevelWindows());
+	if (!IsLocalController() || !Client || !Client->Viewport || !Client->Viewport->HasFocus() ||
+	    !Client->Viewport->IsForegroundWindow() || !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+	const FWidgetPath Path = FSlateApplication::Get().LocateWindowUnderMouse(
+	    FSlateApplication::Get().GetCursorPos(), FSlateApplication::Get().GetInteractiveTopLevelWindows());
 	// 새 PIE 창은 SPIEViewport를 사용하므로 타입 이름 대신 실제 전장 위젯을 비교한다.
 	const TSharedPtr<SViewport> GameViewport = Client->GetGameViewportWidget();
-	if (!Path.IsValid() || !GameViewport.IsValid() || Path.Widgets.Last().Widget != GameViewport) { return false; }
-	float X, Y;
-	int32 Width, Height;
+	if (!Path.IsValid() || !GameViewport.IsValid() || Path.Widgets.Last().Widget != GameViewport)
+	{
+		return false;
+	}
+	float X;
+	float Y;
+	int32 Width;
+	int32 Height;
 	GetViewportSize(Width, Height);
-	if (!GetMousePosition(X, Y) || X < 0 || Y < 0 || X >= Width || Y >= Height) { return false; }
+	if (!GetMousePosition(X, Y) || X < 0 || Y < 0 || X >= Width || Y >= Height)
+	{
+		return false;
+	}
 	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
 	return bAllowHUD || !HUD || !HUD->IsOverPanel(FVector2D(X, Y));
 }
@@ -110,32 +139,48 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD) const
 void ALSPlayerController::PlayerTick(float DeltaSeconds)
 {
 	Super::PlayerTick(DeltaSeconds);
-	SelectedActors.RemoveAll([](const TWeakObjectPtr<AActor>& Actor)
-	{
-		const ULSSelectableComponent* Selection = Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
-		return !Selection || !Selection->IsSelectable();
-	});
+	SelectedActors.RemoveAll(
+	    [](const TWeakObjectPtr<AActor>& Actor)
+	    {
+		    const ULSSelectableComponent* Selection =
+		        Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+		    return !Selection || !Selection->IsSelectable();
+	    });
 	ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn());
 	if (!CameraPawn || !CanUseWorldInput())
 	{
-		if (bSelecting && CVarRTSInputDebug.GetValueOnGameThread()) { UE_LOG(LogTemp, Display, TEXT("RTS_INPUT drag cancelled by world gate")); }
-		bWasDraggingCamera = false; bSelecting = false; return;
+		if (bSelecting && CVarRTSInputDebug.GetValueOnGameThread())
+		{
+			UE_LOG(LogTemp, Display, TEXT("RTS_INPUT drag cancelled by world gate"));
+		}
+		bWasDraggingCamera = false;
+		bSelecting = false;
+		return;
 	}
-	float X, Y;
+	float X;
+	float Y;
 	GetMousePosition(X, Y);
 	const FVector2D Mouse(X, Y);
 	const bool bDragging = IsInputKeyDown(EKeys::MiddleMouseButton);
 	if (bDragging)
 	{
-		if (bWasDraggingCamera) { CameraPawn->Drag(Mouse - PreviousMouse); }
+		if (bWasDraggingCamera)
+		{
+			CameraPawn->Drag(Mouse - PreviousMouse);
+		}
 	}
 	else
 	{
-		int32 Width, Height;
+		int32 Width;
+		int32 Height;
 		GetViewportSize(Width, Height);
-		const FVector2D Keys(static_cast<int32>(IsInputKeyDown(EKeys::Right)) - static_cast<int32>(IsInputKeyDown(EKeys::Left)),
-			static_cast<int32>(IsInputKeyDown(EKeys::Up)) - static_cast<int32>(IsInputKeyDown(EKeys::Down)));
-		CameraPawn->Pan(Keys + (bSelecting ? FVector2D::ZeroVector : ALSRTSCameraPawn::CalculateEdgeDirection(Mouse, FVector2D(Width, Height), EdgeScrollMargin)), DeltaSeconds);
+		const FVector2D Keys(
+		    static_cast<int32>(IsInputKeyDown(EKeys::Right)) - static_cast<int32>(IsInputKeyDown(EKeys::Left)),
+		    static_cast<int32>(IsInputKeyDown(EKeys::Up)) - static_cast<int32>(IsInputKeyDown(EKeys::Down)));
+		CameraPawn->Pan(Keys + (bSelecting ? FVector2D::ZeroVector
+		                                   : ALSRTSCameraPawn::CalculateEdgeDirection(Mouse, FVector2D(Width, Height),
+		                                                                              EdgeScrollMargin)),
+		                DeltaSeconds);
 	}
 	PreviousMouse = Mouse;
 	bWasDraggingCamera = bDragging;
@@ -145,7 +190,10 @@ void ALSPlayerController::ZoomCamera(float Value)
 {
 	if (Value != 0.0f && CanUseWorldInput())
 	{
-		if (ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn())) { CameraPawn->Zoom(Value); }
+		if (ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn()))
+		{
+			CameraPawn->Zoom(Value);
+		}
 	}
 }
 
@@ -155,14 +203,26 @@ void ALSPlayerController::FocusSelection()
 	if (!Selection.IsEmpty())
 	{
 		FVector Center = FVector::ZeroVector;
-		for (AActor* Actor : Selection) { Center += Actor->GetActorLocation(); }
-		if (ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn())) { CameraPawn->FocusLocation(Center / Selection.Num()); }
+		for (AActor* Actor : Selection)
+		{
+			Center += Actor->GetActorLocation();
+		}
+		if (ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn()))
+		{
+			CameraPawn->FocusLocation(Center / Selection.Num());
+		}
 	}
 }
 
 ALSCastle* ALSPlayerController::GetSelectedCastle() const
 {
-	for (AActor* Actor : GetSelectedActors()) { if (ALSCastle* Castle = Cast<ALSCastle>(Actor)) { return Castle; } }
+	for (AActor* Actor : GetSelectedActors())
+	{
+		if (ALSCastle* Castle = Cast<ALSCastle>(Actor))
+		{
+			return Castle;
+		}
+	}
 	return nullptr;
 }
 
@@ -171,8 +231,12 @@ TArray<AActor*> ALSPlayerController::GetSelectedActors() const
 	TArray<AActor*> Result;
 	for (const TWeakObjectPtr<AActor>& Actor : SelectedActors)
 	{
-		const ULSSelectableComponent* Selection = Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
-		if (Selection && Selection->IsSelectable()) { Result.Add(Actor.Get()); }
+		const ULSSelectableComponent* Selection =
+		    Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+		if (Selection && Selection->IsSelectable())
+		{
+			Result.Add(Actor.Get());
+		}
 	}
 	return Result;
 }
@@ -182,29 +246,59 @@ void ALSPlayerController::ApplySelection(const TArray<AActor*>& Actors, bool bTo
 	TArray<AActor*> Valid;
 	for (AActor* Actor : Actors)
 	{
-		const ULSSelectableComponent* Selection = IsValid(Actor) ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
-		if (Selection && Selection->IsSelectable()) { Valid.AddUnique(Actor); }
+		const ULSSelectableComponent* Selection =
+		    IsValid(Actor) ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+		if (Selection && Selection->IsSelectable())
+		{
+			Valid.AddUnique(Actor);
+		}
 	}
-	if (bPreferUnits && Valid.ContainsByPredicate([](AActor* Actor)
-		{ const auto* S = Actor->FindComponentByClass<ULSSelectableComponent>(); return S->CanPlayerControl() && S->Kind == ELSSelectionKind::Unit; }))
+	if (bPreferUnits && Valid.ContainsByPredicate(
+	                        [](AActor* Actor)
+	                        {
+		                        const ULSSelectableComponent* S = Actor->FindComponentByClass<ULSSelectableComponent>();
+		                        return S->CanPlayerControl() && S->Kind == ELSSelectionKind::Unit;
+	                        }))
 	{
-		Valid.RemoveAll([](AActor* Actor) { const auto* S = Actor->FindComponentByClass<ULSSelectableComponent>(); return !S->CanPlayerControl() || S->Kind != ELSSelectionKind::Unit; });
+		Valid.RemoveAll(
+		    [](AActor* Actor)
+		    {
+			    const ULSSelectableComponent* S = Actor->FindComponentByClass<ULSSelectableComponent>();
+			    return !S->CanPlayerControl() || S->Kind != ELSSelectionKind::Unit;
+		    });
 	}
-	if (Valid.Num() > 1) { Valid.RemoveAll([](AActor* Actor) { return !Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl(); }); }
-	if (!bToggle) { SelectedActors.Reset(); }
+	if (Valid.Num() > 1)
+	{
+		Valid.RemoveAll([](AActor* Actor)
+		                { return !Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl(); });
+	}
+	if (!bToggle)
+	{
+		SelectedActors.Reset();
+	}
 	for (AActor* Actor : Valid)
 	{
 		const bool bControlled = Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl();
 		if (!bControlled)
 		{
-			if (!bToggle) { SelectedActors = { Actor }; }
+			if (!bToggle)
+			{
+				SelectedActors = {Actor};
+			}
 			continue;
 		}
-		SelectedActors.RemoveAll([](const TWeakObjectPtr<AActor>& Item)
-			{ return !Item.IsValid() || !Item->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl(); });
+		SelectedActors.RemoveAll(
+		    [](const TWeakObjectPtr<AActor>& Item)
+		    { return !Item.IsValid() || !Item->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl(); });
 		const TWeakObjectPtr<AActor> Weak(Actor);
-		if (bToggle && SelectedActors.Contains(Weak)) { SelectedActors.Remove(Weak); }
-		else { SelectedActors.AddUnique(Weak); }
+		if (bToggle && SelectedActors.Contains(Weak))
+		{
+			SelectedActors.Remove(Weak);
+		}
+		else
+		{
+			SelectedActors.AddUnique(Weak);
+		}
 	}
 }
 
@@ -222,16 +316,27 @@ void ALSPlayerController::OnSelectPressed()
 {
 	if (CVarRTSInputDebug.GetValueOnGameThread())
 	{
-		float X = -1, Y = -1; GetMousePosition(X, Y);
+		float X = -1, Y = -1;
+		GetMousePosition(X, Y);
 		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT press allowed=%d mouse=%f,%f"), CanUseWorldInput(true), X, Y);
 	}
-	if (!CanUseWorldInput(true)) { return; }
+	if (!CanUseWorldInput(true))
+	{
+		return;
+	}
 	float MouseX, MouseY;
 	if (GetMousePosition(MouseX, MouseY))
 	{
-		if (ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD()); HUD && HUD->HandleClick(FVector2D(MouseX, MouseY))) { return; }
+		if (ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD()); HUD && HUD->HandleClick(FVector2D(MouseX, MouseY)))
+		{
+			return;
+		}
 	}
-	if (PendingInput != ELSCommandInput::None) { CompleteTargetInput(); return; }
+	if (PendingInput != ELSCommandInput::None)
+	{
+		CompleteTargetInput();
+		return;
+	}
 	float X = 0, Y = 0;
 	if (bHasPressedMousePosition || GetMousePosition(X, Y))
 	{
@@ -243,8 +348,12 @@ void ALSPlayerController::OnSelectPressed()
 
 bool ALSPlayerController::GetSelectionBox(FVector2D& Start, FVector2D& End) const
 {
-	float X, Y;
-	if (!bSelecting || !GetMousePosition(X, Y)) { return false; }
+	float X;
+	float Y;
+	if (!bSelecting || !GetMousePosition(X, Y))
+	{
+		return false;
+	}
 	Start = SelectionStart;
 	End = FVector2D(X, Y);
 	return FVector2D::Distance(Start, End) >= DragThreshold;
@@ -254,83 +363,126 @@ void ALSPlayerController::OnSelectReleased()
 {
 	if (CVarRTSInputDebug.GetValueOnGameThread())
 	{
-		float X = -1, Y = -1; GetMousePosition(X, Y);
-		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT release selecting=%d allowed=%d mouse=%f,%f"), bSelecting, CanUseWorldInput(), X, Y);
+		float X = -1, Y = -1;
+		GetMousePosition(X, Y);
+		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT release selecting=%d allowed=%d mouse=%f,%f"), bSelecting,
+		       CanUseWorldInput(), X, Y);
 	}
-	if (!bSelecting) { return; }
+	if (!bSelecting)
+	{
+		return;
+	}
 	FVector2D Start, End;
 	const bool bBox = GetSelectionBox(Start, End);
 	bSelecting = false;
-	if (!CanUseWorldInput()) { return; }
+	if (!CanUseWorldInput())
+	{
+		return;
+	}
 	TArray<AActor*> Candidates;
 	if (bBox)
 	{
-		const FBox2D Box(TArray<FVector2D>{ Start, End });
+		const FBox2D Box(TArray<FVector2D>{Start, End});
 		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 		{
 			const ULSSelectableComponent* Selection = It->FindComponentByClass<ULSSelectableComponent>();
 			FVector2D Point;
-			if (Selection && Selection->CanPlayerControl() && ProjectWorldLocationToScreen(It->GetActorLocation(), Point)
-				&& Box.IsInsideOrOn(Point)) { Candidates.Add(*It); }
+			if (Selection && Selection->CanPlayerControl() &&
+			    ProjectWorldLocationToScreen(It->GetActorLocation(), Point) && Box.IsInsideOrOn(Point))
+			{
+				Candidates.Add(*It);
+			}
 		}
 	}
 	else
 	{
 		FHitResult Hit;
-		if (HitWorld(Hit)) { Candidates.Add(Hit.GetActor()); }
+		if (HitWorld(Hit))
+		{
+			Candidates.Add(Hit.GetActor());
+		}
 	}
 	ApplySelection(Candidates, IsShiftDown(), bBox);
-	if (CVarRTSInputDebug.GetValueOnGameThread()) { UE_LOG(LogTemp, Display, TEXT("RTS_INPUT candidates=%d selected=%d box=%d"), Candidates.Num(), GetSelectedActors().Num(), bBox); }
+	if (CVarRTSInputDebug.GetValueOnGameThread())
+	{
+		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT candidates=%d selected=%d box=%d"), Candidates.Num(),
+		       GetSelectedActors().Num(), bBox);
+	}
 }
 
 void ALSPlayerController::SelectSameType()
 {
 	bSelecting = false;
-	if (!CanUseWorldInput() || PendingInput != ELSCommandInput::None) { return; }
+	if (!CanUseWorldInput() || PendingInput != ELSCommandInput::None)
+	{
+		return;
+	}
 	FHitResult Hit;
-	if (!HitWorld(Hit) || !Hit.GetActor()) { return; }
+	if (!HitWorld(Hit) || !Hit.GetActor())
+	{
+		return;
+	}
 	const ULSSelectableComponent* Source = Hit.GetActor()->FindComponentByClass<ULSSelectableComponent>();
-	if (!Source || !Source->CanPlayerControl()) { return; }
-	int32 Width, Height;
+	if (!Source || !Source->CanPlayerControl())
+	{
+		return;
+	}
+	int32 Width;
+	int32 Height;
 	GetViewportSize(Width, Height);
 	TArray<AActor*> Candidates;
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		const ULSSelectableComponent* Selection = It->FindComponentByClass<ULSSelectableComponent>();
 		FVector2D Point;
-		if (Selection && Selection->CanPlayerControl() && Selection->GetSelectionType() == Source->GetSelectionType()
-			&& ProjectWorldLocationToScreen(It->GetActorLocation(), Point)
-			&& Point.X >= 0 && Point.Y >= 0 && Point.X < Width && Point.Y < Height) { Candidates.Add(*It); }
+		if (Selection && Selection->CanPlayerControl() && Selection->GetSelectionType() == Source->GetSelectionType() &&
+		    ProjectWorldLocationToScreen(It->GetActorLocation(), Point) && Point.X >= 0 && Point.Y >= 0 &&
+		    Point.X < Width && Point.Y < Height)
+		{
+			Candidates.Add(*It);
+		}
 	}
 	ApplySelection(Candidates, IsShiftDown());
 }
 
 void ALSPlayerController::ArmAttack()
 {
-	if (!CanUseWorldInput()) { return; }
+	if (!CanUseWorldInput())
+	{
+		return;
+	}
 	for (AActor* Actor : GetSelectedActors())
 	{
-		const auto* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
+		const ULSOrderComponent* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
 		if (Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl() && Orders && Orders->CanAttack())
 		{
-			SetPendingInput(ELSCommandInput::Attack); return;
+			SetPendingInput(ELSCommandInput::Attack);
+			return;
 		}
 	}
 }
 
 void ALSPlayerController::ArmMove()
 {
-	if (!CanUseWorldInput()) { return; }
+	if (!CanUseWorldInput())
+	{
+		return;
+	}
 	for (AActor* Actor : GetSelectedActors())
 	{
-		const auto* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
+		const ULSOrderComponent* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
 		if (Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl() && Orders && Orders->CanMove())
 		{
-			SetPendingInput(ELSCommandInput::Move); return;
+			SetPendingInput(ELSCommandInput::Move);
+			return;
 		}
 	}
 }
-void ALSPlayerController::CancelInput() { PendingInput = ELSCommandInput::None; bSelecting = false; }
+void ALSPlayerController::CancelInput()
+{
+	PendingInput = ELSCommandInput::None;
+	bSelecting = false;
+}
 
 void ALSPlayerController::CompleteTargetInput()
 {
@@ -339,34 +491,62 @@ void ALSPlayerController::CompleteTargetInput()
 	{
 		if (Hit.Component.IsValid() && Hit.Component->GetCollisionObjectType() == LSCollisionChannels::Ground)
 		{
-			IssueSelectionOrder(PendingInput == ELSCommandInput::Attack ? ELSOrderKind::AttackMove : ELSOrderKind::Move, Hit.ImpactPoint, nullptr, IsShiftDown());
+			IssueSelectionOrder(PendingInput == ELSCommandInput::Attack ? ELSOrderKind::AttackMove : ELSOrderKind::Move,
+			                    Hit.ImpactPoint, nullptr, IsShiftDown());
 		}
-		else if (PendingInput == ELSCommandInput::Attack) { IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown()); }
+		else if (PendingInput == ELSCommandInput::Attack)
+		{
+			IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown());
+		}
 	}
-	if (!IsShiftDown()) { CancelInput(); }
+	if (!IsShiftDown())
+	{
+		CancelInput();
+	}
 }
 
 void ALSPlayerController::OnRightClick()
 {
-	if (!CanUseWorldInput()) { return; }
-	if (PendingInput != ELSCommandInput::None || bSelecting) { CancelInput(); return; }
+	if (!CanUseWorldInput())
+	{
+		return;
+	}
+	if (PendingInput != ELSCommandInput::None || bSelecting)
+	{
+		CancelInput();
+		return;
+	}
 	FHitResult Hit;
-	if (!HitWorld(Hit)) { return; }
+	if (!HitWorld(Hit))
+	{
+		return;
+	}
 	if (Hit.Component.IsValid() && Hit.Component->GetCollisionObjectType() == LSCollisionChannels::Ground)
 	{
 		IssueSelectionOrder(ELSOrderKind::Move, Hit.ImpactPoint, nullptr, IsShiftDown());
 	}
-	else { IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown()); }
+	else
+	{
+		IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown());
+	}
 }
 
 void ALSPlayerController::StopSelected()
 {
-	if (CanUseWorldInput()) { CancelInput(); IssueSelectionOrder(ELSOrderKind::Idle, FVector::ZeroVector, nullptr, false); }
+	if (CanUseWorldInput())
+	{
+		CancelInput();
+		IssueSelectionOrder(ELSOrderKind::Idle, FVector::ZeroVector, nullptr, false);
+	}
 }
 
 void ALSPlayerController::HoldSelected()
 {
-	if (CanUseWorldInput()) { CancelInput(); IssueSelectionOrder(ELSOrderKind::Hold, FVector::ZeroVector, nullptr, false); }
+	if (CanUseWorldInput())
+	{
+		CancelInput();
+		IssueSelectionOrder(ELSOrderKind::Hold, FVector::ZeroVector, nullptr, false);
+	}
 }
 
 bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& Location, AActor* Target, bool bQueue)
@@ -375,12 +555,13 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 	float Spacing = FormationSpacing;
 	for (AActor* Actor : GetSelectedActors())
 	{
-		const auto* Selection = Actor->FindComponentByClass<ULSSelectableComponent>();
-		const auto* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
-		if (Selection->CanPlayerControl() && Orders)
+		const ULSSelectableComponent* Selection = Actor->FindComponentByClass<ULSSelectableComponent>();
+		const ULSOrderComponent* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
+		if (Selection->CanPlayerControl() && Orders && Orders->CanExecuteOrderKind(Kind))
 		{
 			Controlled.Add(Actor);
-			float Radius, Height;
+			float Radius;
+			float Height;
 			Actor->GetSimpleCollisionCylinder(Radius, Height);
 			Spacing = FMath::Max(Spacing, Radius * 2 + 40.0f);
 		}
@@ -397,37 +578,66 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 	}
 	if (bAccepted && (Kind == ELSOrderKind::Move || Kind == ELSOrderKind::AttackMove))
 	{
-		DrawDebugSphere(GetWorld(), Location + FVector(0, 0, 8), 30, 12, Kind == ELSOrderKind::Move ? FColor::Green : FColor::Red, false, 0.7f);
+		OrderMarkerLocation = Location;
+		OrderMarkerColor = Kind == ELSOrderKind::Move ? FLinearColor::Green : FLinearColor::Red;
+		OrderMarkerExpiresAt = GetWorld()->GetTimeSeconds() + 0.7;
 	}
 	return bAccepted;
 }
 
 void ALSPlayerController::UseControlGroup(int32 Number, bool bAssign)
 {
-	if (Number < 0 || Number > 9) { return; }
+	if (Number < 0 || Number > 9)
+	{
+		return;
+	}
 	if (bAssign)
 	{
 		FLSControlGroup& Group = ControlGroups.FindOrAdd(Number);
 		Group.Actors.Reset();
 		for (AActor* Actor : GetSelectedActors())
 		{
-			if (Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl()) { Group.Actors.Add(Actor); }
+			if (Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl())
+			{
+				Group.Actors.Add(Actor);
+			}
 		}
 		LastGroup = INDEX_NONE;
 		return;
 	}
 	const FLSControlGroup* Group = ControlGroups.Find(Number);
-	if (!Group) { return; }
+	if (!Group)
+	{
+		return;
+	}
 	TArray<AActor*> Valid;
 	for (const TWeakObjectPtr<AActor>& Actor : Group->Actors)
 	{
-		const auto* Selection = Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
-		if (Selection && Selection->CanPlayerControl()) { Valid.Add(Actor.Get()); }
+		const ULSSelectableComponent* Selection =
+		    Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+		if (Selection && Selection->CanPlayerControl())
+		{
+			Valid.Add(Actor.Get());
+		}
 	}
 	ApplySelection(Valid);
 	const double Now = GetWorld()->GetTimeSeconds();
-	if (LastGroup == Number && Now - LastGroupTime <= DoubleGroupInterval) { FocusSelection(); }
+	if (LastGroup == Number && Now - LastGroupTime <= DoubleGroupInterval)
+	{
+		FocusSelection();
+	}
 	LastGroup = Number;
 	LastGroupTime = Now;
 	CancelInput();
+}
+
+bool ALSPlayerController::GetOrderMarker(FVector& OutLocation, FLinearColor& OutColor) const
+{
+	if (!GetWorld() || GetWorld()->GetTimeSeconds() >= OrderMarkerExpiresAt)
+	{
+		return false;
+	}
+	OutLocation = OrderMarkerLocation;
+	OutColor = OrderMarkerColor;
+	return true;
 }
