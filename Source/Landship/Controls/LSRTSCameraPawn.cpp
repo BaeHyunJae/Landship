@@ -1,6 +1,7 @@
 #include "Controls/LSRTSCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Maps/LSBattlefieldSettings.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 
@@ -24,6 +25,10 @@ ALSRTSCameraPawn::ALSRTSCameraPawn()
 void ALSRTSCameraPawn::BeginPlay()
 {
 	Super::BeginPlay();
+	if (const ALSBattlefieldSettings* Settings = ALSBattlefieldSettings::Find(GetWorld()))
+	{
+		SetBattlefieldBounds(Settings->GetWorldBounds(), Settings->GetGroundHeight());
+	}
 	FocusLocation(GetActorLocation());
 	Zoom(0.0f);
 }
@@ -59,6 +64,19 @@ void ALSRTSCameraPawn::Zoom(float WheelDelta)
 float ALSRTSCameraPawn::GetZoomDistance() const
 {
 	return CameraBoom->TargetArmLength;
+}
+
+void ALSRTSCameraPawn::SetBattlefieldBounds(const FBox2D& Bounds, float GroundHeight)
+{
+	if (!Bounds.bIsValid || Bounds.GetSize().X <= 0 || Bounds.GetSize().Y <= 0 ||
+		!FMath::IsFinite(GroundHeight))
+	{
+		return;
+	}
+	BoundsMin = Bounds.Min;
+	BoundsMax = Bounds.Max;
+	FocusHeight = GroundHeight;
+	FocusLocation(GetActorLocation());
 }
 
 void ALSRTSCameraPawn::FocusLocation(const FVector& Location)
