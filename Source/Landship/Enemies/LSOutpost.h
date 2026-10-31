@@ -21,6 +21,8 @@ class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 	TObjectPtr<class ULSSelectableComponent> Selection;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSOrderComponent> Orders;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSVisionParticipantComponent> Vision;
 
 	virtual ELSFaction GetFaction() const override
 	{

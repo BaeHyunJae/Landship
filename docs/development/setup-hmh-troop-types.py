@@ -92,6 +92,24 @@ ensure_actor('HMH_Weapons_Probe', weapons_probe_class, (0, 0, 0))
 navigation = ensure_actor('HMH_NavigationSetup', navigation_class, (0, 0, 0))
 navigation.set_editor_property('agent_radius', 142.0)
 navigation.set_editor_property('agent_height', 284.0)
+settings_class = unreal.load_class(None, '/Script/Landship.LSBattlefieldSettings')
+settings = ensure_actor('HMH_BattlefieldSettings', settings_class, (0, 0, 0))
+settings.set_editor_property('bounds_min', unreal.Vector2D(-2400, -2000))
+settings.set_editor_property('bounds_max', unreal.Vector2D(2400, 2000))
+settings.set_editor_property('ground_height', 0.0)
+# 경로 장애물은 지형 캡처와 분리하고 공통 시야 참여 규칙을 따른다.
+subobjects = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+for actor in actors.get_all_level_actors():
+    primitives = actor.get_components_by_class(unreal.PrimitiveComponent)
+    if any(p.get_collision_object_type() == unreal.CollisionChannel.ECC_LS_PATH_OBSTACLE for p in primitives):
+        if not actor.get_component_by_class(unreal.LSVisionParticipantComponent):
+            handles = subobjects.k2_gather_subobject_data_for_instance(actor)
+            params = unreal.AddNewSubobjectParams(parent_handle=handles[0], new_class=unreal.LSVisionParticipantComponent)
+            handle, reason = subobjects.add_new_subobject(params)
+            if not actor.get_component_by_class(unreal.LSVisionParticipantComponent):
+                raise RuntimeError('Obstacle vision component creation failed: ' + str(reason))
+terrain = [a for a in actors.get_all_level_actors() if isinstance(a, unreal.StaticMeshActor) and not a.get_component_by_class(unreal.LSVisionParticipantComponent)]
+settings.set_editor_property('terrain_actors', terrain)
 if not levels.save_current_level():
     raise RuntimeError('Troop map save failed')
 unreal.log('HMH_TROOP_TYPES_SETUP_OK')

@@ -14,6 +14,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Troops/LSTroopUnit.h"
+#include "Vision/LSVisionSubsystem.h"
 
 namespace
 {
@@ -102,6 +103,23 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 			Finish();
 			return;
 		}
+
+		Check(GetWorld()->GetSubsystem<ULSVisionSubsystem>()->IsVisionEnabled(), TEXT("HMH 시야 설정 활성"));
+		Controller->ApplySelection({Ally, Castle});
+		Controller->HandleMinimapInput(FVector(-600, -800, 0), true, false);
+		Check(Ally->Orders->GetOrderKind() == ELSOrderKind::Move &&
+		          Castle->Orders->GetOrderKind() == ELSOrderKind::Move,
+		      TEXT("미니맵 우클릭으로 병력·성 함께 이동"));
+		Controller->HandleMinimapInput(FVector(-400, -800, 0), true, true);
+		Check(Ally->Orders->GetQueuedCount() == 1 && Castle->Orders->GetQueuedCount() == 1,
+		      TEXT("미니맵 Shift 우클릭 예약"));
+		Controller->SetPendingInput(ELSCommandInput::Attack);
+		Controller->HandleMinimapInput(FVector(-600, -800, 0), false, false);
+		Check(Ally->Orders->GetOrderKind() == ELSOrderKind::AttackMove &&
+		          Castle->Orders->GetOrderKind() == ELSOrderKind::Move,
+		      TEXT("미니맵 어택땅은 공격 가능한 병력에만 적용"));
+		Check(Controller->GetPendingInput() == ELSCommandInput::None, TEXT("미니맵 명령 후 대기 종료"));
+		Controller->IssueSelectionOrder(ELSOrderKind::Hold, FVector::ZeroVector, nullptr, false);
 		Castle->SetActorLocation(FVector(-800, 100, 144));
 		EnemyCastle->SetActorLocation(FVector(1600, -1200, 144));
 		Enemies[0]->SetActorLocation(FVector(0, 100, 96));

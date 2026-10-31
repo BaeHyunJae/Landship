@@ -1,6 +1,7 @@
 #include "Castle/LSMobileCastle.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Vision/LSVisionParticipantComponent.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
@@ -21,6 +22,7 @@ ALSMobileCastle::ALSMobileCastle()
 	StatsRow.DataTable = Table.Object;
 	StatsRow.RowName = TEXT("MobileCastle");
 	Selection->Kind = ELSSelectionKind::Castle;
+	Vision->MarkerKind = ELSMinimapMarkerKind::Castle;
 	Selection->SelectionType = TEXT("MobileCastle");
 	Health->bDestroyOnDeath = false;
 	GetCapsuleComponent()->SetCapsuleSize(142, 142);

@@ -1,4 +1,7 @@
 #include "Controls/LSRTSHUD.h"
+#include "Vision/LSMinimapWidget.h"
+#include "Maps/LSBattlefieldSettings.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -8,6 +11,63 @@
 #include "Engine/World.h"
 #include "Castle/LSMobileCastle.h"
 #include "EngineUtils.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Framework/Application/SlateApplication.h"
+
+ALSRTSHUD::ALSRTSHUD()
+{
+	static ConstructorHelpers::FClassFinder<ULSMinimapWidget> MinimapClass(
+	    TEXT("/Game/Landship/Vision/UI/WBP_BattlefieldMinimap"));
+	MinimapWidgetClass = MinimapClass.Class;
+}
+
+void ALSRTSHUD::BeginPlay()
+{
+	Super::BeginPlay();
+	if (PlayerOwner && MinimapWidgetClass && ALSBattlefieldSettings::Find(GetWorld()))
+	{
+		MinimapWidget = CreateWidget<ULSMinimapWidget>(PlayerOwner, MinimapWidgetClass);
+		if (MinimapWidget)
+		{
+			int32 W = 0, H = 0;
+			PlayerOwner->GetViewportSize(W, H);
+			const FBox2D Rect =
+			    FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
+			const float DPI = UWidgetLayoutLibrary::GetViewportScale(this);
+			MinimapWidget->SetPositionInViewport(Rect.Min, true);
+			MinimapWidget->SetDesiredSizeInViewport(Rect.GetSize() / DPI);
+			MinimapWidget->AddToViewport();
+		}
+	}
+}
+void ALSRTSHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (MinimapWidget)
+	{
+		MinimapWidget->RemoveFromParent();
+		MinimapWidget = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+bool ALSRTSHUD::IsOverMinimap(const FVector2D& Mouse) const
+{
+	int32 W = 0, H = 0;
+	if (PlayerOwner)
+	{
+		PlayerOwner->GetViewportSize(W, H);
+	}
+	return MinimapWidget && FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide)
+	                            .Minimap.IsInsideOrOn(Mouse);
+}
+bool ALSRTSHUD::IsMinimapWidget(const TSharedRef<SWidget>& Widget) const
+{
+	return MinimapWidget && MinimapWidget->GetCachedWidget() == Widget;
+}
+bool ALSRTSHUD::IsMinimapPointerCaptured() const
+{
+	return MinimapWidget && MinimapWidget->IsPointerCaptured();
+}
 
 FBox2D ALSRTSHUD::InfoPanel() const
 {
@@ -17,7 +77,9 @@ FBox2D ALSRTSHUD::InfoPanel() const
 	{
 		PlayerOwner->GetViewportSize(Width, Height);
 	}
-	return FBox2D(FVector2D(0, FMath::Max(0, Height - 125)), FVector2D(FMath::Min(340, Width), Height));
+	return FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), MinimapWidget != nullptr,
+	                                          MinimapWidget ? MinimapWidget->PanelSide : 0)
+	    .Info;
 }
 
 FBox2D ALSRTSHUD::ProductionPanel() const
@@ -28,18 +90,21 @@ FBox2D ALSRTSHUD::ProductionPanel() const
 	{
 		PlayerOwner->GetViewportSize(Width, Height);
 	}
-	return FBox2D(FVector2D(FMath::Max(0, Width - 360), FMath::Max(0, Height - 180)), FVector2D(Width, Height));
+	return FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), MinimapWidget != nullptr,
+	                                          MinimapWidget ? MinimapWidget->PanelSide : 0)
+	    .Production;
 }
 
 FBox2D ALSRTSHUD::ProductionButton(int32 Index) const
 {
-	const FVector2D Min = ProductionPanel().Min + FVector2D(12 + Index * 112, 55);
-	return FBox2D(Min, Min + FVector2D(104, 86));
+	const float Scale = MinimapWidget ? ProductionPanel().GetSize().X / 360.0f : 1.0f;
+	const FVector2D Min = ProductionPanel().Min + FVector2D(12 + Index * 112, 55) * Scale;
+	return FBox2D(Min, Min + FVector2D(104, 86) * Scale);
 }
 
 bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 {
-	return InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse) ||
+	return IsOverMinimap(Mouse) || InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse) ||
 	       WeaponPanel().IsInsideOrOn(Mouse);
 }
 
@@ -100,6 +165,15 @@ void ALSRTSHUD::DrawHUD()
 		DrawLine(Max.X, Max.Y, Min.X, Max.Y, FLinearColor::Green);
 		DrawLine(Min.X, Max.Y, Min.X, Min.Y, FLinearColor::Green);
 	}
+	if (MinimapWidget)
+	{
+		int32 W, H;
+		Controller->GetViewportSize(W, H);
+		const FBox2D Rect = FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
+		const float DPI = UWidgetLayoutLibrary::GetViewportScale(this);
+		MinimapWidget->SetPositionInViewport(Rect.Min, true);
+		MinimapWidget->SetDesiredSizeInViewport(Rect.GetSize() / DPI);
+	}
 	const TArray<AActor*> Selection = Controller->GetSelectedActors();
 	for (AActor* Actor : Selection)
 	{
@@ -158,35 +232,38 @@ void ALSRTSHUD::DrawHUD()
 	{
 		DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.92f), Box.Min.X, Box.Min.Y, Box.GetSize().X, Box.GetSize().Y);
 	}
-	const FVector2D Info = InfoPanel().Min + FVector2D(12, 10);
-	DrawText(FString::Printf(TEXT("Selected: %d"), Selection.Num()), FLinearColor::White, Info.X, Info.Y);
+	const float PanelScale = MinimapWidget ? ProductionPanel().GetSize().X / 360.0f : 1.0f;
+	auto DrawPanelText = [&](const FString& Text, FLinearColor Color, float X, float Y)
+	{ DrawText(Text, Color, X, Y, nullptr, PanelScale); };
+	const FVector2D Info = InfoPanel().Min + FVector2D(12, 10) * PanelScale;
+	DrawPanelText(FString::Printf(TEXT("Selected: %d"), Selection.Num()), FLinearColor::White, Info.X, Info.Y);
 	if (!Selection.IsEmpty())
 	{
 		AActor* First = Selection[0];
 		const bool bControlled = First->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl();
-		DrawText(First->GetName() + (bControlled ? TEXT(" [CONTROL]") : TEXT(" [INSPECT ONLY]")), FLinearColor::White,
-		         Info.X, Info.Y + 22);
+		DrawPanelText(First->GetName() + (bControlled ? TEXT(" [CONTROL]") : TEXT(" [INSPECT ONLY]")),
+		              FLinearColor::White, Info.X, Info.Y + 22 * PanelScale);
 		FLSHealthSnapshot HealthSnapshot;
 		const ULSHealthComponent* Health = First->FindComponentByClass<ULSHealthComponent>();
 		const bool bHealth = Health && Health->TryGetHealth(HealthSnapshot);
-		DrawText(bHealth
-		             ? FString::Printf(TEXT("HP %.0f / %.0f"), HealthSnapshot.CurrentHealth, HealthSnapshot.MaxHealth)
-		             : TEXT("HP: -- (not connected)"),
-		         FLinearColor::White, Info.X, Info.Y + 44);
+		DrawPanelText(
+		    bHealth ? FString::Printf(TEXT("HP %.0f / %.0f"), HealthSnapshot.CurrentHealth, HealthSnapshot.MaxHealth)
+		            : TEXT("HP: -- (not connected)"),
+		    FLinearColor::White, Info.X, Info.Y + 44 * PanelScale);
 		if (const ULSOrderComponent* Orders = First->FindComponentByClass<ULSOrderComponent>())
 		{
-			DrawText(FString::Printf(TEXT("Order: %s | Queued: %d"), *UEnum::GetValueAsString(Orders->GetOrderKind()),
-			                         Orders->GetQueuedCount()),
-			         FLinearColor::White, Info.X, Info.Y + 66);
+			DrawPanelText(FString::Printf(TEXT("Order: %s | Queued: %d"),
+			                              *UEnum::GetValueAsString(Orders->GetOrderKind()), Orders->GetQueuedCount()),
+			              FLinearColor::White, Info.X, Info.Y + 66 * PanelScale);
 		}
 	}
-	const FVector2D Panel = ProductionPanel().Min + FVector2D(12, 10);
+	const FVector2D Panel = ProductionPanel().Min + FVector2D(12, 10) * PanelScale;
 	const ALSGameState* State = GetWorld()->GetGameState<ALSGameState>();
-	DrawText(TEXT("Troop Production"), FLinearColor::White, Panel.X, Panel.Y);
-	DrawText(
+	DrawPanelText(TEXT("Troop Production"), FLinearColor::White, Panel.X, Panel.Y);
+	DrawPanelText(
 	    State ? FString::Printf(TEXT("Population %d / %d"), State->GetCurrentPopulation(), State->GetPopulationLimit())
 	          : TEXT("Population --"),
-	    FLinearColor::White, Panel.X, Panel.Y + 22);
+	    FLinearColor::White, Panel.X, Panel.Y + 22 * PanelScale);
 	const TCHAR* Labels[] = {TEXT("F1 Spearman"), TEXT("F2 Archer"), TEXT("F3 Cavalry")};
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
@@ -196,11 +273,13 @@ void ALSRTSHUD::DrawHUD()
 		const FBox2D Button = ProductionButton(Index);
 		DrawRect(bReady ? FLinearColor(0.08f, 0.28f, 0.32f) : FLinearColor(0.07f, 0.08f, 0.10f), Button.Min.X,
 		         Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
-		DrawText(Labels[Index], bReady ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8, Button.Min.Y + 10);
+		DrawPanelText(Labels[Index], bReady ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8 * PanelScale,
+		              Button.Min.Y + 10 * PanelScale);
 		const float Remaining = Controller->Production->GetRemainingCooldown(Type);
-		DrawText(Remaining > 0 ? FString::Printf(TEXT("%.1fs"), Remaining)
-		                       : (bReady ? TEXT("Produce") : TEXT("Unavailable")),
-		         Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 40);
+		DrawPanelText(Remaining > 0 ? FString::Printf(TEXT("%.1fs"), Remaining)
+		                            : (bReady ? TEXT("Produce") : TEXT("Unavailable")),
+		              Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8 * PanelScale,
+		              Button.Min.Y + 40 * PanelScale);
 		if (Remaining > 0)
 		{
 			DrawRect(FLinearColor(0.2f, 0.65f, 0.85f), Button.Min.X, Button.Max.Y - 4,
@@ -217,9 +296,9 @@ void ALSRTSHUD::DrawHUD()
 		Message = TEXT("Production unavailable");
 	else if (Controller->GetLastProductionResult() == ELSProductionResult::NoSpace)
 		Message = TEXT("No reachable space near castle");
-	DrawText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24);
-	const FVector2D Weapons = WeaponPanel().Min + FVector2D(12, 10);
-	DrawText(TEXT("Castle Weapons"), FLinearColor::White, Weapons.X, Weapons.Y);
+	DrawPanelText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24 * PanelScale);
+	const FVector2D Weapons = WeaponPanel().Min + FVector2D(12, 10) * PanelScale;
+	DrawPanelText(TEXT("Castle Weapons"), FLinearColor::White, Weapons.X, Weapons.Y);
 	const TCHAR* WeaponLabels[] = {TEXT("Q  Cannon"), TEXT("W  Shotgun"), TEXT("E  Ballista")};
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
@@ -231,45 +310,49 @@ void ALSRTSHUD::DrawHUD()
 		DrawRect(bAiming ? FLinearColor(0.4f, 0.22f, 0.05f)
 		                 : (bReady ? FLinearColor(0.1f, 0.25f, 0.35f) : FLinearColor(0.07f, 0.08f, 0.1f)),
 		         Button.Min.X, Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
-		DrawText(WeaponLabels[Index], bReady ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8,
-		         Button.Min.Y + 10);
+		DrawPanelText(WeaponLabels[Index], bReady ? FLinearColor::White : FLinearColor::Gray,
+		              Button.Min.X + 8 * PanelScale, Button.Min.Y + 10 * PanelScale);
 		const float Remaining = ArmedCastle ? ArmedCastle->Weapons->GetRemainingCooldown(Weapon) : 0;
 		FLSCastleWeaponState WeaponState;
 		const bool bHasState = ArmedCastle && ArmedCastle->Weapons->GetWeaponState(Weapon, WeaponState);
 		if (bHasState)
-			DrawText(FString::Printf(TEXT("Lv %d / %d"), WeaponState.Level, ArmedCastle->Weapons->GetMaxLevel(Weapon)),
-			         FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 27);
+			DrawPanelText(
+			    FString::Printf(TEXT("Lv %d / %d"), WeaponState.Level, ArmedCastle->Weapons->GetMaxLevel(Weapon)),
+			    FLinearColor::White, Button.Min.X + 8 * PanelScale, Button.Min.Y + 27 * PanelScale);
 		const TCHAR* Availability = bReady ? TEXT("Ready") : TEXT("Unavailable");
 		if (bHasState && !WeaponState.bUnlocked)
 			Availability = TEXT("Locked");
 		else if (bHasState && !WeaponState.bEnabled)
 			Availability = TEXT("Disabled");
-		DrawText(Remaining > 0 && bHasState && WeaponState.bUnlocked && WeaponState.bEnabled
-		             ? FString::Printf(TEXT("%.1fs"), Remaining)
-		             : (bAiming ? TEXT("Aiming") : Availability),
-		         Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 40);
+		DrawPanelText(Remaining > 0 && bHasState && WeaponState.bUnlocked && WeaponState.bEnabled
+		                  ? FString::Printf(TEXT("%.1fs"), Remaining)
+		                  : (bAiming ? TEXT("Aiming") : Availability),
+		              Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8 * PanelScale,
+		              Button.Min.Y + 40 * PanelScale);
 		if (Remaining > 0 && bHasState && (!WeaponState.bUnlocked || !WeaponState.bEnabled))
-			DrawText(FString::Printf(TEXT("CD %.1fs"), Remaining), FLinearColor::Yellow, Button.Min.X + 8,
-			         Button.Min.Y + 60);
+			DrawPanelText(FString::Printf(TEXT("CD %.1fs"), Remaining), FLinearColor::Yellow,
+			              Button.Min.X + 8 * PanelScale, Button.Min.Y + 60 * PanelScale);
 	}
 	const TCHAR* WeaponMessage = ArmedCastle ? TEXT("Select weapon, then left click") : TEXT("Select an allied castle");
 	if (Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
 		WeaponMessage = Controller->GetLastWeaponResult() == ELSWeaponCastResult::OutOfRange
 		                    ? TEXT("Out of range | RMB/Esc: cancel")
 		                    : TEXT("Left click: fire | RMB/Esc: cancel");
-	DrawText(WeaponMessage, FLinearColor::White, Weapons.X, WeaponPanel().Max.Y - 24);
+	DrawPanelText(WeaponMessage, FLinearColor::White, Weapons.X, WeaponPanel().Max.Y - 24 * PanelScale);
 }
 
 FBox2D ALSRTSHUD::WeaponPanel() const
 {
 	const FBox2D Production = ProductionPanel();
-	return FBox2D(Production.Min - FVector2D(0, 156), FVector2D(Production.Max.X, Production.Min.Y));
+	return FBox2D(Production.Min - FVector2D(0, 156) * (Production.GetSize().X / 360.0f),
+	              FVector2D(Production.Max.X, Production.Min.Y));
 }
 
 FBox2D ALSRTSHUD::WeaponButton(int32 Index) const
 {
-	const FVector2D Min = WeaponPanel().Min + FVector2D(12 + Index * 112, 40);
-	return FBox2D(Min, Min + FVector2D(104, 82));
+	const float Scale = ProductionPanel().GetSize().X / 360.0f;
+	const FVector2D Min = WeaponPanel().Min + FVector2D(12 + Index * 112, 40) * Scale;
+	return FBox2D(Min, Min + FVector2D(104, 82) * Scale);
 }
 
 void ALSRTSHUD::DrawWorldLine(const FVector& Start, const FVector& End, const FLinearColor& Color, float Thickness)
@@ -334,4 +417,11 @@ void ALSRTSHUD::DrawWeaponShape(ALSMobileCastle* Castle, ELSCastleWeapon Weapon,
 		DrawWorldLine(End, End - Direction * 80 + FVector(-Direction.Y, Direction.X, 0) * 45, Color);
 		DrawWorldLine(End, End - Direction * 80 - FVector(-Direction.Y, Direction.X, 0) * 45, Color);
 	}
+}
+
+bool ALSRTSHUD::GetMinimapWorldPoint(FVector& OutLocation) const
+{
+	return MinimapWidget && FSlateApplication::IsInitialized() &&
+	       MinimapWidget->ResolveWorldPoint(MinimapWidget->GetCachedGeometry(), FSlateApplication::Get().GetCursorPos(),
+	                                        OutLocation);
 }

@@ -18,6 +18,7 @@ public:
 	void Pan(const FVector2D& ScreenDirection, float DeltaSeconds);
 	void Drag(const FVector2D& MouseDelta);
 	void Zoom(float WheelDelta);
+	void SetBattlefieldBounds(const FBox2D& Bounds, float GroundHeight);
 
 	UFUNCTION(BlueprintCallable, Category = "Landship|Camera")
 	void FocusLocation(const FVector& Location);

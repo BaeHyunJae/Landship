@@ -72,6 +72,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 		CancelInput();
 		PendingInput = Input;
 	}
+	/** 미니맵이 변환한 지면 좌표로 명령을 전달한다. 일반 좌클릭은 카메라에 맡긴다. */
+	bool HandleMinimapInput(const FVector& Location, bool bRightClick, bool bQueue);
 	void ArmAttack();
 	void ArmMove();
 	void StopSelected();
@@ -82,10 +84,13 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PlayerTick(float DeltaSeconds) override;
 	virtual void SetupInputComponent() override;
 
   private:
+	UFUNCTION()
+	void PruneSelection();
 	void OnSelectPressed();
 	void OnSelectReleased();
 	void SelectSameType();
@@ -96,7 +101,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	bool IsShiftDown() const;
 	bool HitWorld(FHitResult& Hit) const;
 	void ZoomCamera(float Value);
-	bool CanUseWorldInput(bool bAllowHUD = false) const;
+	bool CanUseWorldInput(bool bAllowHUD = false, bool bKeyboard = false) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Camera", meta = (ClampMin = "0"))
 	float EdgeScrollMargin = 12.0f;

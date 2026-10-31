@@ -18,6 +18,9 @@
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "InputKeyEventArgs.h"
+#include "Vision/LSVisionSubsystem.h"
+#include "Maps/LSBattlefieldSettings.h"
+#include "Vision/LSVisionParticipantComponent.h"
 
 namespace
 {
@@ -33,7 +36,7 @@ ALSPlayerController::ALSPlayerController()
 
 bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
-	if (Params.Event == IE_Pressed && CanUseWorldInput(true))
+	if (Params.Event == IE_Pressed && CanUseWorldInput(true, true))
 	{
 		const FKey WeaponKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(WeaponKeys); ++Index)
@@ -54,7 +57,7 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 			}
 		}
 	}
-	if (Params.Event == IE_Pressed && CanUseWorldInput())
+	if (Params.Event == IE_Pressed && CanUseWorldInput(false, true))
 	{
 		const FKey Numbers[] = {EKeys::Zero, EKeys::One, EKeys::Two,   EKeys::Three, EKeys::Four,
 		                        EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine};
@@ -140,6 +143,11 @@ bool ALSPlayerController::GetCastleWeaponAim(FVector& Aim) const
 	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
 	    GetSelectedArmedCastle() != AimingCastle.Get() || !GetWorld())
 		return false;
+	if (const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD()))
+	{
+		if (HUD->GetMinimapWorldPoint(Aim))
+			return true;
+	}
 	FVector Origin, Direction;
 	if (!DeprojectMousePositionToWorld(Origin, Direction))
 		return false;
@@ -181,6 +189,10 @@ void ALSPlayerController::SetupInputComponent()
 void ALSPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
+	{
+		Vision->OnSnapshotCommittedEvent.AddDynamic(this, &ALSPlayerController::PruneSelection);
+	}
 	if (IsLocalController())
 	{
 		FInputModeGameAndUI Mode;
@@ -194,7 +206,7 @@ void ALSPlayerController::BeginPlay()
 	}
 }
 
-bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD) const
+bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 {
 	const UGameViewportClient* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
 	if (!IsLocalController() || !Client || !Client->Viewport || !Client->Viewport->HasFocus() ||
@@ -206,10 +218,29 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD) const
 	    FSlateApplication::Get().GetCursorPos(), FSlateApplication::Get().GetInteractiveTopLevelWindows());
 	// 새 PIE 창은 SPIEViewport를 사용하므로 타입 이름 대신 실제 전장 위젯을 비교한다.
 	const TSharedPtr<SViewport> GameViewport = Client->GetGameViewportWidget();
-	if (!Path.IsValid() || !GameViewport.IsValid() || Path.Widgets.Last().Widget != GameViewport)
+	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
+	bool bMinimapPath = false;
+	if (HUD && Path.IsValid())
+	{
+		for (int32 Index = 0; Index < Path.Widgets.Num(); ++Index)
+		{
+			bMinimapPath |= HUD->IsMinimapWidget(Path.Widgets[Index].Widget);
+		}
+	}
+	const bool bMinimap = HUD && bMinimapPath;
+	const bool bCaptured = HUD && HUD->IsMinimapPointerCaptured();
+	if (!bKeyboard && bCaptured)
 	{
 		return false;
 	}
+	if (!Path.IsValid() || !GameViewport.IsValid() ||
+	    (Path.Widgets.Last().Widget != GameViewport && !(bKeyboard && (bMinimap || bCaptured))))
+	{
+		return false;
+	}
+	// UMG 위에서는 전장 뷰포트의 마우스 좌표가 없을 수 있으므로 실제 Slate 경로를 사용한다.
+	if (bKeyboard && (bMinimap || bCaptured))
+		return true;
 	float X;
 	float Y;
 	int32 Width;
@@ -219,17 +250,20 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD) const
 	{
 		return false;
 	}
-	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
 	return bAllowHUD || !HUD || !HUD->IsOverPanel(FVector2D(X, Y));
 }
 
-void ALSPlayerController::PlayerTick(float DeltaSeconds)
+void ALSPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	Super::PlayerTick(DeltaSeconds);
-	if (PendingInput == ELSCommandInput::CastleWeapon &&
-	    (!AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get() ||
-	     AimingCastle->Weapons->GetStatus(PendingWeapon) != ELSWeaponCastResult::Ready))
-		CancelInput();
+	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
+	{
+		Vision->OnSnapshotCommittedEvent.RemoveDynamic(this, &ALSPlayerController::PruneSelection);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void ALSPlayerController::PruneSelection()
+{
 	SelectedActors.RemoveAll(
 	    [](const TWeakObjectPtr<AActor>& Actor)
 	    {
@@ -237,7 +271,24 @@ void ALSPlayerController::PlayerTick(float DeltaSeconds)
 		        Actor.IsValid() ? Actor->FindComponentByClass<ULSSelectableComponent>() : nullptr;
 		    return !Selection || !Selection->IsSelectable();
 	    });
+}
+
+void ALSPlayerController::PlayerTick(float DeltaSeconds)
+{
+	Super::PlayerTick(DeltaSeconds);
+	PruneSelection();
+	if (PendingInput == ELSCommandInput::CastleWeapon &&
+	    (!AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get() ||
+	     AimingCastle->Weapons->GetStatus(PendingWeapon) != ELSWeaponCastResult::Ready))
+		CancelInput();
 	ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn());
+	if (CameraPawn && !CanUseWorldInput() && CanUseWorldInput(false, true))
+	{
+		const FVector2D Keys(
+		    static_cast<int32>(IsInputKeyDown(EKeys::Right)) - static_cast<int32>(IsInputKeyDown(EKeys::Left)),
+		    static_cast<int32>(IsInputKeyDown(EKeys::Up)) - static_cast<int32>(IsInputKeyDown(EKeys::Down)));
+		CameraPawn->Pan(Keys, DeltaSeconds);
+	}
 	if (!CameraPawn || !CanUseWorldInput())
 	{
 		if (bSelecting && CVarRTSInputDebug.GetValueOnGameThread())
@@ -402,7 +453,26 @@ bool ALSPlayerController::IsShiftDown() const
 
 bool ALSPlayerController::HitWorld(FHitResult& Hit) const
 {
-	return GetHitResultUnderCursor(ECC_Visibility, false, Hit);
+	FVector Origin, Direction;
+	if (!GetWorld() || !DeprojectMousePositionToWorld(Origin, Direction))
+	{
+		return false;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LSVisibleCursor), false);
+	if (const ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
+	{
+		TArray<AActor*> Concealed;
+		Vision->GetConcealedActors(Concealed);
+		for (AActor* Actor : Concealed)
+		{
+			Params.AddIgnoredActor(Actor);
+			TArray<AActor*> ConcealedChildren;
+			Actor->FindComponentByClass<ULSVisionParticipantComponent>()->GetAttachedVisualActors(ConcealedChildren);
+			Params.AddIgnoredActors(ConcealedChildren);
+		}
+	}
+	return GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HitResultTraceDistance,
+	                                            ECC_Visibility, Params);
 }
 
 void ALSPlayerController::OnSelectPressed()
@@ -413,7 +483,7 @@ void ALSPlayerController::OnSelectPressed()
 		GetMousePosition(X, Y);
 		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT press allowed=%d mouse=%f,%f"), CanUseWorldInput(true), X, Y);
 	}
-	if (!CanUseWorldInput(true))
+	if (!CanUseWorldInput(true, true))
 	{
 		return;
 	}
@@ -540,7 +610,9 @@ void ALSPlayerController::SelectSameType()
 
 void ALSPlayerController::ArmAttack()
 {
-	if (!CanUseWorldInput())
+	if (CVarRTSInputDebug.GetValueOnGameThread())
+		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT attack allowed=%d"), CanUseWorldInput(false, true));
+	if (!CanUseWorldInput(false, true))
 	{
 		return;
 	}
@@ -557,7 +629,7 @@ void ALSPlayerController::ArmAttack()
 
 void ALSPlayerController::ArmMove()
 {
-	if (!CanUseWorldInput())
+	if (!CanUseWorldInput(false, true))
 	{
 		return;
 	}
@@ -620,7 +692,7 @@ void ALSPlayerController::OnRightClick()
 {
 	if (PendingInput == ELSCommandInput::CastleWeapon)
 	{
-		if (CanUseWorldInput(true))
+		if (CanUseWorldInput(true, true))
 			CancelInput();
 		return;
 	}
@@ -650,7 +722,7 @@ void ALSPlayerController::OnRightClick()
 
 void ALSPlayerController::StopSelected()
 {
-	if (CanUseWorldInput())
+	if (CanUseWorldInput(false, true))
 	{
 		CancelInput();
 		IssueSelectionOrder(ELSOrderKind::Idle, FVector::ZeroVector, nullptr, false);
@@ -659,7 +731,7 @@ void ALSPlayerController::StopSelected()
 
 void ALSPlayerController::HoldSelected()
 {
-	if (CanUseWorldInput())
+	if (CanUseWorldInput(false, true))
 	{
 		CancelInput();
 		IssueSelectionOrder(ELSOrderKind::Hold, FVector::ZeroVector, nullptr, false);
@@ -760,4 +832,35 @@ bool ALSPlayerController::GetOrderMarker(FVector& OutLocation, FLinearColor& Out
 	OutLocation = OrderMarkerLocation;
 	OutColor = OrderMarkerColor;
 	return true;
+}
+
+bool ALSPlayerController::HandleMinimapInput(const FVector& Location, bool bRightClick, bool bQueue)
+{
+	const ALSBattlefieldSettings* Settings = ALSBattlefieldSettings::Find(GetWorld());
+	if (!Settings || Location.ContainsNaN() || !Settings->GetWorldBounds().IsInsideOrOn(FVector2D(Location)))
+		return false;
+	if (bRightClick && PendingInput != ELSCommandInput::None)
+	{
+		CancelInput();
+		return true;
+	}
+	const FVector Ground(Location.X, Location.Y, Settings->GetGroundHeight());
+	if (!bRightClick && PendingInput == ELSCommandInput::CastleWeapon)
+	{
+		ConfirmCastleWeapon(Ground);
+		return true;
+	}
+	if (bRightClick || PendingInput == ELSCommandInput::Move || PendingInput == ELSCommandInput::Attack)
+	{
+		const ELSOrderKind Kind =
+		    PendingInput == ELSCommandInput::Attack ? ELSOrderKind::AttackMove : ELSOrderKind::Move;
+		const bool bAccepted = IssueSelectionOrder(Kind, Ground, nullptr, bQueue);
+		if (CVarRTSInputDebug.GetValueOnGameThread())
+			UE_LOG(LogTemp, Display, TEXT("RTS_MINIMAP order=%s location=%s selected=%d accepted=%d queue=%d"),
+			       *UEnum::GetValueAsString(Kind), *Ground.ToString(), GetSelectedActors().Num(), bAccepted, bQueue);
+		if (!bQueue)
+			CancelInput();
+		return true;
+	}
+	return false;
 }
