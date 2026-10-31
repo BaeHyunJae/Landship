@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -45,11 +46,15 @@ bool FLSMobileCastleTest::RunTest(const FString& Parameters)
 	FLSOrder Attack;
 	Attack.Kind = ELSOrderKind::AttackTarget;
 	Attack.Target = Enemy;
-	TestTrue(TEXT("공통 지정 공격 명령"), Castle->Orders->SubmitOrder(Attack));
+	TestFalse(TEXT("성의 기본 지정 공격 제거"), Castle->Orders->SubmitOrder(Attack));
+	TestFalse(TEXT("성의 기본 자동 공격 제거"), Castle->BasicAttack->IsConfigured());
+	TestTrue(TEXT("수동 대포 시전"), Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, Enemy->GetActorLocation()) ==
+	                                     ELSWeaponCastResult::Ready);
 	FLSHealthSnapshot Snapshot;
 	ULSHealthComponent* EnemyHealth = Enemy->FindComponentByClass<ULSHealthComponent>();
 	EnemyHealth->TryGetHealth(Snapshot);
-	TestEqual(TEXT("성 근접 공격 피해"), Snapshot.CurrentHealth, 1000.0f - Stats.AttackPower);
+	TestEqual(TEXT("수동 대포 피해"), Snapshot.CurrentHealth,
+	          1000.0f - Castle->Weapons->FindSettings(ELSCastleWeapon::Cannon)->Damage);
 	EnemyHealth->ApplyDamage(ULSHealthComponent::MakeDamageRequest(10000, Castle, Castle));
 	EnemyHealth->TryGetHealth(Snapshot);
 	TestTrue(TEXT("공통 사망 처리와 성 보존"), Snapshot.bIsDead && IsValid(Enemy) && !EnemyHealth->bDestroyOnDeath);

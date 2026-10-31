@@ -66,7 +66,10 @@ void ALSUnit::BeginPlay()
 		AttackSettings.Damage = Stats.AttackPower;
 		AttackSettings.Interval = Stats.AttackInterval;
 		AttackSettings.Range = Stats.AttackRange;
-		BasicAttack->ConfigureAttack(AttackSettings);
+		if (SupportsBasicAttack())
+		{
+			BasicAttack->ConfigureAttack(AttackSettings);
+		}
 		GetCharacterMovement()->MaxWalkSpeed = Stats.MovementSpeed;
 	}
 	Super::BeginPlay();

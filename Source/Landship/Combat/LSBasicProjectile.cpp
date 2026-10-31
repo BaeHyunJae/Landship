@@ -3,6 +3,7 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSFactionInterface.h"
 #include "Components/SphereComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -44,16 +45,35 @@ ALSBasicProjectile::ALSBasicProjectile()
 bool ALSBasicProjectile::Launch(const FLSDamageRequest& Request, AActor* Target, const FVector& Direction, float Speed,
                                 float Radius, float Lifetime, UMaterialInterface* Material)
 {
-	if (bLaunched || !IsValid(Target) || !ULSCombatTargetLibrary::IsCombatAlive(Target) || Direction.ContainsNaN() ||
-	    Direction.IsNearlyZero() || !FMath::IsFinite(Speed) || Speed <= 0 || !FMath::IsFinite(Radius) || Radius <= 0 ||
-	    !FMath::IsFinite(Lifetime) || Lifetime <= 0 || !FMath::IsFinite(Request.DamageAmount) ||
-	    Request.DamageAmount < 0 || (Request.bHasSourceFaction && !LSFaction::IsValid(Request.SourceFaction)))
-	{
+	if (!IsValid(Target) || !ULSCombatTargetLibrary::IsCombatAlive(Target) ||
+	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
-	}
+	IntendedTarget = Target;
+	return true;
+}
+
+bool ALSBasicProjectile::LaunchFirstEnemy(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
+                                          float Radius, float Lifetime, UMaterialInterface* Material)
+{
+	if (!Request.bHasSourceFaction || !LSFaction::IsValid(Request.SourceFaction) ||
+	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
+		return false;
+	bHitsFirstEnemy = true;
+	Shaft->SetRelativeScale3D(FVector(0.9f, 0.09f, 0.09f));
+	Tip->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.25f));
+	return true;
+}
+
+bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
+                                          float Radius, float Lifetime, UMaterialInterface* Material)
+{
+	if (bLaunched || Direction.ContainsNaN() || Direction.IsNearlyZero() || !FMath::IsFinite(Speed) || Speed <= 0 ||
+	    !FMath::IsFinite(Radius) || Radius <= 0 || !FMath::IsFinite(Lifetime) || Lifetime <= 0 ||
+	    !FMath::IsFinite(Request.DamageAmount) || Request.DamageAmount < 0 ||
+	    (Request.bHasSourceFaction && !LSFaction::IsValid(Request.SourceFaction)))
+		return false;
 	ShotRequest = Request;
 	OriginalSource = Request.SourceActor;
-	IntendedTarget = Target;
 	// 공격자를 강하게 보유하지 않는다. 제거된 뒤에도 저장된 진영으로 오폭을 판정한다.
 	ShotRequest.SourceActor = nullptr;
 	ShotRequest.DamageCauser = nullptr;
@@ -96,6 +116,15 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	const FVector Start = GetActorLocation();
 	const FVector End = Start + FlightVelocity * TravelSeconds;
 	// 다른 유닛·건물·지형의 차단 없이 발사 시 지정한 대상의 충돌 형상만 검사한다.
+	if (bHitsFirstEnemy)
+	{
+		FHitResult Hit;
+		if (FindFirstEnemyHit(Start, End, Hit))
+		{
+			ResolveHit(Hit);
+			return;
+		}
+	}
 	AActor* Target = IntendedTarget.Get();
 	if (IsValid(Target) && !Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target))
 	{
@@ -126,6 +155,41 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	{
 		Destroy();
 	}
+}
+
+bool ALSBasicProjectile::FindFirstEnemyHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
+{
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBallista), false, this);
+	if (OriginalSource.IsValid())
+		Query.AddIgnoredActor(OriginalSource.Get());
+	bool bSkipped;
+	do
+	{
+		bSkipped = false;
+		TArray<FHitResult> Hits;
+		GetWorld()->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity, Objects,
+		                                   FCollisionShape::MakeSphere(Collision->GetScaledSphereRadius()), Query);
+		Hits.Sort([](const FHitResult& A, const FHitResult& B) { return A.Time < B.Time; });
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* Target = Hit.GetActor();
+			if (!IsValid(Target))
+				continue;
+			const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Target);
+			if (!Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) && Faction &&
+			    LSFaction::IsValid(Faction->GetFaction()) && Faction->GetFaction() != ShotRequest.SourceFaction)
+			{
+				OutHit = Hit;
+				return true;
+			}
+			Query.AddIgnoredActor(Target);
+			bSkipped = true;
+		}
+	} while (bSkipped);
+	return false;
 }
 
 void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)

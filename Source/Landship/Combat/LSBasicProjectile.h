@@ -26,6 +26,9 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	/** SpawnActorDeferred 이후 FinishSpawning 전에 한 번 호출한다. */
 	bool Launch(const FLSDamageRequest& Request, AActor* Target, const FVector& Direction, float Speed, float Radius,
 	            float Lifetime, UMaterialInterface* Material = nullptr);
+	/** 발리스타: 지형·아군을 통과하고 진행 경로의 첫 적에게만 명중한다. */
+	bool LaunchFirstEnemy(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
+	                      float Lifetime, UMaterialInterface* Material = nullptr);
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Projectile")
 	FLSProjectileDamageApplied OnDamageApplied;
 
@@ -34,6 +37,9 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 
   private:
 	void ResolveHit(const FHitResult& Hit);
+	bool InitializeFlight(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
+	                      float Lifetime, UMaterialInterface* Material);
+	bool FindFirstEnemyHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Projectile")
 	TObjectPtr<USphereComponent> Collision;
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Projectile")
@@ -50,4 +56,5 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	float RemainingFlightTime = 0;
 	bool bLaunched = false;
 	bool bResolved = false;
+	bool bHitsFirstEnemy = false;
 };

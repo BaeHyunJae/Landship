@@ -34,6 +34,8 @@ void ULSOrderComponent::BeginPlay()
 
 bool ULSOrderComponent::CanAttack() const
 {
+	if (const ALSUnit* Unit = Cast<ALSUnit>(GetOwner()); Unit && !Unit->SupportsBasicAttack())
+		return false;
 	const ULSBasicAttackComponent* Component =
 	    GetOwner() ? GetOwner()->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
 	return Component && Component->IsConfigured() && ULSCombatTargetLibrary::IsCombatAlive(GetOwner());
@@ -160,6 +162,16 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 
 void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 {
+	if (bKnockbackActive)
+	{
+		// 공중에서 새 명령을 받아도 강제 이동 자체는 취소하지 않는다.
+		ActiveOrder = Order;
+		EngagedTarget.Reset();
+		bHasEngagement = false;
+		if (Attack)
+			Attack->StopAttack();
+		return;
+	}
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(Order.Kind != ELSOrderKind::AttackTarget);
@@ -196,7 +208,8 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(
-		    !bHasEngagement && (ActiveOrder.Kind == ELSOrderKind::Move || ActiveOrder.Kind == ELSOrderKind::AttackMove));
+		    !bHasEngagement &&
+		    (ActiveOrder.Kind == ELSOrderKind::Move || ActiveOrder.Kind == ELSOrderKind::AttackMove));
 	}
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
@@ -224,6 +237,26 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 		bLastMovementSucceeded = Result.Code == EPathFollowingRequestResult::AlreadyAtGoal;
 	}
 	return Result.Code != EPathFollowingRequestResult::Failed;
+}
+
+bool ULSOrderComponent::ApplyKnockback(const FVector& Velocity)
+{
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (!HasBegunPlay() || !IsValid(Character) || Character->IsActorBeingDestroyed() || Velocity.ContainsNaN() ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(Character) || !GetWorld() || GetWorld()->bIsTearingDown)
+		return false;
+	StopMovement();
+	if (Attack)
+		Attack->StopAttack();
+	EngagedTarget.Reset();
+	bHasEngagement = false;
+	NextRepathTime = 0;
+	bKnockbackActive = true;
+	// LaunchCharacter의 보류된 속도가 다음 이동 틱에서 적용될 시간을 보장한다.
+	KnockbackResumeAfter = GetWorld()->GetTimeSeconds() + 0.05;
+	Character->GetCharacterMovement()->SetAvoidanceEnabled(false);
+	Character->LaunchCharacter(Velocity, true, true);
+	return true;
 }
 
 void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result)
@@ -388,9 +421,20 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	}
 	if (!ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
+		bKnockbackActive = false;
 		PendingOrders.Reset();
 		BeginOrder(FLSOrder());
 		return;
+	}
+	if (bKnockbackActive)
+	{
+		const ACharacter* Character = Cast<ACharacter>(GetOwner());
+		if (Character &&
+		    (Character->GetCharacterMovement()->IsFalling() || GetWorld()->GetTimeSeconds() < KnockbackResumeAfter))
+			return;
+		bKnockbackActive = false;
+		const FLSOrder ResumeOrder = ActiveOrder;
+		BeginOrder(ResumeOrder);
 	}
 	if (ActiveOrder.Kind == ELSOrderKind::Move)
 	{

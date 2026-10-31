@@ -11,6 +11,12 @@ class LANDSHIP_API ALSMobileCastle : public ALSUnit
 
   public:
 	ALSMobileCastle();
+	virtual bool SupportsBasicAttack() const override
+	{
+		return false;
+	}
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Weapons")
+	TObjectPtr<class ULSCastleWeaponComponent> Weapons;
 
   protected:
 	virtual void BeginPlay() override;

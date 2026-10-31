@@ -39,6 +39,12 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	ULSOrderComponent();
 	UFUNCTION(BlueprintCallable, Category = "Landship|Orders")
 	bool SubmitOrder(const FLSOrder& Order, bool bQueue = false);
+	/** 현재 명령과 예약은 보존하고, 넉백 착지 뒤 실행을 재개한다. */
+	bool ApplyKnockback(const FVector& Velocity);
+	bool IsKnockedBack() const
+	{
+		return bKnockbackActive;
+	}
 	UFUNCTION(BlueprintPure, Category = "Landship|Orders")
 	ELSOrderKind GetOrderKind() const
 	{
@@ -106,4 +112,6 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	FAIRequestID MovementRequestId = FAIRequestID::InvalidRequest;
 	bool bMovementCompleted = false;
 	bool bLastMovementSucceeded = false;
+	bool bKnockbackActive = false;
+	double KnockbackResumeAfter = 0;
 };

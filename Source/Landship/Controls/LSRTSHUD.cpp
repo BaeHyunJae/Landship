@@ -6,6 +6,8 @@
 #include "Engine/Canvas.h"
 #include "Match/LSGameState.h"
 #include "Engine/World.h"
+#include "Castle/LSMobileCastle.h"
+#include "EngineUtils.h"
 
 FBox2D ALSRTSHUD::InfoPanel() const
 {
@@ -37,7 +39,8 @@ FBox2D ALSRTSHUD::ProductionButton(int32 Index) const
 
 bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 {
-	return InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse);
+	return InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse) ||
+	       WeaponPanel().IsInsideOrOn(Mouse);
 }
 
 bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
@@ -48,6 +51,14 @@ bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
 	}
 	if (ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner))
 	{
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			if (WeaponButton(Index).IsInsideOrOn(Mouse))
+			{
+				Controller->ArmCastleWeapon(static_cast<ELSCastleWeapon>(Index));
+				return true;
+			}
+		}
 		for (int32 Index = 0; Index < 3; ++Index)
 		{
 			if (ProductionButton(Index).IsInsideOrOn(Mouse))
@@ -125,7 +136,25 @@ void ALSRTSHUD::DrawHUD()
 			         58 * FMath::Clamp(HealthSnapshot.CurrentHealth / HealthSnapshot.MaxHealth, 0.0f, 1.0f), 4);
 		}
 	}
-	for (const FBox2D& Box : {InfoPanel(), ProductionPanel()})
+	ALSMobileCastle* ArmedCastle = Controller->GetSelectedArmedCastle();
+	if (ArmedCastle && Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
+	{
+		FVector Aim = ArmedCastle->GetActorLocation();
+		const bool bValidAim =
+		    Controller->GetCastleWeaponAim(Aim) &&
+		    ArmedCastle->Weapons->ValidateAim(Controller->GetPendingWeapon(), Aim) == ELSWeaponCastResult::Ready;
+		DrawWeaponShape(ArmedCastle, Controller->GetPendingWeapon(), Aim,
+		                bValidAim ? FLinearColor(0, 0.85f, 1) : FLinearColor::Red, true);
+	}
+	for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It)
+	{
+		ELSCastleWeapon Weapon;
+		FVector Aim;
+		FLSCastleWeaponSettings Settings;
+		if (It->Weapons->GetRecentCast(Weapon, Aim, &Settings))
+			DrawWeaponShape(*It, Weapon, Aim, FLinearColor(1, 0.6f, 0.1f), false, &Settings);
+	}
+	for (const FBox2D& Box : {InfoPanel(), ProductionPanel(), WeaponPanel()})
 	{
 		DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.92f), Box.Min.X, Box.Min.Y, Box.GetSize().X, Box.GetSize().Y);
 	}
@@ -158,7 +187,7 @@ void ALSRTSHUD::DrawHUD()
 	    State ? FString::Printf(TEXT("Population %d / %d"), State->GetCurrentPopulation(), State->GetPopulationLimit())
 	          : TEXT("Population --"),
 	    FLinearColor::White, Panel.X, Panel.Y + 22);
-	const TCHAR* Labels[] = {TEXT("Q  Spearman"), TEXT("W  Archer"), TEXT("E  Cavalry")};
+	const TCHAR* Labels[] = {TEXT("F1 Spearman"), TEXT("F2 Archer"), TEXT("F3 Cavalry")};
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		const ELSTroopType Type = static_cast<ELSTroopType>(Index);
@@ -189,4 +218,120 @@ void ALSRTSHUD::DrawHUD()
 	else if (Controller->GetLastProductionResult() == ELSProductionResult::NoSpace)
 		Message = TEXT("No reachable space near castle");
 	DrawText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24);
+	const FVector2D Weapons = WeaponPanel().Min + FVector2D(12, 10);
+	DrawText(TEXT("Castle Weapons"), FLinearColor::White, Weapons.X, Weapons.Y);
+	const TCHAR* WeaponLabels[] = {TEXT("Q  Cannon"), TEXT("W  Shotgun"), TEXT("E  Ballista")};
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const ELSCastleWeapon Weapon = static_cast<ELSCastleWeapon>(Index);
+		const bool bReady = ArmedCastle && ArmedCastle->Weapons->GetStatus(Weapon) == ELSWeaponCastResult::Ready;
+		const bool bAiming =
+		    Controller->GetPendingInput() == ELSCommandInput::CastleWeapon && Controller->GetPendingWeapon() == Weapon;
+		const FBox2D Button = WeaponButton(Index);
+		DrawRect(bAiming ? FLinearColor(0.4f, 0.22f, 0.05f)
+		                 : (bReady ? FLinearColor(0.1f, 0.25f, 0.35f) : FLinearColor(0.07f, 0.08f, 0.1f)),
+		         Button.Min.X, Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
+		DrawText(WeaponLabels[Index], bReady ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8,
+		         Button.Min.Y + 10);
+		const float Remaining = ArmedCastle ? ArmedCastle->Weapons->GetRemainingCooldown(Weapon) : 0;
+		FLSCastleWeaponState WeaponState;
+		const bool bHasState = ArmedCastle && ArmedCastle->Weapons->GetWeaponState(Weapon, WeaponState);
+		if (bHasState)
+			DrawText(FString::Printf(TEXT("Lv %d / %d"), WeaponState.Level, ArmedCastle->Weapons->GetMaxLevel(Weapon)),
+			         FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 27);
+		const TCHAR* Availability = bReady ? TEXT("Ready") : TEXT("Unavailable");
+		if (bHasState && !WeaponState.bUnlocked)
+			Availability = TEXT("Locked");
+		else if (bHasState && !WeaponState.bEnabled)
+			Availability = TEXT("Disabled");
+		DrawText(Remaining > 0 && bHasState && WeaponState.bUnlocked && WeaponState.bEnabled
+		             ? FString::Printf(TEXT("%.1fs"), Remaining)
+		             : (bAiming ? TEXT("Aiming") : Availability),
+		         Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 40);
+		if (Remaining > 0 && bHasState && (!WeaponState.bUnlocked || !WeaponState.bEnabled))
+			DrawText(FString::Printf(TEXT("CD %.1fs"), Remaining), FLinearColor::Yellow, Button.Min.X + 8,
+			         Button.Min.Y + 60);
+	}
+	const TCHAR* WeaponMessage = ArmedCastle ? TEXT("Select weapon, then left click") : TEXT("Select an allied castle");
+	if (Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
+		WeaponMessage = Controller->GetLastWeaponResult() == ELSWeaponCastResult::OutOfRange
+		                    ? TEXT("Out of range | RMB/Esc: cancel")
+		                    : TEXT("Left click: fire | RMB/Esc: cancel");
+	DrawText(WeaponMessage, FLinearColor::White, Weapons.X, WeaponPanel().Max.Y - 24);
+}
+
+FBox2D ALSRTSHUD::WeaponPanel() const
+{
+	const FBox2D Production = ProductionPanel();
+	return FBox2D(Production.Min - FVector2D(0, 156), FVector2D(Production.Max.X, Production.Min.Y));
+}
+
+FBox2D ALSRTSHUD::WeaponButton(int32 Index) const
+{
+	const FVector2D Min = WeaponPanel().Min + FVector2D(12 + Index * 112, 40);
+	return FBox2D(Min, Min + FVector2D(104, 82));
+}
+
+void ALSRTSHUD::DrawWorldLine(const FVector& Start, const FVector& End, const FLinearColor& Color, float Thickness)
+{
+	FVector2D A, B;
+	if (PlayerOwner && PlayerOwner->ProjectWorldLocationToScreen(Start, A) &&
+	    PlayerOwner->ProjectWorldLocationToScreen(End, B))
+		DrawLine(A.X, A.Y, B.X, B.Y, Color, Thickness);
+}
+
+void ALSRTSHUD::DrawWeaponShape(ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const FVector& Aim,
+                                const FLinearColor& Color, bool bPreview, const FLSCastleWeaponSettings* Snapshot)
+{
+	const FLSCastleWeaponSettings* Settings = Snapshot ? Snapshot : Castle->Weapons->FindSettings(Weapon);
+	if (!Settings)
+		return;
+	float Radius, HalfHeight;
+	Castle->GetSimpleCollisionCylinder(Radius, HalfHeight);
+	const FVector Origin = Castle->GetActorLocation() - FVector(0, 0, HalfHeight - 6);
+	const auto DrawCircle = [this](const FVector& Center, float CircleRadius, const FLinearColor& CircleColor)
+	{
+		for (int32 Index = 0; Index < 64; ++Index)
+		{
+			const float A = Index * 2 * PI / 64;
+			const float B = (Index + 1) * 2 * PI / 64;
+			DrawWorldLine(Center + FVector(FMath::Cos(A), FMath::Sin(A), 0) * CircleRadius,
+			              Center + FVector(FMath::Cos(B), FMath::Sin(B), 0) * CircleRadius, CircleColor);
+		}
+	};
+	if (Weapon == ELSCastleWeapon::Cannon)
+	{
+		if (bPreview)
+			DrawCircle(Origin, Settings->Range, FLinearColor(0.15f, 0.4f, 0.7f));
+		DrawCircle(Aim + FVector(0, 0, 6), Settings->Radius, Color);
+		return;
+	}
+	const FVector Direction = (Aim - Origin).GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+		return;
+	if (Weapon == ELSCastleWeapon::Shotgun)
+	{
+		const float Angle = FMath::Atan2(Direction.Y, Direction.X);
+		const float HalfAngle = FMath::DegreesToRadians(Settings->ConeAngle / 2);
+		FVector Previous = Origin;
+		for (int32 Index = 0; Index <= 40; ++Index)
+		{
+			const float CurrentAngle = Angle - HalfAngle + HalfAngle * 2 * Index / 40;
+			const FVector Point =
+			    Origin + FVector(FMath::Cos(CurrentAngle), FMath::Sin(CurrentAngle), 0) * Settings->Range;
+			DrawWorldLine(Previous, Point, Color);
+			Previous = Point;
+		}
+		DrawWorldLine(Previous, Origin, Color);
+	}
+	else
+	{
+		const FVector Side(-Direction.Y * Settings->Radius, Direction.X * Settings->Radius, 0);
+		const FVector End = Origin + Direction * Settings->Range;
+		DrawWorldLine(Origin + Side, End + Side, Color);
+		DrawWorldLine(Origin - Side, End - Side, Color);
+		DrawWorldLine(End + Side, End - Side, Color);
+		DrawWorldLine(End, End - Direction * 80 + FVector(-Direction.Y, Direction.X, 0) * 45, Color);
+		DrawWorldLine(End, End - Direction * 80 - FVector(-Direction.Y, Direction.X, 0) * 45, Color);
+	}
 }

@@ -3,6 +3,8 @@ from pathlib import Path
 import unreal
 
 project = Path(unreal.Paths.project_dir())
+import runpy
+runpy.run_path(str(project / 'docs/development/setup-castle-weapon-data.py'))
 assets = unreal.AssetToolsHelpers.get_asset_tools()
 editor_assets = unreal.EditorAssetLibrary
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -54,7 +56,8 @@ castle_class = unreal.load_class(None, '/Script/Landship.LSMobileCastle')
 probe_class = unreal.load_class(None, '/Script/Landship.LSHMHTroopProbe')
 navigation_class = unreal.load_class(None, '/Script/Landship.LSNavigationSetup')
 production_probe_class = unreal.load_class(None, '/Script/Landship.LSHMHProductionProbe')
-if not unit_class or not probe_class or not castle_class or not navigation_class or not production_probe_class:
+weapons_probe_class = unreal.load_class(None, '/Script/Landship.LSHMHCastleWeaponsProbe')
+if not unit_class or not probe_class or not castle_class or not navigation_class or not production_probe_class or not weapons_probe_class:
     raise RuntimeError('Build the troop classes first')
 
 def ensure_actor(label, actor_class, location):
@@ -85,6 +88,7 @@ for faction, x, suffix in [(unreal.LSFaction.ALLY, -800, 'Ally'), (unreal.LSFact
             raise RuntimeError('Troop configuration rejected')
 ensure_actor('HMH_Troop_Probe', probe_class, (0, 0, 0))
 ensure_actor('HMH_Production_Probe', production_probe_class, (0, 0, 0))
+ensure_actor('HMH_Weapons_Probe', weapons_probe_class, (0, 0, 0))
 navigation = ensure_actor('HMH_NavigationSetup', navigation_class, (0, 0, 0))
 navigation.set_editor_property('agent_radius', 142.0)
 navigation.set_editor_property('agent_height', 284.0)

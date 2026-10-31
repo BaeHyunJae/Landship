@@ -1,4 +1,6 @@
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
+#include "Combat/LSBasicAttackComponent.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
@@ -12,6 +14,8 @@
 
 ALSMobileCastle::ALSMobileCastle()
 {
+	Weapons = CreateDefaultSubobject<ULSCastleWeaponComponent>(TEXT("Weapons"));
+	BasicAttack->SetAutoActivate(false);
 	static ConstructorHelpers::FObjectFinder<UDataTable> Table(
 	    TEXT("/Game/Landship/Troops/Data/DT_TroopStats.DT_TroopStats"));
 	StatsRow.DataTable = Table.Object;

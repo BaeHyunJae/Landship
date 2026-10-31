@@ -4,9 +4,11 @@
 #include "GameFramework/PlayerController.h"
 #include "Controls/LSOrderComponent.h"
 #include "Troops/LSTroopProductionComponent.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "LSPlayerController.generated.h"
 
 class ALSCastle;
+class ALSMobileCastle;
 
 USTRUCT()
 struct FLSControlGroup
@@ -21,7 +23,8 @@ enum class ELSCommandInput : uint8
 {
 	None,
 	Move,
-	Attack
+	Attack,
+	CastleWeapon
 };
 
 /** RTS 카메라 입력, 공통 선택과 부대 지정 및 선택 대상의 명령 전달을 처리한다. */
@@ -34,7 +37,22 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
 	TObjectPtr<ULSTroopProductionComponent> Production;
 	void ProduceTroop(ELSTroopType Type);
-	ELSProductionResult GetLastProductionResult() const { return LastProductionResult; }
+	ALSMobileCastle* GetSelectedArmedCastle() const;
+	bool ArmCastleWeapon(ELSCastleWeapon Weapon);
+	ELSWeaponCastResult ConfirmCastleWeapon(const FVector& Aim);
+	bool GetCastleWeaponAim(FVector& Aim) const;
+	ELSCastleWeapon GetPendingWeapon() const
+	{
+		return PendingWeapon;
+	}
+	ELSWeaponCastResult GetLastWeaponResult() const
+	{
+		return LastWeaponResult;
+	}
+	ELSProductionResult GetLastProductionResult() const
+	{
+		return LastProductionResult;
+	}
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Selection")
@@ -73,6 +91,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	void SelectSameType();
 	void OnRightClick();
 	void CompleteTargetInput();
+	UFUNCTION()
+	void OnAimedWeaponStateChanged(ELSCastleWeapon Weapon, const FLSCastleWeaponState& State);
 	bool IsShiftDown() const;
 	bool HitWorld(FHitResult& Hit) const;
 	void ZoomCamera(float Value);
@@ -94,6 +114,9 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "1"))
 	float FormationSpacing = 150.0f;
 	ELSCommandInput PendingInput = ELSCommandInput::None;
+	ELSCastleWeapon PendingWeapon = ELSCastleWeapon::Cannon;
+	ELSWeaponCastResult LastWeaponResult = ELSWeaponCastResult::Ready;
+	TWeakObjectPtr<ALSMobileCastle> AimingCastle;
 	ELSProductionResult LastProductionResult = ELSProductionResult::Ready;
 	int32 LastGroup = INDEX_NONE;
 	double LastGroupTime = -1;
