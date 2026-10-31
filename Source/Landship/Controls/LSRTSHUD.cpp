@@ -181,23 +181,7 @@ void ALSRTSHUD::DrawHUD()
 		float Radius;
 		float HalfHeight;
 		Actor->GetSimpleCollisionCylinder(Radius, HalfHeight);
-		const FVector Base = Actor->GetActorLocation() - FVector(0, 0, HalfHeight - 5);
-		// 선택 표시는 Shipping에서도 필요하므로 디버그 드로잉에 의존하지 않는다.
-		const float RingRadius = FMath::Max(Radius, 25.0f) + 8;
-		for (int32 Segment = 0; Segment < 40; ++Segment)
-		{
-			const float AngleA = Segment * 2 * PI / 40;
-			const float AngleB = (Segment + 1) * 2 * PI / 40;
-			FVector2D A;
-			FVector2D B;
-			if (Controller->ProjectWorldLocationToScreen(
-			        Base + FVector(FMath::Cos(AngleA), FMath::Sin(AngleA), 0) * RingRadius, A) &&
-			    Controller->ProjectWorldLocationToScreen(
-			        Base + FVector(FMath::Cos(AngleB), FMath::Sin(AngleB), 0) * RingRadius, B))
-			{
-				DrawLine(A.X, A.Y, B.X, B.Y, bControlled ? FLinearColor::Green : FLinearColor::Red, 2);
-			}
-		}
+		DrawSelectionRing(Actor, bControlled ? FLinearColor::Green : FLinearColor::Red);
 		FLSHealthSnapshot HealthSnapshot;
 		const ULSHealthComponent* Health = Actor->FindComponentByClass<ULSHealthComponent>();
 		FVector2D Screen;
@@ -210,6 +194,8 @@ void ALSRTSHUD::DrawHUD()
 			         58 * FMath::Clamp(HealthSnapshot.CurrentHealth / HealthSnapshot.MaxHealth, 0.0f, 1.0f), 4);
 		}
 	}
+	if (AActor* Target = Controller->GetAttackCommandMarker(); Target && !Selection.Contains(Target))
+		DrawSelectionRing(Target, FLinearColor::Red);
 	ALSMobileCastle* ArmedCastle = Controller->GetSelectedArmedCastle();
 	if (ArmedCastle && Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
 	{
@@ -424,4 +410,27 @@ bool ALSRTSHUD::GetMinimapWorldPoint(FVector& OutLocation) const
 	return MinimapWidget && FSlateApplication::IsInitialized() &&
 	       MinimapWidget->ResolveWorldPoint(MinimapWidget->GetCachedGeometry(), FSlateApplication::Get().GetCursorPos(),
 	                                        OutLocation);
+}
+
+void ALSRTSHUD::DrawSelectionRing(AActor* Actor, const FLinearColor& Color)
+{
+	float Radius, HalfHeight;
+	Actor->GetSimpleCollisionCylinder(Radius, HalfHeight);
+	const FVector Base = Actor->GetActorLocation() - FVector(0, 0, HalfHeight - 5);
+	// 선택 표시는 Shipping에서도 필요하므로 디버그 드로잉에 의존하지 않는다.
+	const float RingRadius = FMath::Max(Radius, 25.0f) + 8;
+	for (int32 Segment = 0; Segment < 40; ++Segment)
+	{
+		const float AngleA = Segment * 2 * PI / 40;
+		const float AngleB = (Segment + 1) * 2 * PI / 40;
+		FVector2D A;
+		FVector2D B;
+		if (PlayerOwner->ProjectWorldLocationToScreen(
+		        Base + FVector(FMath::Cos(AngleA), FMath::Sin(AngleA), 0) * RingRadius, A) &&
+		    PlayerOwner->ProjectWorldLocationToScreen(
+		        Base + FVector(FMath::Cos(AngleB), FMath::Sin(AngleB), 0) * RingRadius, B))
+		{
+			DrawLine(A.X, A.Y, B.X, B.Y, Color, 2);
+		}
+	}
 }

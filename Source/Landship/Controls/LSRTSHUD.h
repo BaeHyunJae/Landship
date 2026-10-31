@@ -37,6 +37,7 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	FBox2D ProductionButton(int32 Index) const;
 	FBox2D WeaponPanel() const;
 	FBox2D WeaponButton(int32 Index) const;
+	void DrawSelectionRing(AActor* Actor, const FLinearColor& Color);
 	void DrawWeaponShape(class ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const FVector& Aim,
 	                     const FLinearColor& Color, bool bPreview,
 	                     const struct FLSCastleWeaponSettings* Snapshot = nullptr);

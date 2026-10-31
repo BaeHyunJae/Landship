@@ -81,6 +81,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	void CancelInput();
 	void FocusSelection();
 	bool GetOrderMarker(FVector& OutLocation, FLinearColor& OutColor) const;
+	AActor* GetAttackCommandMarker() const;
 
   protected:
 	virtual void BeginPlay() override;
@@ -128,6 +129,10 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	FVector OrderMarkerLocation = FVector::ZeroVector;
 	FLinearColor OrderMarkerColor = FLinearColor::Green;
 	double OrderMarkerExpiresAt = -1;
+	TWeakObjectPtr<AActor> AttackCommandTarget;
+	double AttackCommandMarkerExpiresAt = -1;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0"))
+	float AttackCommandMarkerDuration = 0.7f;
 
 	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AActor>> SelectedActors;

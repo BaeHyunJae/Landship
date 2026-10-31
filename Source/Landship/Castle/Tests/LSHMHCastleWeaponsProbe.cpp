@@ -125,6 +125,15 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Enemies[0]->SetActorLocation(FVector(0, 100, 96));
 		Enemies[1]->SetActorLocation(FVector(0, 280, 96));
 		Enemies[2]->SetActorLocation(FVector(0, 700, 96));
+		// 배치 변경 직후의 지정 공격도 실제 시야 스냅샷으로 판정한다.
+		ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>();
+		Vision->RequestRefresh();
+		Vision->Tick(0.11f);
+		Controller->ApplySelection({Ally});
+		Check(Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Enemies[0], false),
+		      TEXT("적 지정 공격 피드백 요청 접수"));
+		Check(Controller->GetAttackCommandMarker() == Enemies[0] && Controller->GetSelectedActors().Contains(Ally),
+		      TEXT("아군 선택을 유지하며 적 원형 표시"));
 		Controller->ApplySelection({Castle});
 		Check(!Castle->Orders->CanAttack() && !Castle->BasicAttack->IsConfigured(), TEXT("성의 기본 공격 제거"));
 		Controller->ArmCastleWeapon(ELSCastleWeapon::Cannon);

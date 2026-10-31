@@ -768,6 +768,11 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 		Order.Destination = Destinations.IsValidIndex(Index) ? Destinations[Index] : Location;
 		bAccepted |= Controlled[Index]->FindComponentByClass<ULSOrderComponent>()->SubmitOrder(Order, bQueue);
 	}
+	if (bAccepted)
+	{
+		AttackCommandTarget = Kind == ELSOrderKind::AttackTarget ? Target : nullptr;
+		AttackCommandMarkerExpiresAt = GetWorld()->GetTimeSeconds() + AttackCommandMarkerDuration;
+	}
 	if (bAccepted && (Kind == ELSOrderKind::Move || Kind == ELSOrderKind::AttackMove))
 	{
 		OrderMarkerLocation = Location;
@@ -775,6 +780,16 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 		OrderMarkerExpiresAt = GetWorld()->GetTimeSeconds() + 0.7;
 	}
 	return bAccepted;
+}
+
+AActor* ALSPlayerController::GetAttackCommandMarker() const
+{
+	AActor* Target = AttackCommandTarget.Get();
+	const ULSSelectableComponent* Selection = Target ? Target->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+	return GetWorld() && GetWorld()->GetTimeSeconds() < AttackCommandMarkerExpiresAt && Selection &&
+	               Selection->IsSelectable()
+	           ? Target
+	           : nullptr;
 }
 
 void ALSPlayerController::UseControlGroup(int32 Number, bool bAssign)
