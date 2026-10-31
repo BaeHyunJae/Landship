@@ -12,3 +12,12 @@ ALSGameMode::ALSGameMode()
 	DefaultPawnClass = ALSRTSCameraPawn::StaticClass();
 	HUDClass = ALSRTSHUD::StaticClass();
 }
+
+void ALSGameMode::InitGameState()
+{
+	Super::InitGameState();
+	if (ALSGameState* State = GetGameState<ALSGameState>())
+	{
+		State->SetPopulationLimit(100);
+	}
+}

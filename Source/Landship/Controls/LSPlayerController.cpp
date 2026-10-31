@@ -26,10 +26,23 @@ ALSPlayerController::ALSPlayerController()
 {
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
+	Production = CreateDefaultSubobject<ULSTroopProductionComponent>(TEXT("Production"));
 }
 
 bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
+	if (Params.Event == IE_Pressed && CanUseWorldInput(true))
+	{
+		const FKey ProductionKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(ProductionKeys); ++Index)
+		{
+			if (Params.Key == ProductionKeys[Index])
+			{
+				ProduceTroop(static_cast<ELSTroopType>(Index));
+				return true;
+			}
+		}
+	}
 	if (Params.Event == IE_Pressed && CanUseWorldInput())
 	{
 		const FKey Numbers[] = {EKeys::Zero, EKeys::One, EKeys::Two,   EKeys::Three, EKeys::Four,
@@ -62,6 +75,12 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		}
 	}
 	return Super::InputKey(Params);
+}
+
+void ALSPlayerController::ProduceTroop(ELSTroopType Type)
+{
+	CancelInput();
+	LastProductionResult = Production->Produce(Type);
 }
 
 void ALSPlayerController::SetupInputComponent()
@@ -256,14 +275,16 @@ void ALSPlayerController::ApplySelection(const TArray<AActor*>& Actors, bool bTo
 	                        [](AActor* Actor)
 	                        {
 		                        const ULSSelectableComponent* S = Actor->FindComponentByClass<ULSSelectableComponent>();
-		                        return S->CanPlayerControl() && S->Kind == ELSSelectionKind::Unit;
+		                        return S->CanPlayerControl() &&
+		                               (S->Kind == ELSSelectionKind::Unit || S->Kind == ELSSelectionKind::Castle);
 	                        }))
 	{
 		Valid.RemoveAll(
 		    [](AActor* Actor)
 		    {
 			    const ULSSelectableComponent* S = Actor->FindComponentByClass<ULSSelectableComponent>();
-			    return !S->CanPlayerControl() || S->Kind != ELSSelectionKind::Unit;
+			    return !S->CanPlayerControl() ||
+			           (S->Kind != ELSSelectionKind::Unit && S->Kind != ELSSelectionKind::Castle);
 		    });
 	}
 	if (Valid.Num() > 1)
@@ -565,7 +586,10 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 			Spacing = FMath::Max(Spacing, Radius * 2 + 40.0f);
 		}
 	}
-	const TArray<FVector> Destinations = ULSOrderComponent::MakeFormation(Location, Controlled.Num(), Spacing);
+	// 일반 이동은 클릭 지점으로 집결한다. 공격 이동의 분산 배치는 유지한다.
+	const TArray<FVector> Destinations = Kind == ELSOrderKind::AttackMove
+	                                        ? ULSOrderComponent::MakeFormation(Location, Controlled.Num(), Spacing)
+	                                        : TArray<FVector>();
 	bool bAccepted = false;
 	for (int32 Index = 0; Index < Controlled.Num(); ++Index)
 	{

@@ -1,4 +1,5 @@
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSBasicProjectile.h"
 
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
@@ -143,6 +144,11 @@ void ULSBasicAttackComponent::UpdateAttack()
 	// 피해 처리나 알림에서 다시 명령을 내려도 같은 시점에 중복 공격할 수 없게 한다.
 	TGuardValue<bool> ResolvingGuard(bResolvingAttack, true);
 	NextAttackTime = GetWorld()->GetTimeSeconds() + Settings.Interval;
+	if (ProjectileSettings.ProjectileClass)
+	{
+		FireProjectile(Target);
+		return;
+	}
 	ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
 	if (!Health)
 	{
@@ -151,8 +157,8 @@ void ULSBasicAttackComponent::UpdateAttack()
 	}
 	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), GetOwner());
 	const float AppliedDamage = Health->ApplyDamage(Request).AppliedDamage;
-	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() &&
-	    FMath::IsFinite(AppliedDamage) && AppliedDamage > 0.0f)
+	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
+	    !GetWorld()->bIsTearingDown && FMath::IsFinite(AppliedDamage) && AppliedDamage > 0.0f)
 	{
 		OnAttackPerformed.Broadcast(Target, AppliedDamage);
 	}
@@ -183,4 +189,60 @@ void ULSBasicAttackComponent::Deactivate()
 {
 	StopAttack();
 	Super::Deactivate();
+}
+
+bool ULSBasicAttackComponent::ConfigureProjectile(const FLSProjectileAttackSettings& NewSettings)
+{
+	if (bResolvingAttack || !FMath::IsFinite(NewSettings.Speed) || NewSettings.Speed <= 0 ||
+	    !FMath::IsFinite(NewSettings.Lifetime) || NewSettings.Lifetime <= 0 || !FMath::IsFinite(NewSettings.Radius) ||
+	    NewSettings.Radius <= 0 ||
+	    (NewSettings.ProjectileClass &&
+	     NewSettings.ProjectileClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated)))
+	{
+		return false;
+	}
+	ProjectileSettings = NewSettings;
+	return true;
+}
+
+void ULSBasicAttackComponent::FireProjectile(AActor* Target)
+{
+	if (!GetWorld() || GetWorld()->bIsTearingDown)
+	{
+		return;
+	}
+	const FVector Origin = GetOwner()->GetActorLocation();
+	const FVector Direction = Target->GetActorLocation() - Origin;
+	const FTransform Transform(Direction.Rotation(), Origin);
+	// 발사 후 공격자가 사망해도 진영과 피해량은 바뀌지 않는다.
+	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+	ALSBasicProjectile* Projectile =
+	    GetWorld()->SpawnActorDeferred<ALSBasicProjectile>(ProjectileSettings.ProjectileClass, Transform, nullptr,
+	                                                       nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!IsValid(Projectile))
+	{
+		return;
+	}
+	if (!Projectile->Launch(Request, Target, Direction, ProjectileSettings.Speed, ProjectileSettings.Radius,
+	                        ProjectileSettings.Lifetime, ProjectileSettings.Material))
+	{
+		Projectile->Destroy();
+		return;
+	}
+	Projectile->OnDamageApplied.AddDynamic(this, &ULSBasicAttackComponent::OnProjectileDamage);
+	Projectile->FinishSpawning(Transform);
+	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
+	    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+	{
+		OnProjectileLaunched.Broadcast(Projectile);
+	}
+}
+
+void ULSBasicAttackComponent::OnProjectileDamage(AActor* Target, float AppliedDamage)
+{
+	if (GetWorld() && !GetWorld()->bIsTearingDown && ULSCombatTargetLibrary::IsCombatAlive(GetOwner()) &&
+	    AppliedDamage > 0)
+	{
+		OnAttackPerformed.Broadcast(Target, AppliedDamage);
+	}
 }

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Controls/LSOrderComponent.h"
+#include "Troops/LSTroopProductionComponent.h"
 #include "LSPlayerController.generated.h"
 
 class ALSCastle;
@@ -30,6 +31,10 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	GENERATED_BODY()
   public:
 	ALSPlayerController();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
+	TObjectPtr<ULSTroopProductionComponent> Production;
+	void ProduceTroop(ELSTroopType Type);
+	ELSProductionResult GetLastProductionResult() const { return LastProductionResult; }
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Selection")
@@ -89,6 +94,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "1"))
 	float FormationSpacing = 150.0f;
 	ELSCommandInput PendingInput = ELSCommandInput::None;
+	ELSProductionResult LastProductionResult = ELSProductionResult::Ready;
 	int32 LastGroup = INDEX_NONE;
 	double LastGroupTime = -1;
 	FVector OrderMarkerLocation = FVector::ZeroVector;

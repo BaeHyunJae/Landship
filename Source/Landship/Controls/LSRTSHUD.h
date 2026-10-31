@@ -9,13 +9,13 @@ UCLASS()
 class LANDSHIP_API ALSRTSHUD : public AHUD
 {
 	GENERATED_BODY()
-public:
+  public:
 	virtual void DrawHUD() override;
 	bool IsOverPanel(const FVector2D& Mouse) const;
 	bool HandleClick(const FVector2D& Mouse);
-private:
+
+  private:
 	FBox2D InfoPanel() const;
-	FBox2D CommandPanel() const;
-	FBox2D CommandButton(int32 Index) const;
-	bool CanUseButton(int32 Index) const;
+	FBox2D ProductionPanel() const;
+	FBox2D ProductionButton(int32 Index) const;
 };
