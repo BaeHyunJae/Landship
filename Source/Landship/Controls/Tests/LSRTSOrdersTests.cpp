@@ -52,15 +52,28 @@ bool FLSRTSSelectionTest::RunTest(const FString& Parameters)
 	ALSBasicAttackTestActor* B = World->SpawnActor<ALSBasicAttackTestActor>();
 	ALSBasicAttackTestActor* Enemy = World->SpawnActor<ALSBasicAttackTestActor>();
 	ALSBasicAttackTestActor* Building = World->SpawnActor<ALSBasicAttackTestActor>();
+	ALSBasicAttackTestActor* Castle = World->SpawnActor<ALSBasicAttackTestActor>();
 	Enemy->SetInitialFaction(ELSFaction::Enemy);
 	AddSelection(A);
 	AddSelection(B);
 	AddSelection(Enemy, false);
 	AddSelection(Building, true, ELSSelectionKind::Building);
+	AddSelection(Castle, true, ELSSelectionKind::Castle);
 	if (!TestTrue(TEXT("BeginPlay"), TestWorld.BeginPlayInTestWorld()))
 	{
 		return false;
 	}
+	Controller->ApplySelection({A, B, Enemy, Building, Castle}, false, true);
+	TestEqual(TEXT("혼합 드래그에서 병력과 성 동시 선택"), Controller->GetSelectedActors().Num(), 3);
+	TestTrue(TEXT("성 포함"), Controller->GetSelectedActors().Contains(Castle));
+	TestFalse(TEXT("고정 건물은 병력·성 혼합 선택에서 제외"), Controller->GetSelectedActors().Contains(Building));
+	Controller->ApplySelection({Castle}, true);
+	TestEqual(TEXT("Shift로 성만 선택 해제"), Controller->GetSelectedActors().Num(), 2);
+	Controller->ApplySelection({Castle}, true);
+	Controller->UseControlGroup(2, true);
+	Controller->ApplySelection({Enemy});
+	Controller->UseControlGroup(2, false);
+	TestEqual(TEXT("성과 병력 혼합 부대 복원"), Controller->GetSelectedActors().Num(), 3);
 	Controller->ApplySelection({A, B, Enemy, Building}, false, true);
 	TestEqual(TEXT("혼합 드래그에서 아군 병력 우선"), Controller->GetSelectedActors().Num(), 2);
 	Controller->ApplySelection({A}, true);

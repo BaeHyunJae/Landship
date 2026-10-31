@@ -13,6 +13,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 ULSOrderComponent::ULSOrderComponent()
 {
@@ -158,7 +160,10 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 
 void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 {
-	StopMovement();
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(Order.Kind != ELSOrderKind::AttackTarget);
+	}
 	if (Attack)
 	{
 		Attack->StopAttack();
@@ -171,13 +176,28 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	{
 		if (!MoveTo(Order.Destination))
 		{
+			StopMovement();
 			FinishOrder();
 		}
+	}
+	else if (Order.Kind == ELSOrderKind::AttackTarget)
+	{
+		// 이동 중 지정 공격도 즉시 추적으로 교체하고, 사거리 안에서만 정지한다.
+		Engage(Order.Target.Get(), true);
+	}
+	else
+	{
+		StopMovement();
 	}
 }
 
 bool ULSOrderComponent::MoveTo(const FVector& Goal)
 {
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(
+		    !bHasEngagement && (ActiveOrder.Kind == ELSOrderKind::Move || ActiveOrder.Kind == ELSOrderKind::AttackMove));
+	}
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
 	if (!Controller || !Controller->GetPathFollowingComponent())
@@ -188,6 +208,7 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 	PathFollowing->OnRequestFinished.RemoveAll(this);
 	PathFollowing->OnRequestFinished.AddUObject(this, &ULSOrderComponent::OnMovementFinished);
 	// 교체 과정의 Abort 알림은 새 요청의 결과로 취급하지 않는다.
+	// 기존 이동을 먼저 중단하지 않는다. UE의 요청 교체가 현재 속도를 보존한다.
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementCompleted = false;
 	FAIMoveRequest Request(Goal);
@@ -299,6 +320,11 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 
 void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 {
+	// 공격 대상을 회피 장애물로 취급해 사거리 밖에서 멈추지 않게 한다.
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(false);
+	}
 	if (EngagedTarget.Get() != Target)
 	{
 		NextRepathTime = 0;

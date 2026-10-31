@@ -4,6 +4,8 @@
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Engine/Canvas.h"
+#include "Match/LSGameState.h"
+#include "Engine/World.h"
 
 FBox2D ALSRTSHUD::InfoPanel() const
 {
@@ -16,7 +18,7 @@ FBox2D ALSRTSHUD::InfoPanel() const
 	return FBox2D(FVector2D(0, FMath::Max(0, Height - 125)), FVector2D(FMath::Min(340, Width), Height));
 }
 
-FBox2D ALSRTSHUD::CommandPanel() const
+FBox2D ALSRTSHUD::ProductionPanel() const
 {
 	int32 Width = 0;
 	int32 Height = 0;
@@ -24,40 +26,18 @@ FBox2D ALSRTSHUD::CommandPanel() const
 	{
 		PlayerOwner->GetViewportSize(Width, Height);
 	}
-	return FBox2D(FVector2D(FMath::Max(0, Width - 300), FMath::Max(0, Height - 125)), FVector2D(Width, Height));
+	return FBox2D(FVector2D(FMath::Max(0, Width - 360), FMath::Max(0, Height - 180)), FVector2D(Width, Height));
 }
 
-FBox2D ALSRTSHUD::CommandButton(int32 Index) const
+FBox2D ALSRTSHUD::ProductionButton(int32 Index) const
 {
-	const FVector2D Min = CommandPanel().Min + FVector2D(12 + Index * 70, 55);
-	return FBox2D(Min, Min + FVector2D(62, 46));
+	const FVector2D Min = ProductionPanel().Min + FVector2D(12 + Index * 112, 55);
+	return FBox2D(Min, Min + FVector2D(104, 86));
 }
 
 bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 {
-	return InfoPanel().IsInsideOrOn(Mouse) || CommandPanel().IsInsideOrOn(Mouse);
-}
-
-bool ALSRTSHUD::CanUseButton(int32 Index) const
-{
-	const ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner);
-	if (!Controller)
-	{
-		return false;
-	}
-	for (AActor* Actor : Controller->GetSelectedActors())
-	{
-		const ULSSelectableComponent* Selection = Actor->FindComponentByClass<ULSSelectableComponent>();
-		const ULSOrderComponent* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
-		const ELSOrderKind ButtonOrders[] = {ELSOrderKind::Move, ELSOrderKind::AttackTarget, ELSOrderKind::Idle,
-		                                     ELSOrderKind::Hold};
-		if (Selection && Selection->CanPlayerControl() && Orders && Index >= 0 &&
-		    Index < UE_ARRAY_COUNT(ButtonOrders) && Orders->CanExecuteOrderKind(ButtonOrders[Index]))
-		{
-			return true;
-		}
-	}
-	return false;
+	return InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse);
 }
 
 bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
@@ -66,31 +46,19 @@ bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
 	{
 		return false;
 	}
-	ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner);
-	if (!Controller)
+	if (ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner))
 	{
-		return true;
-	}
-	for (int32 Index = 0; Index < 4; ++Index)
-	{
-		if (!CommandButton(Index).IsInsideOrOn(Mouse) || !CanUseButton(Index))
+		for (int32 Index = 0; Index < 3; ++Index)
 		{
-			continue;
-		}
-		if (Index < 2)
-		{
-			Controller->SetPendingInput(Index == 0 ? ELSCommandInput::Move : ELSCommandInput::Attack);
-		}
-		else
-		{
-			Controller->CancelInput();
-			Controller->IssueSelectionOrder(Index == 2 ? ELSOrderKind::Idle : ELSOrderKind::Hold, FVector::ZeroVector,
-			                                nullptr, false);
+			if (ProductionButton(Index).IsInsideOrOn(Mouse))
+			{
+				Controller->ProduceTroop(static_cast<ELSTroopType>(Index));
+				break;
+			}
 		}
 	}
 	return true;
 }
-
 void ALSRTSHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -157,12 +125,12 @@ void ALSRTSHUD::DrawHUD()
 			         58 * FMath::Clamp(HealthSnapshot.CurrentHealth / HealthSnapshot.MaxHealth, 0.0f, 1.0f), 4);
 		}
 	}
-	for (const FBox2D& Box : {InfoPanel(), CommandPanel()})
+	for (const FBox2D& Box : {InfoPanel(), ProductionPanel()})
 	{
 		DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.92f), Box.Min.X, Box.Min.Y, Box.GetSize().X, Box.GetSize().Y);
 	}
 	const FVector2D Info = InfoPanel().Min + FVector2D(12, 10);
-	DrawText(FString::Printf(TEXT("Selected: %d | Home: focus"), Selection.Num()), FLinearColor::White, Info.X, Info.Y);
+	DrawText(FString::Printf(TEXT("Selected: %d"), Selection.Num()), FLinearColor::White, Info.X, Info.Y);
 	if (!Selection.IsEmpty())
 	{
 		AActor* First = Selection[0];
@@ -183,22 +151,42 @@ void ALSRTSHUD::DrawHUD()
 			         FLinearColor::White, Info.X, Info.Y + 66);
 		}
 	}
-	const FVector2D Commands = CommandPanel().Min + FVector2D(12, 10);
-	const ELSCommandInput Pending = Controller->GetPendingInput();
-	DrawText(Pending == ELSCommandInput::None
-	             ? TEXT("Right click: move / attack")
-	             : (Pending == ELSCommandInput::Attack ? TEXT("ATTACK: choose target | Esc: cancel")
-	                                                   : TEXT("MOVE: choose ground | Esc: cancel")),
-	         Pending == ELSCommandInput::None ? FLinearColor::White : FLinearColor::Yellow, Commands.X, Commands.Y);
-	DrawText(TEXT("Shift: queue | Ctrl+0..9: assign"), FLinearColor::White, Commands.X, Commands.Y + 20);
-	const TCHAR* Labels[] = {TEXT("M\nMove"), TEXT("A\nAttack"), TEXT("S\nStop"), TEXT("H\nHold")};
-	for (int32 Index = 0; Index < 4; ++Index)
+	const FVector2D Panel = ProductionPanel().Min + FVector2D(12, 10);
+	const ALSGameState* State = GetWorld()->GetGameState<ALSGameState>();
+	DrawText(TEXT("Troop Production"), FLinearColor::White, Panel.X, Panel.Y);
+	DrawText(
+	    State ? FString::Printf(TEXT("Population %d / %d"), State->GetCurrentPopulation(), State->GetPopulationLimit())
+	          : TEXT("Population --"),
+	    FLinearColor::White, Panel.X, Panel.Y + 22);
+	const TCHAR* Labels[] = {TEXT("Q  Spearman"), TEXT("W  Archer"), TEXT("E  Cavalry")};
+	for (int32 Index = 0; Index < 3; ++Index)
 	{
-		const FBox2D Button = CommandButton(Index);
-		const bool bEnabled = CanUseButton(Index);
-		DrawRect(bEnabled ? FLinearColor(0.12f, 0.25f, 0.35f) : FLinearColor(0.08f, 0.09f, 0.1f), Button.Min.X,
+		const ELSTroopType Type = static_cast<ELSTroopType>(Index);
+		const ELSProductionResult Status = Controller->Production->GetStatus(Type);
+		const bool bReady = Status == ELSProductionResult::Ready;
+		const FBox2D Button = ProductionButton(Index);
+		DrawRect(bReady ? FLinearColor(0.08f, 0.28f, 0.32f) : FLinearColor(0.07f, 0.08f, 0.10f), Button.Min.X,
 		         Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
-		DrawText(Labels[Index], bEnabled ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8,
-		         Button.Min.Y + 5);
+		DrawText(Labels[Index], bReady ? FLinearColor::White : FLinearColor::Gray, Button.Min.X + 8, Button.Min.Y + 10);
+		const float Remaining = Controller->Production->GetRemainingCooldown(Type);
+		DrawText(Remaining > 0 ? FString::Printf(TEXT("%.1fs"), Remaining)
+		                       : (bReady ? TEXT("Produce") : TEXT("Unavailable")),
+		         Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White, Button.Min.X + 8, Button.Min.Y + 40);
+		if (Remaining > 0)
+		{
+			DrawRect(FLinearColor(0.2f, 0.65f, 0.85f), Button.Min.X, Button.Max.Y - 4,
+			         Button.GetSize().X * FMath::Clamp(1 - Remaining / 10.0f, 0.0f, 1.0f), 4);
+		}
 	}
+	const ELSProductionResult Status = Controller->Production->GetStatus(ELSTroopType::Spearman);
+	const TCHAR* Message = TEXT("Independent cooldowns: 10s");
+	if (Status == ELSProductionResult::SelectCastle)
+		Message = TEXT("Select an allied castle");
+	else if (Status == ELSProductionResult::PopulationFull)
+		Message = TEXT("Population limit reached");
+	else if (Status == ELSProductionResult::Unavailable)
+		Message = TEXT("Production unavailable");
+	else if (Controller->GetLastProductionResult() == ELSProductionResult::NoSpace)
+		Message = TEXT("No reachable space near castle");
+	DrawText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24);
 }

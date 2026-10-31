@@ -12,4 +12,5 @@ class LANDSHIP_API ALSGameMode : public AGameModeBase
 
 public:
 	ALSGameMode();
+	virtual void InitGameState() override;
 };
