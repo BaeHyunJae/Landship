@@ -21,6 +21,8 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 	TObjectPtr<class ULSSelectableComponent> Selection;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSOrderComponent> Orders;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSVisionParticipantComponent> Vision;
 
 	virtual UPawnMovementComponent* GetMovementComponent() const override;
 	bool RequestMove(const FVector& Destination);
