@@ -1,6 +1,7 @@
 #include "Castle/LSCastleCommandProviderComponent.h"
 #include "Castle/LSMobileCastle.h"
 #include "Controls/LSPlayerController.h"
+#include "Match/LSBattleOutcomePolicy.h"
 
 TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implementation(ALSPlayerController* PC) const
 {
@@ -62,6 +63,8 @@ TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implement
 
 bool ULSCastleCommandProviderComponent::ExecuteCommand_Implementation(FName Id, ALSPlayerController* PC)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	// 화면에 표시된 뒤 상태가 바뀌었더라도 실행 직전에 다시 검사한다.
 	for (const auto& Entry : GetCommands_Implementation(PC))
 		if (Entry.Id == Id && Entry.bEnabled)

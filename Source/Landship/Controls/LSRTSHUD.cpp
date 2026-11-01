@@ -9,12 +9,17 @@
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Engine/Canvas.h"
+#include "Engine/Font.h"
 #include "Match/LSGameState.h"
 #include "Engine/World.h"
 #include "Castle/LSMobileCastle.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Match/LSBattleOutcomePolicy.h"
+#include "CanvasItem.h"
+#include "Misc/Paths.h"
+#include "Fonts/CompositeFont.h"
 
 ALSRTSHUD::ALSRTSHUD()
 {
@@ -68,6 +73,11 @@ void ALSRTSHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		MinimapWidget = nullptr;
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void ALSRTSHUD::EndBattleActions()
+{
+	if (MinimapWidget) MinimapWidget->EndBattleActions();
 }
 
 bool ALSRTSHUD::IsOverMinimap(const FVector2D& Mouse) const
@@ -134,11 +144,15 @@ bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 
 bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
 {
+	if (IsOverResultPanel(Mouse))
+		return true;
 	if (!IsOverPanel(Mouse))
 	{
 		return false;
 	}
-	if (auto* Controller = Cast<ALSPlayerController>(PlayerOwner))
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return true;
+	if (ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner))
 	{
 		for (int32 Index = 0; Index < ULSCommandCardComponent::CellCount; ++Index)
 			if (GetCommandCellRect(Index).IsInsideOrOn(Mouse))
@@ -230,6 +244,61 @@ void ALSRTSHUD::DrawHUD()
 	}
 	if (BattleWidget)
 		BattleWidget->SetPanelLayout(InfoPanel(), CommandPanel());
+	DrawBattleResult();
+}
+
+FBox2D ALSRTSHUD::ResultPanel() const
+{
+	int32 Width = 0, Height = 0;
+	if (PlayerOwner)
+		PlayerOwner->GetViewportSize(Width, Height);
+	float AvailableHeight = FMath::Max(0.0, FMath::Min(InfoPanel().Min.Y, CommandPanel().Min.Y));
+	if (MinimapWidget)
+		AvailableHeight = FMath::Min(AvailableHeight,
+		    static_cast<float>(FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), true, MinimapWidget->PanelSide)
+		                           .Minimap.Min.Y));
+	const FVector2D Size(FMath::Min(520.0f, Width * 0.8f), FMath::Min(180.0f, AvailableHeight * 0.6f));
+	const FVector2D Center(Width * 0.5f, AvailableHeight * 0.5f);
+	return FBox2D(Center - Size * 0.5f, Center + Size * 0.5f);
+}
+
+bool ALSRTSHUD::IsOverResultPanel(const FVector2D& Mouse) const
+{
+	return LSBattleOutcome::AreActionsStopped(GetWorld()) && ResultPanel().IsInsideOrOn(Mouse);
+}
+
+void ALSRTSHUD::DrawBattleResult()
+{
+	const ALSGameState* State = GetWorld()->GetGameState<ALSGameState>();
+	if (!State || !State->IsBattleOutcomeEnabled() || !State->HasBattleEnded())
+		return;
+	DrawRect(FLinearColor(0, 0, 0, 0.5f), 0, 0, Canvas->SizeX, Canvas->SizeY);
+	const FBox2D Panel = ResultPanel();
+	DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.96f), Panel.Min.X, Panel.Min.Y,
+	         Panel.GetSize().X, Panel.GetSize().Y);
+	const bool bVictory = LSBattleOutcome::IsVictory(State->GetBattleOutcome());
+	// 기본 Canvas 폰트에 의존하지 않고 프로토타입은 에디터에 포함된 한글 폰트를 사용한다.
+	if (!ResultFont)
+	{
+		// Canvas는 Slate 정보뿐 아니라 실제 UFont가 있어야 텍스트를 그린다.
+		ResultFont = NewObject<UFont>(this);
+		ResultFont->FontCacheType = EFontCacheType::Runtime;
+		ResultFont->GetMutableInternalCompositeFont() = FCompositeFont(
+			NAME_None, FPaths::EngineContentDir() / TEXT("Editor/Slate/Fonts/NanumGothic.ttf"),
+			EFontHinting::Default, EFontLoadingPolicy::LazyLoad);
+	}
+	const float Scale = FMath::Min(Panel.GetSize().X / 520.0f, Panel.GetSize().Y / 180.0f);
+	auto DrawResultText = [&](const TCHAR* Text, float Size, float Y, FLinearColor Color)
+	{
+		FCanvasTextItem Item(FVector2D(Panel.GetCenter().X, Y), FText::FromString(Text),
+		                     FSlateFontInfo(ResultFont.Get(), Size * Scale), Color);
+		Item.bCentreX = true;
+		Canvas->DrawItem(Item);
+	};
+	DrawResultText(bVictory ? TEXT("승리") : TEXT("패배"), 36, Panel.Min.Y + 34 * Scale,
+	               bVictory ? FLinearColor(0.4f, 1, 0.6f) : FLinearColor(1, 0.35f, 0.3f));
+	DrawResultText(bVictory ? TEXT("핵심 거점 함락") : TEXT("성 파괴"), 20,
+	               Panel.Min.Y + 108 * Scale, FLinearColor::White);
 }
 
 void ALSRTSHUD::DrawWorldLine(const FVector& Start, const FVector& End, const FLinearColor& Color, float Thickness)

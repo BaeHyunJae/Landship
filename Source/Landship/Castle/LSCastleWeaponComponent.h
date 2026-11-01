@@ -14,6 +14,8 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	GENERATED_BODY()
   public:
 	ULSCastleWeaponComponent();
+	/** 이미 날아간 투사체를 유지하고 이후 무장 사용만 영구 중단한다. */
+	void EndBattleActions();
 	/** 생성 단계의 데이터 지정. 플레이 시작 후에는 변경하지 않는다. 실패 시 기존 구성을 유지한다. */
 	bool SetWeaponDefinitions(const TArray<ULSCastleWeaponData*>& Definitions);
 	UFUNCTION(BlueprintPure, Category = "Landship|Weapons")
@@ -63,4 +65,5 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	double LastCastTime = -100;
 	bool bCasting = false;
 	bool bChangingState = false;
+	bool bBattleActionsEnded = false;
 };

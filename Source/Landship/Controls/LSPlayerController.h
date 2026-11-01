@@ -35,6 +35,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	GENERATED_BODY()
   public:
 	ALSPlayerController();
+	/** 기존 선택을 유지하고 준비 입력·미니맵 드래그·명령 표식을 정리한다. */
+	void EndBattleActions();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Commands")
 	TObjectPtr<ULSCommandCardComponent> CommandCard;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
@@ -70,12 +72,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	{
 		return PendingInput;
 	}
-	void SetPendingInput(ELSCommandInput Input)
-	{
-		CancelInput();
-		PendingInput = Input;
-	}
-	/** 미니맵이 변환한 지면 좌표로 명령을 전달한다. 일반 좌클릭은 카메라에 맡긴다. */
+	void SetPendingInput(ELSCommandInput Input);
+	/** 진행 중에는 미니맵 좌표로 명령을 전달하고 일반 좌클릭을 카메라에 맡긴다. 종료 뒤에는 모두 소비한다. */
 	bool HandleMinimapInput(const FVector& Location, bool bRightClick, bool bQueue);
 	void ArmAttack();
 	void ArmMove();

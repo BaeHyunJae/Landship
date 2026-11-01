@@ -15,6 +15,8 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 
   public:
 	ALSUnit();
+	/** 명령과 공격을 영구 정지하되 낙하·착지와 명중에 의한 물리 반응은 유지한다. */
+	void EndBattleActions();
 	virtual bool SupportsBasicAttack() const { return true; }
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSSelectableComponent> Selection;
@@ -31,6 +33,7 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
 	virtual void Restart() override;
+	virtual void Landed(const FHitResult& Hit) override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
@@ -81,6 +84,7 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	ELSFaction Faction = ELSFaction::Ally;
 
 	bool bFactionLocked = false;
+	bool bBattleActionsEnded = false;
 
 	/** 현재 전투 상태와 구분되는 초기 수치 복사본이다. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Stats")

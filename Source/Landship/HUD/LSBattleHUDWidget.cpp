@@ -14,6 +14,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Match/LSGameState.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Widgets/SViewport.h"
 
@@ -114,6 +115,12 @@ void ULSBattleHUDWidget::RefreshState()
 	const auto* PC = Cast<ALSPlayerController>(GetOwningPlayer());
 	if (!PC)
 		return;
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		bDiscoveryVisible = false;
+		if (auto* Caption = GetWidgetFromName(TEXT("DiscoveryPanel")))
+			Caption->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	SetText(TEXT("SelectionText"), GetSelectionDescription());
 	SetText(TEXT("FailureText"), GetCommandFailureText());
 	DisplayedCells = PC->CommandCard->BuildCard();
@@ -122,7 +129,9 @@ void ULSBattleHUDWidget::RefreshState()
 	SetText(TEXT("PopulationText"), State ? Text(FString::Printf(TEXT("인구 %d / %d"), State->GetCurrentPopulation(),
 	                                                             State->GetPopulationLimit()))
 	                                      : FText::GetEmpty());
-	SetText(TEXT("CommandHint"), PC->GetPendingInput() == ELSCommandInput::None
+	SetText(TEXT("CommandHint"), LSBattleOutcome::AreActionsStopped(GetWorld())
+	                                 ? Text(TEXT("전투 종료"))
+	                                 : PC->GetPendingInput() == ELSCommandInput::None
 	                                 ? Text(TEXT("버튼 또는 단축키로 명령 선택"))
 	                                 : Text(TEXT("좌클릭 대상 지정 · 우클릭/Esc 취소")));
 	for (int32 Index = 0; Index < DisplayedCells.Num(); ++Index)
@@ -174,7 +183,9 @@ void ULSBattleHUDWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 	RefreshState();
 	if (auto* Vision = GetWorld() ? GetWorld()->GetSubsystem<ULSVisionSubsystem>() : nullptr)
 	{
-		if (!bDiscoveryPainted && Vision->HasPendingDiscoveryCaption())
+		if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+			bDiscoveryVisible = false;
+		else if (!bDiscoveryPainted && Vision->HasPendingDiscoveryCaption())
 			bDiscoveryVisible = true;
 		if (bDiscoveryPainted && GetWorld()->GetTimeSeconds() - DiscoveryStart >= DiscoveryDuration)
 			bDiscoveryVisible = false;
@@ -190,7 +201,7 @@ int32 ULSBattleHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G
 {
 	const int32 Result = Super::NativePaint(Args, Geometry, CullingRect, Elements, Layer, Style, bEnabled);
 	const UWidget* Caption = GetWidgetFromName(TEXT("DiscoveryPanel"));
-	if (bDiscoveryVisible && !bDiscoveryPainted && Caption && Caption->IsVisible())
+	if (!LSBattleOutcome::AreActionsStopped(GetWorld()) && bDiscoveryVisible && !bDiscoveryPainted && Caption && Caption->IsVisible())
 		if (auto* Vision = GetWorld() ? GetWorld()->GetSubsystem<ULSVisionSubsystem>() : nullptr)
 		{
 			bDiscoveryPainted = true;

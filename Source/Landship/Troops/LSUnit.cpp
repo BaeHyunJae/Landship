@@ -1,4 +1,6 @@
 #include "Troops/LSUnit.h"
+#include "Match/LSBattleOutcomePolicy.h"
+#include "Enemies/LSEnemyBehaviorComponent.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -17,6 +19,41 @@
 #include "Logging/StructuredLog.h"
 #include "Engine/World.h"
 #include "UObject/UnrealType.h"
+
+namespace
+{
+struct FLSPreservedBattleMotion
+{
+	FVector Velocity;
+	FVector PendingLaunch;
+	bool bFalling;
+
+	explicit FLSPreservedBattleMotion(const ALSUnit* Unit)
+		: Velocity(Unit->GetCharacterMovement()->Velocity),
+		  PendingLaunch(Unit->GetCharacterMovement()->PendingLaunchVelocity),
+		  bFalling(Unit->GetCharacterMovement()->IsFalling())
+	{
+	}
+
+	void RestoreOrStop(ALSUnit* Unit) const
+	{
+		if (!IsValid(Unit) || Unit->IsActorBeingDestroyed() || !Unit->GetWorld() || Unit->GetWorld()->bIsTearingDown) return;
+		UCharacterMovementComponent* Movement = Unit->GetCharacterMovement();
+		if (bFalling || !PendingLaunch.IsNearlyZero())
+		{
+			// 명령 정지의 속도 정리는 이미 진행 중인 낙하와 보류된 명중 반응을 취소하지 않는다.
+			Movement->SetMovementMode(MOVE_Falling);
+			Movement->Velocity = Velocity;
+			Movement->PendingLaunchVelocity = PendingLaunch;
+		}
+		else
+		{
+			Movement->StopMovementImmediately();
+			Movement->DisableMovement();
+		}
+	}
+};
+}
 
 ALSUnit::ALSUnit()
 {
@@ -82,6 +119,8 @@ void ALSUnit::BeginPlay()
 		Vision->SetSightRadius(Stats.VisionRadius);
 	}
 	Super::BeginPlay();
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		EndBattleActions();
 }
 
 bool ALSUnit::TryGetStats(FLSUnitStatRow& OutStats) const
@@ -133,6 +172,7 @@ FString ALSUnit::GetCombatConfigurationError() const
 
 void ALSUnit::Restart()
 {
+	const FLSPreservedBattleMotion Motion(this);
 	Super::Restart();
 	if (!IsValid(this) || IsActorBeingDestroyed())
 	{
@@ -143,6 +183,33 @@ void ALSUnit::Restart()
 		|| (Health->TryGetHealth(Snapshot) && Snapshot.bIsDead))
 	{
 		// 재빙의의 Restart가 기본 이동 모드를 복원한다. 시체의 물리는 유지하고 이동만 다시 막는다.
+		StopCombatMovement();
+	}
+	else if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		Motion.RestoreOrStop(this);
+	}
+}
+
+void ALSUnit::EndBattleActions()
+{
+	if (bBattleActionsEnded) return;
+	const FLSPreservedBattleMotion Motion(this);
+	bBattleActionsEnded = true;
+	Orders->EndBattleActions();
+	BasicAttack->EndBattleActions();
+	if (ULSEnemyBehaviorComponent* Enemy = FindComponentByClass<ULSEnemyBehaviorComponent>())
+		Enemy->EndBattleActions();
+	StopCombatMovement();
+	Motion.RestoreOrStop(this);
+}
+
+void ALSUnit::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	if (bBattleActionsEnded && IsValid(this) && !IsActorBeingDestroyed())
+	{
+		Orders->EndBattleActions();
 		StopCombatMovement();
 	}
 }

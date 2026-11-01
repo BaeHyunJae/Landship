@@ -101,6 +101,9 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
 	void StopAttack();
 
+	/** 충돌과 이미 발사한 투사체는 보존하면서 이 컴포넌트의 새 공격을 영구 중단한다. */
+	void EndBattleActions();
+
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
 	AActor* GetAttackTarget() const
 	{
@@ -172,6 +175,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	float EffectiveInterval = 0.0f;
 	bool bResolvingAttack = false;
 	bool bAutoSearching = false;
+	bool bBattleActionsEnded = false;
 	FLSResolveAttackTarget AttackTargetResolverEvent;
 	int64 LastExecutionId = 0;
 	uint64 StopRevision = 0;

@@ -55,6 +55,9 @@ public:
 	ALSOutpost* GetCoreOutpost() const;
 	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
 	bool IsBattleEndedForEnemies() const;
+	/** 성 참조가 사라진 뒤에도 이미 관찰한 실제 사망만 반환한다. */
+	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
+	bool HasObservedPlayerCastleDeath() const;
 	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
 	bool TryGetCoreCapture(FLSOutpostCaptureSnapshot& Out) const;
 

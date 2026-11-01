@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "Match/LSBattleOutcomeTypes.h"
 #include "LSGameState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLSOnPopulationChanged, int32, CurrentPopulation, int32, PopulationLimit);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnBattleOutcomeFinalized, ELSBattleOutcome, Outcome);
 
 /** 병력 생성과 UI가 같은 인구수 상태를 공유하도록 관리한다. */
 UCLASS()
@@ -13,6 +15,19 @@ class LANDSHIP_API ALSGameState : public AGameStateBase
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintPure, Category = "Landship|Battle")
+	bool IsBattleOutcomeEnabled() const { return bBattleOutcomeEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Landship|Battle")
+	ELSBattleOutcome GetBattleOutcome() const { return BattleOutcome; }
+
+	UFUNCTION(BlueprintPure, Category = "Landship|Battle")
+	bool HasBattleEnded() const { return bBattleOutcomeEnabled && BattleOutcome != ELSBattleOutcome::InProgress; }
+
+	/** 결과 저장과 기존 실행부 정지가 끝난 뒤 한 번 발생한다. 늦은 소비자는 현재 결과를 조회한다. */
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Battle")
+	FLSOnBattleOutcomeFinalized OnBattleOutcomeFinalizedEvent;
+
 	UFUNCTION(BlueprintPure, Category = "Landship|Population")
 	int32 GetCurrentPopulation() const { return CurrentPopulation; }
 
@@ -38,6 +53,14 @@ public:
 	FLSOnPopulationChanged OnPopulationChanged;
 
 private:
+	friend class ALSGameMode;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Battle")
+	uint8 bBattleOutcomeEnabled : 1 = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Battle")
+	ELSBattleOutcome BattleOutcome = ELSBattleOutcome::InProgress;
+
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Population")
 	int32 CurrentPopulation = 0;
 

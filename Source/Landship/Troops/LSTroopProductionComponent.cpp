@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Match/LSGameState.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "TimerManager.h"
@@ -81,7 +82,7 @@ float ULSTroopProductionComponent::GetRemainingCooldown(ELSTroopType Type) const
 ELSProductionResult ULSTroopProductionComponent::GetStatus(ELSTroopType Type) const
 {
 	const ALSGameState* State = GetWorld() ? GetWorld()->GetGameState<ALSGameState>() : nullptr;
-	if (!bInitialized || !State || ALSTroopUnit::GetStatsRowName(Type).IsNone() || !FMath::IsFinite(CooldownSeconds) ||
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !bInitialized || !State || ALSTroopUnit::GetStatsRowName(Type).IsNone() || !FMath::IsFinite(CooldownSeconds) ||
 	    CooldownSeconds <= 0 || !FMath::IsFinite(MaxSearchDistance) || MaxSearchDistance <= 0)
 	{
 		return ELSProductionResult::Unavailable;

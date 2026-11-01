@@ -16,6 +16,8 @@
 
 `ULSSelectableComponent::CommandGroupName`으로 화면에 표시할 병종 이름을 지정한다. 선택 상세 수치는 기존과 같이 첫 대상을 기준으로 하며, 명령 카드 제목은 활성 병종을 표시한다.
 
+승패 판정이 활성화된 전투에서 결과가 확정되면 명령 격자 전체를 비활성화하고 채워진 칸에 '전투 종료'를 표시한다. 버튼·단축키 실행과 Tab 병종 전환을 막고, 쿨타임·병종 전환 안내와 발견 알림을 숨긴다. 셀의 제목·레벨과 고정 15칸 배치는 유지한다.
+
 ## 다른 유닛의 스킬 추가
 
 `ULSCommandProviderComponent`의 Blueprint 또는 C++ 파생 컴포넌트를 해당 유닛에 부착한다. UI에 병종 분기나 버튼을 추가할 필요가 없다. 성은 `ULSCastleCommandProviderComponent`를 기본 컴포넌트로 가진다.

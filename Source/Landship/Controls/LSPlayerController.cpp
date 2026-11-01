@@ -22,6 +22,7 @@
 #include "Vision/LSVisionSubsystem.h"
 #include "Maps/LSBattlefieldSettings.h"
 #include "Vision/LSVisionParticipantComponent.h"
+#include "Match/LSBattleOutcomePolicy.h"
 
 namespace
 {
@@ -85,6 +86,11 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 void ALSPlayerController::ProduceTroop(ELSTroopType Type)
 {
 	CancelInput();
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		LastProductionResult = ELSProductionResult::Unavailable;
+		return;
+	}
 	LastProductionResult = Production->Produce(Type);
 }
 
@@ -103,6 +109,11 @@ ALSMobileCastle* ALSPlayerController::GetSelectedArmedCastle() const
 bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
 {
 	CancelInput();
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		LastWeaponResult = ELSWeaponCastResult::Unavailable;
+		return false;
+	}
 	ALSMobileCastle* Castle = GetSelectedArmedCastle();
 	LastWeaponResult = Castle ? Castle->Weapons->GetStatus(Weapon) : ELSWeaponCastResult::Unavailable;
 	if (LastWeaponResult != ELSWeaponCastResult::Ready)
@@ -116,8 +127,8 @@ bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
 
 ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
 {
-	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
-	    GetSelectedArmedCastle() != AimingCastle.Get())
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || PendingInput != ELSCommandInput::CastleWeapon ||
+	    !AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get())
 	{
 		CancelInput();
 		LastWeaponResult = ELSWeaponCastResult::Unavailable;
@@ -199,6 +210,8 @@ void ALSPlayerController::BeginPlay()
 
 bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	const UGameViewportClient* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
 	if (!IsLocalController() || !Client || !Client->Viewport || !Client->Viewport->HasFocus() ||
 	    !Client->Viewport->IsForegroundWindow() || !FSlateApplication::IsInitialized())
@@ -334,6 +347,8 @@ void ALSPlayerController::ZoomCamera(float Value)
 
 void ALSPlayerController::FocusSelection()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	const TArray<AActor*> Selection = GetSelectedActors();
 	if (!Selection.IsEmpty())
 	{
@@ -378,6 +393,8 @@ TArray<AActor*> ALSPlayerController::GetSelectedActors() const
 
 void ALSPlayerController::ApplySelection(const TArray<AActor*>& Actors, bool bToggle, bool bPreferUnits)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	TArray<AActor*> Valid;
 	for (AActor* Actor : Actors)
 	{
@@ -488,6 +505,11 @@ void ALSPlayerController::OnSelectPressed()
 			return;
 		}
 	}
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		bHasPressedMousePosition = false;
+		return;
+	}
 	if (PendingInput != ELSCommandInput::None)
 	{
 		CompleteTargetInput();
@@ -531,7 +553,7 @@ void ALSPlayerController::OnSelectReleased()
 	FVector2D Start, End;
 	const bool bBox = GetSelectionBox(Start, End);
 	bSelecting = false;
-	if (!CanUseWorldInput())
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !CanUseWorldInput())
 	{
 		return;
 	}
@@ -568,6 +590,8 @@ void ALSPlayerController::OnSelectReleased()
 
 void ALSPlayerController::SelectSameType()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	bSelecting = false;
 	if (!CanUseWorldInput() || PendingInput != ELSCommandInput::None)
 	{
@@ -603,6 +627,8 @@ void ALSPlayerController::SelectSameType()
 
 void ALSPlayerController::ArmAttack()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (CVarRTSInputDebug.GetValueOnGameThread())
 		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT attack allowed=%d"), CanUseWorldInput(false, true));
 	if (!CanUseWorldInput(false, true))
@@ -622,6 +648,8 @@ void ALSPlayerController::ArmAttack()
 
 void ALSPlayerController::ArmMove()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (!CanUseWorldInput(false, true))
 	{
 		return;
@@ -646,6 +674,25 @@ void ALSPlayerController::CancelInput()
 	bSelecting = false;
 }
 
+void ALSPlayerController::SetPendingInput(ELSCommandInput Input)
+{
+	CancelInput();
+	if (!LSBattleOutcome::AreActionsStopped(GetWorld()))
+		PendingInput = Input;
+}
+
+void ALSPlayerController::EndBattleActions()
+{
+	if (ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD())) HUD->EndBattleActions();
+	CancelInput();
+	bHasPressedMousePosition = false;
+	OrderMarkerExpiresAt = -1;
+	AttackCommandTarget.Reset();
+	AttackCommandMarkerExpiresAt = -1;
+	LastProductionResult = ELSProductionResult::Unavailable;
+	LastWeaponResult = ELSWeaponCastResult::Unavailable;
+}
+
 void ALSPlayerController::OnAimedWeaponStateChanged(ELSCastleWeapon Weapon, const FLSCastleWeaponState& State)
 {
 	if (PendingInput == ELSCommandInput::CastleWeapon && Weapon == PendingWeapon &&
@@ -655,6 +702,8 @@ void ALSPlayerController::OnAimedWeaponStateChanged(ELSCastleWeapon Weapon, cons
 
 void ALSPlayerController::CompleteTargetInput()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (PendingInput == ELSCommandInput::CastleWeapon)
 	{
 		FVector Aim;
@@ -683,6 +732,8 @@ void ALSPlayerController::CompleteTargetInput()
 
 void ALSPlayerController::OnRightClick()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (PendingInput == ELSCommandInput::CastleWeapon)
 	{
 		if (CanUseWorldInput(true, true))
@@ -715,6 +766,8 @@ void ALSPlayerController::OnRightClick()
 
 void ALSPlayerController::StopSelected()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (CanUseWorldInput(false, true))
 	{
 		CancelInput();
@@ -724,6 +777,8 @@ void ALSPlayerController::StopSelected()
 
 void ALSPlayerController::HoldSelected()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (CanUseWorldInput(false, true))
 	{
 		CancelInput();
@@ -733,6 +788,8 @@ void ALSPlayerController::HoldSelected()
 
 bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& Location, AActor* Target, bool bQueue)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	TArray<AActor*> Controlled;
 	float Spacing = FormationSpacing;
 	for (AActor* Actor : GetSelectedActors())
@@ -787,6 +844,8 @@ AActor* ALSPlayerController::GetAttackCommandMarker() const
 
 void ALSPlayerController::UseControlGroup(int32 Number, bool bAssign)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (Number < 0 || Number > 9)
 	{
 		return;
@@ -844,6 +903,8 @@ bool ALSPlayerController::GetOrderMarker(FVector& OutLocation, FLinearColor& Out
 
 bool ALSPlayerController::HandleMinimapInput(const FVector& Location, bool bRightClick, bool bQueue)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return true;
 	const ALSBattlefieldSettings* Settings = ALSBattlefieldSettings::Find(GetWorld());
 	if (!Settings || Location.ContainsNaN() || !Settings->GetWorldBounds().IsInsideOrOn(FVector2D(Location)))
 		return false;

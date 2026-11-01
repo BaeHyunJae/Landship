@@ -28,6 +28,8 @@ class LANDSHIP_API ULSEnemyBehaviorComponent : public UActorComponent
 	GENERATED_BODY()
 public:
 	ULSEnemyBehaviorComponent();
+	/** 이동·표적·지원 상태를 비우고 이후 행동 재개를 거절한다. */
+	void EndBattleActions();
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy")
 	ELSEnemyRole Role = ELSEnemyRole::Guard;
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy")
@@ -95,6 +97,7 @@ private:
 	FString GetConfigurationError(bool bCheckPlacement, const FVector& Placement) const;
 	bool IsSameFaction(const AActor* Other) const;
 	bool CanAttack() const;
+	bool ShouldEndBattleActions() const;
 	bool IsStationary() const;
 	bool GetMovementDomain(FVector& Center, float& Radius, const FVector* ProvisionalChaseCenter = nullptr) const;
 	bool ResolvePath(const FVector& Desired, FVector& OutGoal, bool bConstrain = true, const FVector* ProvisionalChaseCenter = nullptr) const;
@@ -147,6 +150,7 @@ private:
 	bool bMovementFailed = false;
 	bool bMovementFailedBeforeReentry = false;
 	bool bConfigurationValid = true;
+	bool bBattleActionsEnded = false;
 	bool bConfigurationWarningSent = false;
 	bool bEngagementLatched = false;
 	bool bRecovering = false;

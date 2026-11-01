@@ -2,6 +2,7 @@
 #include "Enemies/LSOutpost.h"
 #include "Enemies/LSBattlefieldStateSubsystem.h"
 #include "Enemies/LSEnemyDecisionPolicy.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -118,6 +119,33 @@ void ULSEnemyBehaviorComponent::BeginPlay()
 		Health->OnDamagedEvent.AddDynamic(this, &ThisClass::OnDamaged);
 		Health->OnDiedEvent.AddDynamic(this, &ThisClass::OnDamaged);
 	}
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) EndBattleActions();
+}
+
+bool ULSEnemyBehaviorComponent::ShouldEndBattleActions() const
+{
+	if (bBattleActionsEnded) return true;
+	// 판정 관리 전장은 같은 수집 구간의 후속 타격을 살리고, 독립 적 월드는 기존 종료 계약을 따른다.
+	if (LSBattleOutcome::IsManaged(GetWorld())) return LSBattleOutcome::AreActionsStopped(GetWorld());
+	const ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
+	return Battlefield && Battlefield->IsBattleEndedForEnemies();
+}
+
+void ULSEnemyBehaviorComponent::EndBattleActions()
+{
+	if (bBattleActionsEnded) return;
+	bBattleActionsEnded = true;
+	if (State != ELSEnemyState::Dead) State = ELSEnemyState::Ended;
+	LastStopReason = TEXT("Battle ended");
+	Inbox.Reset();
+	ActiveSupport = FLSEnemySupportRequest();
+	bHasActiveSupport = false;
+	bEngagementLatched = false;
+	bRecovering = false;
+	Target.Reset();
+	RecoveryRoute.Reset();
+	if (Attack.IsValid()) Attack->EndBattleActions();
+	StopMovement();
 }
 
 void ULSEnemyBehaviorComponent::EndPlay(const EEndPlayReason::Type Reason)
@@ -175,16 +203,9 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 	{
 		return;
 	}
-	ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
-	if (Battlefield && Battlefield->IsBattleEndedForEnemies())
+	if (ShouldEndBattleActions())
 	{
-		State = ELSEnemyState::Ended;
-		LastStopReason = TEXT("Battle ended");
-		StopMovement();
-		if (Attack.IsValid()) { Attack->StopAttack(); }
-		Inbox.Reset();
-		bHasActiveSupport = false;
-		Target.Reset();
+		EndBattleActions();
 		return;
 	}
 	FLSHealthSnapshot Snapshot;
@@ -253,8 +274,7 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 
 AActor* ULSEnemyBehaviorComponent::ResolveAttackTarget() const
 {
-	const ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
-	if (!CanAttack() || (Battlefield && Battlefield->IsBattleEndedForEnemies())) { return nullptr; }
+	if (!CanAttack() || ShouldEndBattleActions()) { return nullptr; }
 	FVector Unused;
 	return SelectTarget(Attack->GetAttackSettings().Range, false, Unused);
 }
@@ -555,6 +575,7 @@ void ULSEnemyBehaviorComponent::StopMovement()
 
 void ULSEnemyBehaviorComponent::OnMovementFinished(FAIRequestID Id, const FPathFollowingResult& Result)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld())) return;
 	if (MovementRequestId == FAIRequestID::InvalidRequest || Id != MovementRequestId) { return; }
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementFailed = !Result.IsSuccess();
@@ -926,8 +947,7 @@ void ULSEnemyBehaviorComponent::Decide()
 
 void ULSEnemyBehaviorComponent::EmitSupport(AActor* Opponent, const FVector& OwnLocation, const FVector& OpponentLocation)
 {
-	const ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
-	if (State == ELSEnemyState::Ended || (Battlefield && Battlefield->IsBattleEndedForEnemies()) || !IsValid(Opponent)) { return; }
+	if (State == ELSEnemyState::Ended || ShouldEndBattleActions() || !IsValid(Opponent)) { return; }
 	FLSEnemySupportRequest Request;
 	Request.Requester = GetOwner();
 	Request.Opponent = Opponent;
@@ -971,7 +991,7 @@ void ULSEnemyBehaviorComponent::EmitSupport(AActor* Opponent, const FVector& Own
 
 void ULSEnemyBehaviorComponent::ReceiveSupport(const FLSEnemySupportRequest& Request)
 {
-	if (State == ELSEnemyState::Ended || State == ELSEnemyState::Dead) { return; }
+	if (State == ELSEnemyState::Ended || State == ELSEnemyState::Dead || ShouldEndBattleActions()) { return; }
 	if (Role == ELSEnemyRole::Assault)
 	{
 		FLSPlayerCastleState Castle;

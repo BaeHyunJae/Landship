@@ -1,6 +1,7 @@
 #include "Controls/LSCommandCardComponent.h"
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSSelectableComponent.h"
+#include "Match/LSBattleOutcomePolicy.h"
 
 TArray<AActor*> ULSCommandCardComponent::GetActiveActors()
 {
@@ -141,11 +142,23 @@ TArray<FLSCommandCell> ULSCommandCardComponent::BuildCard()
 			    !PC->GetSelectedActors().Contains(Cells[Index].Source.Get()))
 				Cells[Index] = {};
 		}
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		for (auto& Cell : Cells)
+			if (!Cell.Entry.Id.IsNone())
+			{
+				Cell.Entry.bEnabled = false;
+				Cell.Entry.Detail = FText::FromString(TEXT("전투 종료"));
+				Cell.Entry.Tooltip = FText::GetEmpty();
+				Cell.Entry.Remaining = 0;
+				Cell.Entry.Duration = 0;
+			}
 	return Cells;
 }
 
 bool ULSCommandCardComponent::ExecuteCell(int32 Index, const FLSCommandCell& Expected)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	const FLSCommandCell Snapshot = Expected;
 	const auto Cells = BuildCard();
 	if (!Cells.IsValidIndex(Index))
@@ -170,12 +183,15 @@ bool ULSCommandCardComponent::ExecuteCell(int32 Index, const FLSCommandCell& Exp
 		PC->HoldSelected();
 		return true;
 	default:
-		return Cell.Provider.IsValid() && Cell.Provider->ExecuteCommand(Cell.Entry.Id, PC);
+		return !LSBattleOutcome::AreActionsStopped(GetWorld()) && Cell.Provider.IsValid() &&
+		       Cell.Provider->ExecuteCommand(Cell.Entry.Id, PC);
 	}
 }
 
 bool ULSCommandCardComponent::HandleHotkey(FKey Key)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	const auto Cells = BuildCard();
 	for (int32 Index = 0; Index < Cells.Num(); ++Index)
 		if (!Cells[Index].Entry.Id.IsNone() && Cells[Index].Entry.Hotkey == Key)
@@ -188,6 +204,8 @@ bool ULSCommandCardComponent::HandleHotkey(FKey Key)
 
 void ULSCommandCardComponent::CycleGroup()
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	GetActiveActors();
 	auto* PC = Cast<ALSPlayerController>(GetOwner());
 	if (!PC)
@@ -212,5 +230,7 @@ FText ULSCommandCardComponent::GetGroupText()
 	const auto* Selection = Actors[0]->FindComponentByClass<ULSSelectableComponent>();
 	const FText Name =
 	    Selection->CommandGroupName.IsEmpty() ? FText::FromName(ActiveType) : Selection->CommandGroupName;
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return FText::FromString(FString::Printf(TEXT("%s %d"), *Name.ToString(), Actors.Num()));
 	return FText::FromString(FString::Printf(TEXT("%s %d  ·  Tab 병종 전환"), *Name.ToString(), Actors.Num()));
 }

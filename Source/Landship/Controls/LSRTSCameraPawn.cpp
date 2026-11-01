@@ -4,6 +4,7 @@
 #include "Maps/LSBattlefieldSettings.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Match/LSBattleOutcomePolicy.h"
 
 ALSRTSCameraPawn::ALSRTSCameraPawn()
 {
@@ -41,12 +42,14 @@ FVector ALSRTSCameraPawn::ScreenToWorldDirection(const FVector2D& Direction) con
 
 void ALSRTSCameraPawn::Pan(const FVector2D& ScreenDirection, float DeltaSeconds)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) { return; }
 	if (ScreenDirection.ContainsNaN() || !FMath::IsFinite(DeltaSeconds) || DeltaSeconds <= 0) { return; }
 	FocusLocation(GetActorLocation() + ScreenToWorldDirection(ScreenDirection.GetClampedToMaxSize(1.0f)) * PanSpeed * DeltaSeconds);
 }
 
 void ALSRTSCameraPawn::Drag(const FVector2D& MouseDelta)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) { return; }
 	if (MouseDelta.ContainsNaN()) { return; }
 	// 지면을 잡아 끄는 방향으로 움직이고 줌 거리에 비례해 감도를 조절한다.
 	const FVector2D Direction(-MouseDelta.X, MouseDelta.Y);
@@ -55,6 +58,7 @@ void ALSRTSCameraPawn::Drag(const FVector2D& MouseDelta)
 
 void ALSRTSCameraPawn::Zoom(float WheelDelta)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) { return; }
 	if (!FMath::IsFinite(WheelDelta)) { return; }
 	const float Min = FMath::Max(1.0f, MinZoomDistance);
 	const float Max = FMath::Max(Min, MaxZoomDistance);
@@ -81,6 +85,7 @@ void ALSRTSCameraPawn::SetBattlefieldBounds(const FBox2D& Bounds, float GroundHe
 
 void ALSRTSCameraPawn::FocusLocation(const FVector& Location)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) { return; }
 	if (Location.ContainsNaN()) { return; }
 	const double X = FMath::Clamp(Location.X, FMath::Min(BoundsMin.X, BoundsMax.X), FMath::Max(BoundsMin.X, BoundsMax.X));
 	const double Y = FMath::Clamp(Location.Y, FMath::Min(BoundsMin.Y, BoundsMax.Y), FMath::Max(BoundsMin.Y, BoundsMax.Y));

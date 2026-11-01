@@ -1,4 +1,5 @@
 #include "Castle/LSCastle.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -73,6 +74,8 @@ void ALSCastle::BeginPlay()
 		Vision->SetSightRadius(Stats.VisionRadius);
 	}
 	Super::BeginPlay();
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		EndBattleActions();
 }
 
 bool ALSCastle::TryGetStats(FLSCastleStatRow& OutStats) const
@@ -214,7 +217,7 @@ bool ALSCastle::RequestMove(const FVector& Destination)
 {
 	AAIController* AI = Cast<AAIController>(GetController());
 	UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	if (Destination.ContainsNaN() || !AI || !Navigation || !ULSCombatTargetLibrary::IsCombatAlive(this) ||
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()) || Destination.ContainsNaN() || !AI || !Navigation || !ULSCombatTargetLibrary::IsCombatAlive(this) ||
 	    !Movement->IsActive() || Movement->MaxSpeed <= 0.0f)
 	{
 		return false;
@@ -239,6 +242,17 @@ bool ALSCastle::IsMoving() const
 {
 	const AAIController* AI = Cast<AAIController>(GetController());
 	return AI && AI->GetMoveStatus() != EPathFollowingStatus::Idle;
+}
+
+void ALSCastle::EndBattleActions()
+{
+	bBattleActionsEnded = true;
+	Orders->EndBattleActions();
+	TInlineComponentArray<ULSBasicAttackComponent*> Attacks(this);
+	for (ULSBasicAttackComponent* Attack : Attacks)
+		Attack->EndBattleActions();
+	StopMoving();
+	Movement->Deactivate();
 }
 
 void ALSCastle::StopMoving()

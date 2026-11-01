@@ -1,4 +1,5 @@
 #include "Controls/LSOrderComponent.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -31,6 +32,23 @@ void ULSOrderComponent::BeginPlay()
 	{
 		Attack->StopAttack();
 	}
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		EndBattleActions();
+}
+
+void ULSOrderComponent::EndBattleActions()
+{
+	bKnockbackActive = false;
+	if (bBattleActionsEnded) return;
+	bBattleActionsEnded = true;
+	PendingOrders.Reset();
+	ActiveOrder = FLSOrder();
+	EngagedTarget.Reset();
+	bHasEngagement = false;
+	NextRepathTime = 0;
+	StopMovement();
+	if (Attack)
+		Attack->EndBattleActions();
 }
 
 bool ULSOrderComponent::CanAttack() const
@@ -154,6 +172,11 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 
 bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		LastFailure = ELSOrderFailure::Unavailable;
+		return false;
+	}
 	LastFailure = ELSOrderFailure::None;
 	FLSOrder PreparedOrder;
 	if (!HasBegunPlay() || !PrepareOrder(Order, PreparedOrder))
@@ -183,6 +206,8 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 
 void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (bKnockbackActive)
 	{
 		// 공중에서 새 명령을 받아도 강제 이동 자체는 취소하지 않는다.
@@ -226,6 +251,8 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 
 bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
@@ -292,12 +319,17 @@ bool ULSOrderComponent::ApplyKnockback(const FVector& Velocity)
 	// LaunchCharacter의 보류된 속도가 다음 이동 틱에서 적용될 시간을 보장한다.
 	KnockbackResumeAfter = GetWorld()->GetTimeSeconds() + 0.05;
 	Character->GetCharacterMovement()->SetAvoidanceEnabled(false);
+	// 종료 뒤에도 명중 반응은 유지한다. MOVE_None에서 보류된 Launch가 버려지지 않게 한다.
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
 	Character->LaunchCharacter(Velocity, true, true);
 	return true;
 }
 
 void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	if (MovementRequestId == FAIRequestID::InvalidRequest || RequestId != MovementRequestId)
 	{
 		return;
@@ -452,6 +484,8 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 
 void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	// 공격 가능한 외곽까지 접근하면서 아군 사이의 회피는 유지한다.
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
@@ -493,6 +527,8 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 
 void ULSOrderComponent::FinishOrder()
 {
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return;
 	ActiveOrder = FLSOrder();
 	bHasEngagement = false;
 	EngagedTarget.Reset();
@@ -516,6 +552,12 @@ void ULSOrderComponent::FinishOrder()
 void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* Function)
 {
 	Super::TickComponent(DeltaTime, TickType, Function);
+	if (bBattleActionsEnded) return;
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		EndBattleActions();
+		return;
+	}
 	if (!IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed())
 	{
 		return;

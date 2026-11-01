@@ -46,7 +46,7 @@ bool ULSBasicAttackComponent::ConfigureAttack(const FLSBasicAttackSettings& NewS
 	EffectiveInterval = Interval;
 	bConfigured = true;
 	bHasPendingSettings = false;
-	if (HasBegunPlay() && GetWorld()->GetTimerManager().IsTimerActive(AttackTimer))
+	if (!bBattleActionsEnded && HasBegunPlay() && GetWorld()->GetTimerManager().IsTimerActive(AttackTimer))
 	{
 		const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
 		// 같은 검사 주기로 재설정할 때 다음 검사 시각까지 밀어내지 않는다.
@@ -82,7 +82,7 @@ void ULSBasicAttackComponent::BeginPlay()
 			       TEXT("Basic attack initialization rejected: unavailable tuning or invalid effective interval: %s"),
 			       *GetPathName());
 	}
-	if (bConfigured && bAutoAttackOnBeginPlay)
+	if (!bBattleActionsEnded && bConfigured && bAutoAttackOnBeginPlay)
 	{
 		// 다른 진영·체력 컴포넌트의 BeginPlay가 끝난 뒤 처음 판정한다.
 		bAutoSearching = true;
@@ -104,7 +104,7 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)
 {
-	if (bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured || !IsValidCombatPair(Target))
+	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured || !IsValidCombatPair(Target))
 	{
 		return false;
 	}
@@ -117,6 +117,11 @@ bool ULSBasicAttackComponent::StartAttack(AActor* Target)
 
 void ULSBasicAttackComponent::StartAttackTimer()
 {
+	if (bBattleActionsEnded)
+	{
+		StopAttack();
+		return;
+	}
 	const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
 	FTimerManagerTimerParameters Parameters;
 	Parameters.bLoop = true;
@@ -127,7 +132,7 @@ void ULSBasicAttackComponent::StartAttackTimer()
 
 bool ULSBasicAttackComponent::StartAutoAttack()
 {
-	if (bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured)
+	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured)
 	{
 		return false;
 	}
@@ -179,6 +184,11 @@ void ULSBasicAttackComponent::SetAttackTargetResolver(FLSResolveAttackTarget Res
 
 void ULSBasicAttackComponent::UpdateAttack()
 {
+	if (bBattleActionsEnded)
+	{
+		StopAttack();
+		return;
+	}
 	if (bResolvingAttack)
 	{
 		return;
@@ -284,6 +294,12 @@ void ULSBasicAttackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StopAttack();
 	AttackTargetResolverEvent.Unbind();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ULSBasicAttackComponent::EndBattleActions()
+{
+	bBattleActionsEnded = true;
+	StopAttack();
 }
 
 void ULSBasicAttackComponent::Deactivate()
