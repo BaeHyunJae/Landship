@@ -1,4 +1,6 @@
 #include "Controls/LSRTSHUD.h"
+#include "Controls/LSCommandCardComponent.h"
+#include "HUD/LSBattleHUDWidget.h"
 #include "Vision/LSMinimapWidget.h"
 #include "Maps/LSBattlefieldSettings.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -9,18 +11,34 @@
 #include "Engine/Canvas.h"
 #include "Match/LSGameState.h"
 #include "Engine/World.h"
+#include "Castle/LSMobileCastle.h"
+#include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Framework/Application/SlateApplication.h"
 
 ALSRTSHUD::ALSRTSHUD()
 {
 	static ConstructorHelpers::FClassFinder<ULSMinimapWidget> MinimapClass(
-		TEXT("/Game/Landship/Vision/UI/WBP_BattlefieldMinimap"));
+	    TEXT("/Game/Landship/Vision/UI/WBP_BattlefieldMinimap"));
 	MinimapWidgetClass = MinimapClass.Class;
+	BattleWidgetClass = TSoftClassPtr<ULSBattleHUDWidget>(FSoftObjectPath(TEXT("/Game/Landship/HUD/UI/WBP_BattleHUD.WBP_BattleHUD_C")));
 }
 
 void ALSRTSHUD::BeginPlay()
 {
 	Super::BeginPlay();
+	if (PlayerOwner)
+	{
+		if (auto* Class = BattleWidgetClass.LoadSynchronous())
+		{
+			BattleWidget = CreateWidget<ULSBattleHUDWidget>(PlayerOwner, Class);
+			if (BattleWidget)
+			{
+				BattleWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+				BattleWidget->AddToViewport(1);
+			}
+		}
+	}
 	if (PlayerOwner && MinimapWidgetClass && ALSBattlefieldSettings::Find(GetWorld()))
 	{
 		MinimapWidget = CreateWidget<ULSMinimapWidget>(PlayerOwner, MinimapWidgetClass);
@@ -29,7 +47,7 @@ void ALSRTSHUD::BeginPlay()
 			int32 W = 0, H = 0;
 			PlayerOwner->GetViewportSize(W, H);
 			const FBox2D Rect =
-				FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
+			    FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
 			const float DPI = UWidgetLayoutLibrary::GetViewportScale(this);
 			MinimapWidget->SetPositionInViewport(Rect.Min, true);
 			MinimapWidget->SetDesiredSizeInViewport(Rect.GetSize() / DPI);
@@ -39,6 +57,11 @@ void ALSRTSHUD::BeginPlay()
 }
 void ALSRTSHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (BattleWidget)
+	{
+		BattleWidget->RemoveFromParent();
+		BattleWidget = nullptr;
+	}
 	if (MinimapWidget)
 	{
 		MinimapWidget->RemoveFromParent();
@@ -54,13 +77,16 @@ bool ALSRTSHUD::IsOverMinimap(const FVector2D& Mouse) const
 	{
 		PlayerOwner->GetViewportSize(W, H);
 	}
-	return MinimapWidget &&
-		   FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide)
-			   .Minimap.IsInsideOrOn(Mouse);
+	return MinimapWidget && FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide)
+	                            .Minimap.IsInsideOrOn(Mouse);
 }
 bool ALSRTSHUD::IsMinimapWidget(const TSharedRef<SWidget>& Widget) const
 {
 	return MinimapWidget && MinimapWidget->GetCachedWidget() == Widget;
+}
+bool ALSRTSHUD::IsBattleWidget(const TSharedRef<SWidget>& Widget) const
+{
+	return BattleWidget && BattleWidget->GetCachedWidget() == Widget;
 }
 bool ALSRTSHUD::IsMinimapPointerCaptured() const
 {
@@ -76,11 +102,11 @@ FBox2D ALSRTSHUD::InfoPanel() const
 		PlayerOwner->GetViewportSize(Width, Height);
 	}
 	return FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), MinimapWidget != nullptr,
-											  MinimapWidget ? MinimapWidget->PanelSide : 0)
-		.Info;
+	                                          MinimapWidget ? MinimapWidget->PanelSide : 0)
+	    .Info;
 }
 
-FBox2D ALSRTSHUD::ProductionPanel() const
+FBox2D ALSRTSHUD::CommandPanel() const
 {
 	int32 Width = 0;
 	int32 Height = 0;
@@ -89,20 +115,21 @@ FBox2D ALSRTSHUD::ProductionPanel() const
 		PlayerOwner->GetViewportSize(Width, Height);
 	}
 	return FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), MinimapWidget != nullptr,
-											  MinimapWidget ? MinimapWidget->PanelSide : 0)
-		.Production;
+	                                          MinimapWidget ? MinimapWidget->PanelSide : 0)
+	    .CommandCard;
 }
 
-FBox2D ALSRTSHUD::ProductionButton(int32 Index) const
+FBox2D ALSRTSHUD::GetCommandCellRect(int32 Index) const
 {
-	const float Scale = MinimapWidget ? ProductionPanel().GetSize().X / 360.0f : 1.0f;
-	const FVector2D Min = ProductionPanel().Min + FVector2D(12 + Index * 112, 55) * Scale;
-	return FBox2D(Min, Min + FVector2D(104, 86) * Scale);
+	if (Index < 0 || Index >= ULSCommandCardComponent::CellCount) return FBox2D(ForceInit);
+	const float Scale = CommandPanel().GetSize().X / 420.0f;
+	const FVector2D Min = CommandPanel().Min + FVector2D(12 + Index % 5 * 80, 36 + Index / 5 * 82) * Scale;
+	return FBox2D(Min, Min + FVector2D(76, 78) * Scale);
 }
 
 bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 {
-	return IsOverMinimap(Mouse) || InfoPanel().IsInsideOrOn(Mouse) || ProductionPanel().IsInsideOrOn(Mouse);
+	return IsOverMinimap(Mouse) || InfoPanel().IsInsideOrOn(Mouse) || CommandPanel().IsInsideOrOn(Mouse);
 }
 
 bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
@@ -111,16 +138,14 @@ bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
 	{
 		return false;
 	}
-	if (ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner))
+	if (auto* Controller = Cast<ALSPlayerController>(PlayerOwner))
 	{
-		for (int32 Index = 0; Index < 3; ++Index)
-		{
-			if (ProductionButton(Index).IsInsideOrOn(Mouse))
+		for (int32 Index = 0; Index < ULSCommandCardComponent::CellCount; ++Index)
+			if (GetCommandCellRect(Index).IsInsideOrOn(Mouse))
 			{
-				Controller->ProduceTroop(static_cast<ELSTroopType>(Index));
+				if (BattleWidget) BattleWidget->ExecuteCommandCell(Index);
 				break;
 			}
-		}
 	}
 	return true;
 }
@@ -158,8 +183,7 @@ void ALSRTSHUD::DrawHUD()
 	{
 		int32 W, H;
 		Controller->GetViewportSize(W, H);
-		const FBox2D Rect =
-			FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
+		const FBox2D Rect = FLSBattlefieldHUDLayout::Calculate(FVector2D(W, H), true, MinimapWidget->PanelSide).Minimap;
 		const float DPI = UWidgetLayoutLibrary::GetViewportScale(this);
 		MinimapWidget->SetPositionInViewport(Rect.Min, true);
 		MinimapWidget->SetDesiredSizeInViewport(Rect.GetSize() / DPI);
@@ -171,23 +195,7 @@ void ALSRTSHUD::DrawHUD()
 		float Radius;
 		float HalfHeight;
 		Actor->GetSimpleCollisionCylinder(Radius, HalfHeight);
-		const FVector Base = Actor->GetActorLocation() - FVector(0, 0, HalfHeight - 5);
-		// 선택 표시는 Shipping에서도 필요하므로 디버그 드로잉에 의존하지 않는다.
-		const float RingRadius = FMath::Max(Radius, 25.0f) + 8;
-		for (int32 Segment = 0; Segment < 40; ++Segment)
-		{
-			const float AngleA = Segment * 2 * PI / 40;
-			const float AngleB = (Segment + 1) * 2 * PI / 40;
-			FVector2D A;
-			FVector2D B;
-			if (Controller->ProjectWorldLocationToScreen(
-			        Base + FVector(FMath::Cos(AngleA), FMath::Sin(AngleA), 0) * RingRadius, A) &&
-			    Controller->ProjectWorldLocationToScreen(
-			        Base + FVector(FMath::Cos(AngleB), FMath::Sin(AngleB), 0) * RingRadius, B))
-			{
-				DrawLine(A.X, A.Y, B.X, B.Y, bControlled ? FLinearColor::Green : FLinearColor::Red, 2);
-			}
-		}
+		DrawSelectionRing(Actor, bControlled ? FLinearColor::Green : FLinearColor::Red);
 		FLSHealthSnapshot HealthSnapshot;
 		const ULSHealthComponent* Health = Actor->FindComponentByClass<ULSHealthComponent>();
 		FVector2D Screen;
@@ -200,76 +208,120 @@ void ALSRTSHUD::DrawHUD()
 			         58 * FMath::Clamp(HealthSnapshot.CurrentHealth / HealthSnapshot.MaxHealth, 0.0f, 1.0f), 4);
 		}
 	}
-	for (const FBox2D& Box : {InfoPanel(), ProductionPanel()})
+	if (AActor* Target = Controller->GetAttackCommandMarker(); Target && !Selection.Contains(Target))
+		DrawSelectionRing(Target, FLinearColor::Red);
+	ALSMobileCastle* ArmedCastle = Controller->GetSelectedArmedCastle();
+	if (ArmedCastle && Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
 	{
-		DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.92f), Box.Min.X, Box.Min.Y, Box.GetSize().X, Box.GetSize().Y);
+		FVector Aim = ArmedCastle->GetActorLocation();
+		const bool bValidAim =
+		    Controller->GetCastleWeaponAim(Aim) &&
+		    ArmedCastle->Weapons->ValidateAim(Controller->GetPendingWeapon(), Aim) == ELSWeaponCastResult::Ready;
+		DrawWeaponShape(ArmedCastle, Controller->GetPendingWeapon(), Aim,
+		                bValidAim ? FLinearColor(0, 0.85f, 1) : FLinearColor::Red, true);
 	}
-	const float PanelScale = MinimapWidget ? ProductionPanel().GetSize().X / 360.0f : 1.0f;
-	auto DrawPanelText = [&](const FString& Text, FLinearColor Color, float X, float Y) {
-		DrawText(Text, Color, X, Y, nullptr, PanelScale);
+	for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It)
+	{
+		ELSCastleWeapon Weapon;
+		FVector Aim;
+		FLSCastleWeaponSettings Settings;
+		if (It->Weapons->GetRecentCast(Weapon, Aim, &Settings))
+			DrawWeaponShape(*It, Weapon, Aim, FLinearColor(1, 0.6f, 0.1f), false, &Settings);
+	}
+	if (BattleWidget)
+		BattleWidget->SetPanelLayout(InfoPanel(), CommandPanel());
+}
+
+void ALSRTSHUD::DrawWorldLine(const FVector& Start, const FVector& End, const FLinearColor& Color, float Thickness)
+{
+	FVector2D A, B;
+	if (PlayerOwner && PlayerOwner->ProjectWorldLocationToScreen(Start, A) &&
+	    PlayerOwner->ProjectWorldLocationToScreen(End, B))
+		DrawLine(A.X, A.Y, B.X, B.Y, Color, Thickness);
+}
+
+void ALSRTSHUD::DrawWeaponShape(ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const FVector& Aim,
+                                const FLinearColor& Color, bool bPreview, const FLSCastleWeaponSettings* Snapshot)
+{
+	const FLSCastleWeaponSettings* Settings = Snapshot ? Snapshot : Castle->Weapons->FindSettings(Weapon);
+	if (!Settings)
+		return;
+	float Radius, HalfHeight;
+	Castle->GetSimpleCollisionCylinder(Radius, HalfHeight);
+	const FVector Origin = Castle->GetActorLocation() - FVector(0, 0, HalfHeight - 6);
+	const auto DrawCircle = [this](const FVector& Center, float CircleRadius, const FLinearColor& CircleColor)
+	{
+		for (int32 Index = 0; Index < 64; ++Index)
+		{
+			const float A = Index * 2 * PI / 64;
+			const float B = (Index + 1) * 2 * PI / 64;
+			DrawWorldLine(Center + FVector(FMath::Cos(A), FMath::Sin(A), 0) * CircleRadius,
+			              Center + FVector(FMath::Cos(B), FMath::Sin(B), 0) * CircleRadius, CircleColor);
+		}
 	};
-	const FVector2D Info = InfoPanel().Min + FVector2D(12, 10) * PanelScale;
-	DrawPanelText(FString::Printf(TEXT("Selected: %d"), Selection.Num()), FLinearColor::White, Info.X,
-				  Info.Y);
-	if (!Selection.IsEmpty())
+	if (Weapon == ELSCastleWeapon::Cannon)
 	{
-		AActor* First = Selection[0];
-		const bool bControlled = First->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl();
-		DrawPanelText(First->GetName() + (bControlled ? TEXT(" [CONTROL]") : TEXT(" [INSPECT ONLY]")),
-					  FLinearColor::White, Info.X, Info.Y + 22 * PanelScale);
-		FLSHealthSnapshot HealthSnapshot;
-		const ULSHealthComponent* Health = First->FindComponentByClass<ULSHealthComponent>();
-		const bool bHealth = Health && Health->TryGetHealth(HealthSnapshot);
-		DrawPanelText(bHealth ? FString::Printf(TEXT("HP %.0f / %.0f"), HealthSnapshot.CurrentHealth,
-												HealthSnapshot.MaxHealth)
-							  : TEXT("HP: -- (not connected)"),
-					  FLinearColor::White, Info.X, Info.Y + 44 * PanelScale);
-		if (const ULSOrderComponent* Orders = First->FindComponentByClass<ULSOrderComponent>())
+		if (bPreview)
+			DrawCircle(Origin, Settings->Range, FLinearColor(0.15f, 0.4f, 0.7f));
+		DrawCircle(Aim + FVector(0, 0, 6), Settings->Radius, Color);
+		return;
+	}
+	const FVector Direction = (Aim - Origin).GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+		return;
+	if (Weapon == ELSCastleWeapon::Shotgun)
+	{
+		const float Angle = FMath::Atan2(Direction.Y, Direction.X);
+		const float HalfAngle = FMath::DegreesToRadians(Settings->ConeAngle / 2);
+		FVector Previous = Origin;
+		for (int32 Index = 0; Index <= 40; ++Index)
 		{
-			DrawPanelText(FString::Printf(TEXT("Order: %s | Queued: %d"),
-										  *UEnum::GetValueAsString(Orders->GetOrderKind()),
-										  Orders->GetQueuedCount()),
-						  FLinearColor::White, Info.X, Info.Y + 66 * PanelScale);
+			const float CurrentAngle = Angle - HalfAngle + HalfAngle * 2 * Index / 40;
+			const FVector Point =
+			    Origin + FVector(FMath::Cos(CurrentAngle), FMath::Sin(CurrentAngle), 0) * Settings->Range;
+			DrawWorldLine(Previous, Point, Color);
+			Previous = Point;
+		}
+		DrawWorldLine(Previous, Origin, Color);
+	}
+	else
+	{
+		const FVector Side(-Direction.Y * Settings->Radius, Direction.X * Settings->Radius, 0);
+		const FVector End = Origin + Direction * Settings->Range;
+		DrawWorldLine(Origin + Side, End + Side, Color);
+		DrawWorldLine(Origin - Side, End - Side, Color);
+		DrawWorldLine(End + Side, End - Side, Color);
+		DrawWorldLine(End, End - Direction * 80 + FVector(-Direction.Y, Direction.X, 0) * 45, Color);
+		DrawWorldLine(End, End - Direction * 80 - FVector(-Direction.Y, Direction.X, 0) * 45, Color);
+	}
+}
+
+bool ALSRTSHUD::GetMinimapWorldPoint(FVector& OutLocation) const
+{
+	return MinimapWidget && FSlateApplication::IsInitialized() &&
+	       MinimapWidget->ResolveWorldPoint(MinimapWidget->GetCachedGeometry(), FSlateApplication::Get().GetCursorPos(),
+	                                        OutLocation);
+}
+
+void ALSRTSHUD::DrawSelectionRing(AActor* Actor, const FLinearColor& Color)
+{
+	float Radius, HalfHeight;
+	Actor->GetSimpleCollisionCylinder(Radius, HalfHeight);
+	const FVector Base = Actor->GetActorLocation() - FVector(0, 0, HalfHeight - 5);
+	// 선택 표시는 Shipping에서도 필요하므로 디버그 드로잉에 의존하지 않는다.
+	const float RingRadius = FMath::Max(Radius, 25.0f) + 8;
+	for (int32 Segment = 0; Segment < 40; ++Segment)
+	{
+		const float AngleA = Segment * 2 * PI / 40;
+		const float AngleB = (Segment + 1) * 2 * PI / 40;
+		FVector2D A;
+		FVector2D B;
+		if (PlayerOwner->ProjectWorldLocationToScreen(
+		        Base + FVector(FMath::Cos(AngleA), FMath::Sin(AngleA), 0) * RingRadius, A) &&
+		    PlayerOwner->ProjectWorldLocationToScreen(
+		        Base + FVector(FMath::Cos(AngleB), FMath::Sin(AngleB), 0) * RingRadius, B))
+		{
+			DrawLine(A.X, A.Y, B.X, B.Y, Color, 2);
 		}
 	}
-	const FVector2D Panel = ProductionPanel().Min + FVector2D(12, 10) * PanelScale;
-	const ALSGameState* State = GetWorld()->GetGameState<ALSGameState>();
-	DrawPanelText(TEXT("Troop Production"), FLinearColor::White, Panel.X, Panel.Y);
-	DrawPanelText(State ? FString::Printf(TEXT("Population %d / %d"), State->GetCurrentPopulation(),
-										  State->GetPopulationLimit())
-						: TEXT("Population --"),
-				  FLinearColor::White, Panel.X, Panel.Y + 22 * PanelScale);
-	const TCHAR* Labels[] = {TEXT("Q  Spearman"), TEXT("W  Archer"), TEXT("E  Cavalry")};
-	for (int32 Index = 0; Index < 3; ++Index)
-	{
-		const ELSTroopType Type = static_cast<ELSTroopType>(Index);
-		const ELSProductionResult Status = Controller->Production->GetStatus(Type);
-		const bool bReady = Status == ELSProductionResult::Ready;
-		const FBox2D Button = ProductionButton(Index);
-		DrawRect(bReady ? FLinearColor(0.08f, 0.28f, 0.32f) : FLinearColor(0.07f, 0.08f, 0.10f), Button.Min.X,
-		         Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
-		DrawPanelText(Labels[Index], bReady ? FLinearColor::White : FLinearColor::Gray,
-					  Button.Min.X + 8 * PanelScale, Button.Min.Y + 10 * PanelScale);
-		const float Remaining = Controller->Production->GetRemainingCooldown(Type);
-		DrawPanelText(Remaining > 0 ? FString::Printf(TEXT("%.1fs"), Remaining)
-									: (bReady ? TEXT("Produce") : TEXT("Unavailable")),
-					  Remaining > 0 ? FLinearColor::Yellow : FLinearColor::White,
-					  Button.Min.X + 8 * PanelScale, Button.Min.Y + 40 * PanelScale);
-		if (Remaining > 0)
-		{
-			DrawRect(FLinearColor(0.2f, 0.65f, 0.85f), Button.Min.X, Button.Max.Y - 4,
-			         Button.GetSize().X * FMath::Clamp(1 - Remaining / 10.0f, 0.0f, 1.0f), 4);
-		}
-	}
-	const ELSProductionResult Status = Controller->Production->GetStatus(ELSTroopType::Spearman);
-	const TCHAR* Message = TEXT("Independent cooldowns: 10s");
-	if (Status == ELSProductionResult::SelectCastle)
-		Message = TEXT("Select an allied castle");
-	else if (Status == ELSProductionResult::PopulationFull)
-		Message = TEXT("Population limit reached");
-	else if (Status == ELSProductionResult::Unavailable)
-		Message = TEXT("Production unavailable");
-	else if (Controller->GetLastProductionResult() == ELSProductionResult::NoSpace)
-		Message = TEXT("No reachable space near castle");
-	DrawPanelText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24 * PanelScale);
 }

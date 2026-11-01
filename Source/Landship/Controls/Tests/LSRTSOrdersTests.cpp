@@ -5,6 +5,7 @@
 #include "Controls/LSOrderComponent.h"
 #include "Controls/LSRTSCameraPawn.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Troops/LSUnit.h"
 #include "Engine/World.h"
@@ -214,4 +215,52 @@ bool FLSRTSClickCollisionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+#endif
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSAttackCommandMarkerTest, "Landship.Controls.AttackCommandMarker",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLSAttackCommandMarkerTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game))
+		return false;
+	UWorld* World = Fixture.GetTestWorld();
+	ALSPlayerController* Controller = World->SpawnActor<ALSPlayerController>();
+	ALSBasicAttackTestActor* Source = World->SpawnActor<ALSBasicAttackTestActor>();
+	ALSBasicAttackTestActor* Enemy = World->SpawnActor<ALSBasicAttackTestActor>();
+	Enemy->SetInitialFaction(ELSFaction::Enemy);
+	Enemy->HealthComponent->bDestroyOnDeath = false;
+	Source->Attack->SetAutoAttackOnBeginPlay(false);
+	Enemy->Attack->SetAutoAttackOnBeginPlay(false);
+	AddSelection(Source);
+	AddSelection(Enemy, false);
+	ULSOrderComponent* Orders = NewObject<ULSOrderComponent>(Source);
+	Source->AddInstanceComponent(Orders);
+	Orders->RegisterComponent();
+	if (!Fixture.BeginPlayInTestWorld())
+		return false;
+	Orders->SetComponentTickEnabled(false);
+	FLSBasicAttackSettings Settings;
+	Source->Attack->ConfigureAttack(Settings);
+	Controller->ApplySelection({Source});
+	TestTrue(TEXT("지정 공격 접수"),
+	         Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Enemy, false));
+	TestTrue(TEXT("공격 대상 표시"), Controller->GetAttackCommandMarker() == Enemy);
+	TestTrue(TEXT("아군 선택 유지"),
+	         Controller->GetSelectedActors().Num() == 1 && Controller->GetSelectedActors()[0] == Source);
+	TestFalse(TEXT("아군 오클릭 거절"),
+	          Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Source, false));
+	TestTrue(TEXT("실패 입력은 표시 유지"), Controller->GetAttackCommandMarker() == Enemy);
+	AdvanceRTS(World, 0.8f);
+	TestNull(TEXT("피드백 시간 후 제거"), Controller->GetAttackCommandMarker());
+	Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Enemy, true);
+	TestTrue(TEXT("예약 공격도 클릭 피드백 표시"), Controller->GetAttackCommandMarker() == Enemy);
+	Controller->IssueSelectionOrder(ELSOrderKind::Hold, FVector::ZeroVector, nullptr, false);
+	TestNull(TEXT("새 명령으로 이전 표시 제거"), Controller->GetAttackCommandMarker());
+	Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Enemy, false);
+	Enemy->ApplyTestDamage(100, Source);
+	TestNull(TEXT("적 사망 시 표시 제거"), Controller->GetAttackCommandMarker());
+	Fixture.ForwardErrorMessages(this);
+	return true;
+}
 #endif

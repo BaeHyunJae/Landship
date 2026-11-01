@@ -18,6 +18,16 @@ enum class ELSOrderKind : uint8
 	Hold
 };
 
+UENUM(BlueprintType)
+enum class ELSOrderFailure : uint8
+{
+	None,
+	Unavailable,
+	InvalidTarget,
+	Unreachable,
+	QueueFull
+};
+
 USTRUCT(BlueprintType)
 struct LANDSHIP_API FLSOrder
 {
@@ -39,6 +49,12 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	ULSOrderComponent();
 	UFUNCTION(BlueprintCallable, Category = "Landship|Orders")
 	bool SubmitOrder(const FLSOrder& Order, bool bQueue = false);
+	/** 현재 명령과 예약은 보존하고, 넉백 착지 뒤 실행을 재개한다. */
+	bool ApplyKnockback(const FVector& Velocity);
+	bool IsKnockedBack() const
+	{
+		return bKnockbackActive;
+	}
 	UFUNCTION(BlueprintPure, Category = "Landship|Orders")
 	ELSOrderKind GetOrderKind() const
 	{
@@ -65,6 +81,10 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	{
 		return bLastMovementSucceeded;
 	}
+	ELSOrderFailure GetLastFailure() const
+	{
+		return LastFailure;
+	}
 	static TArray<FVector> MakeFormation(const FVector& Center, int32 Count, float Spacing);
 
   protected:
@@ -85,7 +105,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination) const;
 	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const;
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
-	bool MoveTo(const FVector& Goal);
+	bool MoveTo(const FVector& Goal, bool bAttackApproach = false);
 	void StopMovement();
 	bool IsMoving() const;
 	bool IsHostile(AActor* Target) const;
@@ -108,4 +128,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	FAIRequestID MovementRequestId = FAIRequestID::InvalidRequest;
 	bool bMovementCompleted = false;
 	bool bLastMovementSucceeded = false;
+	bool bKnockbackActive = false;
+	double KnockbackResumeAfter = 0;
+	ELSOrderFailure LastFailure = ELSOrderFailure::None;
 };

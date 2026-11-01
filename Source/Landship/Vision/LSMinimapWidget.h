@@ -8,7 +8,7 @@ struct LANDSHIP_API FLSBattlefieldHUDLayout
 {
 	FBox2D Minimap;
 	FBox2D Info;
-	FBox2D Production;
+	FBox2D CommandCard;
 	float Scale = 1.0f;
 	static FLSBattlefieldHUDLayout Calculate(FVector2D Viewport, bool bMinimap, float MinimapSide = 260.0f);
 };
@@ -20,18 +20,20 @@ class LANDSHIP_API ULSMinimapWidget : public UUserWidget
 	GENERATED_BODY()
   public:
 	/** 기존 HUD와 공유할 패널 크기이며 WBP 기본값에서 조정한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Vision|Layout",
-			  meta = (ClampMin = "64"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Vision|Layout", meta = (ClampMin = "64"))
 	float PanelSide = 260.0f;
 	bool IsPointerCaptured() const
 	{
 		return bDragging;
 	}
 
+	bool ResolveWorldPoint(const FGeometry& Geometry, FVector2D ScreenPosition, FVector& OutWorld,
+	                       bool bClampToMap = false) const;
+
   protected:
-	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
-							  const FSlateRect& CullingRect, FSlateWindowElementList& Elements, int32 Layer,
-							  const FWidgetStyle& Style, bool bEnabled) const override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+	                          FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
+	                          bool bEnabled) const override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;

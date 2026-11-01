@@ -1,6 +1,9 @@
 #include "Controls/LSPlayerController.h"
+#include "Controls/LSCommandCardComponent.h"
 
 #include "Castle/LSCastle.h"
+#include "Castle/LSMobileCastle.h"
+#include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
@@ -17,6 +20,7 @@
 #include "HAL/IConsoleManager.h"
 #include "InputKeyEventArgs.h"
 #include "Vision/LSVisionSubsystem.h"
+#include "Maps/LSBattlefieldSettings.h"
 #include "Vision/LSVisionParticipantComponent.h"
 
 namespace
@@ -26,6 +30,7 @@ TAutoConsoleVariable<int32> CVarRTSInputDebug(TEXT("LS.RTS.InputDebug"), 0, TEXT
 
 ALSPlayerController::ALSPlayerController()
 {
+	CommandCard = CreateDefaultSubobject<ULSCommandCardComponent>(TEXT("CommandCard"));
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
 	Production = CreateDefaultSubobject<ULSTroopProductionComponent>(TEXT("Production"));
@@ -35,15 +40,13 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (Params.Event == IE_Pressed && CanUseWorldInput(true, true))
 	{
-		const FKey ProductionKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(ProductionKeys); ++Index)
+		if (Params.Key == EKeys::Tab)
 		{
-			if (Params.Key == ProductionKeys[Index])
-			{
-				ProduceTroop(static_cast<ELSTroopType>(Index));
-				return true;
-			}
+			CommandCard->CycleGroup();
+			return true;
 		}
+		if (CommandCard->HandleHotkey(Params.Key))
+			return true;
 	}
 	if (Params.Event == IE_Pressed && CanUseWorldInput(false, true))
 	{
@@ -83,6 +86,69 @@ void ALSPlayerController::ProduceTroop(ELSTroopType Type)
 {
 	CancelInput();
 	LastProductionResult = Production->Produce(Type);
+}
+
+ALSMobileCastle* ALSPlayerController::GetSelectedArmedCastle() const
+{
+	for (AActor* Actor : GetSelectedActors())
+	{
+		ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Actor);
+		if (Castle && Castle->GetFaction() == ELSFaction::Ally && Castle->Selection->CanPlayerControl() &&
+		    ULSCombatTargetLibrary::IsCombatAlive(Castle))
+			return Castle;
+	}
+	return nullptr;
+}
+
+bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
+{
+	CancelInput();
+	ALSMobileCastle* Castle = GetSelectedArmedCastle();
+	LastWeaponResult = Castle ? Castle->Weapons->GetStatus(Weapon) : ELSWeaponCastResult::Unavailable;
+	if (LastWeaponResult != ELSWeaponCastResult::Ready)
+		return false;
+	AimingCastle = Castle;
+	Castle->Weapons->OnWeaponStateChanged.AddDynamic(this, &ALSPlayerController::OnAimedWeaponStateChanged);
+	PendingWeapon = Weapon;
+	PendingInput = ELSCommandInput::CastleWeapon;
+	return true;
+}
+
+ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
+{
+	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
+	    GetSelectedArmedCastle() != AimingCastle.Get())
+	{
+		CancelInput();
+		LastWeaponResult = ELSWeaponCastResult::Unavailable;
+		return LastWeaponResult;
+	}
+	LastWeaponResult = AimingCastle->Weapons->CastWeapon(PendingWeapon, Aim);
+	if (LastWeaponResult == ELSWeaponCastResult::Ready)
+		CancelInput();
+	return LastWeaponResult;
+}
+
+bool ALSPlayerController::GetCastleWeaponAim(FVector& Aim) const
+{
+	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
+	    GetSelectedArmedCastle() != AimingCastle.Get() || !GetWorld())
+		return false;
+	if (const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD()))
+	{
+		if (HUD->GetMinimapWorldPoint(Aim))
+			return true;
+	}
+	FVector Origin, Direction;
+	if (!DeprojectMousePositionToWorld(Origin, Direction))
+		return false;
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Ground);
+	FHitResult Hit;
+	if (!GetWorld()->LineTraceSingleByObjectType(Hit, Origin, Origin + Direction * 100000, Objects))
+		return false;
+	Aim = Hit.ImpactPoint;
+	return true;
 }
 
 void ALSPlayerController::SetupInputComponent()
@@ -144,27 +210,30 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 	// 새 PIE 창은 SPIEViewport를 사용하므로 타입 이름 대신 실제 전장 위젯을 비교한다.
 	const TSharedPtr<SViewport> GameViewport = Client->GetGameViewportWidget();
 	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
-	float MinimapX = 0, MinimapY = 0;
 	bool bMinimapPath = false;
+	bool bBattleHUDPath = false;
 	if (HUD && Path.IsValid())
 	{
 		for (int32 Index = 0; Index < Path.Widgets.Num(); ++Index)
 		{
 			bMinimapPath |= HUD->IsMinimapWidget(Path.Widgets[Index].Widget);
+			bBattleHUDPath |= HUD->IsBattleWidget(Path.Widgets[Index].Widget);
 		}
 	}
-	const bool bMinimap = HUD && bMinimapPath && GetMousePosition(MinimapX, MinimapY) &&
-						  HUD->IsOverMinimap(FVector2D(MinimapX, MinimapY));
+	const bool bMinimap = HUD && bMinimapPath;
 	const bool bCaptured = HUD && HUD->IsMinimapPointerCaptured();
 	if (!bKeyboard && bCaptured)
 	{
 		return false;
 	}
 	if (!Path.IsValid() || !GameViewport.IsValid() ||
-		(Path.Widgets.Last().Widget != GameViewport && !(bKeyboard && (bMinimap || bCaptured))))
+	    (Path.Widgets.Last().Widget != GameViewport && !(bKeyboard && (bMinimap || bCaptured || bBattleHUDPath))))
 	{
 		return false;
 	}
+	// UMG 위에서는 전장 뷰포트의 마우스 좌표가 없을 수 있으므로 실제 Slate 경로를 사용한다.
+	if (bKeyboard && (bMinimap || bCaptured || bBattleHUDPath))
+		return true;
 	float X;
 	float Y;
 	int32 Width;
@@ -174,7 +243,7 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 	{
 		return false;
 	}
-	return (bKeyboard && (bMinimap || bCaptured)) || bAllowHUD || !HUD || !HUD->IsOverPanel(FVector2D(X, Y));
+	return bAllowHUD || !HUD || !HUD->IsOverPanel(FVector2D(X, Y));
 }
 
 void ALSPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -201,13 +270,16 @@ void ALSPlayerController::PlayerTick(float DeltaSeconds)
 {
 	Super::PlayerTick(DeltaSeconds);
 	PruneSelection();
+	if (PendingInput == ELSCommandInput::CastleWeapon &&
+	    (!AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get() ||
+	     AimingCastle->Weapons->GetStatus(PendingWeapon) != ELSWeaponCastResult::Ready))
+		CancelInput();
 	ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn());
 	if (CameraPawn && !CanUseWorldInput() && CanUseWorldInput(false, true))
 	{
-		const FVector2D Keys(static_cast<int32>(IsInputKeyDown(EKeys::Right)) -
-								 static_cast<int32>(IsInputKeyDown(EKeys::Left)),
-							 static_cast<int32>(IsInputKeyDown(EKeys::Up)) -
-								 static_cast<int32>(IsInputKeyDown(EKeys::Down)));
+		const FVector2D Keys(
+		    static_cast<int32>(IsInputKeyDown(EKeys::Right)) - static_cast<int32>(IsInputKeyDown(EKeys::Left)),
+		    static_cast<int32>(IsInputKeyDown(EKeys::Up)) - static_cast<int32>(IsInputKeyDown(EKeys::Down)));
 		CameraPawn->Pan(Keys, DeltaSeconds);
 	}
 	if (!CameraPawn || !CanUseWorldInput())
@@ -388,13 +460,12 @@ bool ALSPlayerController::HitWorld(FHitResult& Hit) const
 		{
 			Params.AddIgnoredActor(Actor);
 			TArray<AActor*> ConcealedChildren;
-			Actor->FindComponentByClass<ULSVisionParticipantComponent>()->GetAttachedVisualActors(
-				ConcealedChildren);
+			Actor->FindComponentByClass<ULSVisionParticipantComponent>()->GetAttachedVisualActors(ConcealedChildren);
 			Params.AddIgnoredActors(ConcealedChildren);
 		}
 	}
 	return GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HitResultTraceDistance,
-												ECC_Visibility, Params);
+	                                            ECC_Visibility, Params);
 }
 
 void ALSPlayerController::OnSelectPressed()
@@ -405,7 +476,7 @@ void ALSPlayerController::OnSelectPressed()
 		GetMousePosition(X, Y);
 		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT press allowed=%d mouse=%f,%f"), CanUseWorldInput(true), X, Y);
 	}
-	if (!CanUseWorldInput(true))
+	if (!CanUseWorldInput(true, true))
 	{
 		return;
 	}
@@ -532,6 +603,8 @@ void ALSPlayerController::SelectSameType()
 
 void ALSPlayerController::ArmAttack()
 {
+	if (CVarRTSInputDebug.GetValueOnGameThread())
+		UE_LOG(LogTemp, Display, TEXT("RTS_INPUT attack allowed=%d"), CanUseWorldInput(false, true));
 	if (!CanUseWorldInput(false, true))
 	{
 		return;
@@ -566,11 +639,29 @@ void ALSPlayerController::ArmMove()
 void ALSPlayerController::CancelInput()
 {
 	PendingInput = ELSCommandInput::None;
+	if (AimingCastle.IsValid())
+		AimingCastle->Weapons->OnWeaponStateChanged.RemoveDynamic(this,
+		                                                          &ALSPlayerController::OnAimedWeaponStateChanged);
+	AimingCastle.Reset();
 	bSelecting = false;
+}
+
+void ALSPlayerController::OnAimedWeaponStateChanged(ELSCastleWeapon Weapon, const FLSCastleWeaponState& State)
+{
+	if (PendingInput == ELSCommandInput::CastleWeapon && Weapon == PendingWeapon &&
+	    (!State.bUnlocked || !State.bEnabled))
+		CancelInput();
 }
 
 void ALSPlayerController::CompleteTargetInput()
 {
+	if (PendingInput == ELSCommandInput::CastleWeapon)
+	{
+		FVector Aim;
+		if (GetCastleWeaponAim(Aim))
+			ConfirmCastleWeapon(Aim);
+		return;
+	}
 	FHitResult Hit;
 	if (HitWorld(Hit))
 	{
@@ -592,6 +683,12 @@ void ALSPlayerController::CompleteTargetInput()
 
 void ALSPlayerController::OnRightClick()
 {
+	if (PendingInput == ELSCommandInput::CastleWeapon)
+	{
+		if (CanUseWorldInput(true, true))
+			CancelInput();
+		return;
+	}
 	if (!CanUseWorldInput())
 	{
 		return;
@@ -653,8 +750,8 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 	}
 	// 일반 이동은 클릭 지점으로 집결한다. 공격 이동의 분산 배치는 유지한다.
 	const TArray<FVector> Destinations = Kind == ELSOrderKind::AttackMove
-	                                        ? ULSOrderComponent::MakeFormation(Location, Controlled.Num(), Spacing)
-	                                        : TArray<FVector>();
+	                                         ? ULSOrderComponent::MakeFormation(Location, Controlled.Num(), Spacing)
+	                                         : TArray<FVector>();
 	bool bAccepted = false;
 	for (int32 Index = 0; Index < Controlled.Num(); ++Index)
 	{
@@ -664,6 +761,11 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 		Order.Destination = Destinations.IsValidIndex(Index) ? Destinations[Index] : Location;
 		bAccepted |= Controlled[Index]->FindComponentByClass<ULSOrderComponent>()->SubmitOrder(Order, bQueue);
 	}
+	if (bAccepted)
+	{
+		AttackCommandTarget = Kind == ELSOrderKind::AttackTarget ? Target : nullptr;
+		AttackCommandMarkerExpiresAt = GetWorld()->GetTimeSeconds() + AttackCommandMarkerDuration;
+	}
 	if (bAccepted && (Kind == ELSOrderKind::Move || Kind == ELSOrderKind::AttackMove))
 	{
 		OrderMarkerLocation = Location;
@@ -671,6 +773,16 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 		OrderMarkerExpiresAt = GetWorld()->GetTimeSeconds() + 0.7;
 	}
 	return bAccepted;
+}
+
+AActor* ALSPlayerController::GetAttackCommandMarker() const
+{
+	AActor* Target = AttackCommandTarget.Get();
+	const ULSSelectableComponent* Selection = Target ? Target->FindComponentByClass<ULSSelectableComponent>() : nullptr;
+	return GetWorld() && GetWorld()->GetTimeSeconds() < AttackCommandMarkerExpiresAt && Selection &&
+	               Selection->IsSelectable()
+	           ? Target
+	           : nullptr;
 }
 
 void ALSPlayerController::UseControlGroup(int32 Number, bool bAssign)
@@ -728,4 +840,35 @@ bool ALSPlayerController::GetOrderMarker(FVector& OutLocation, FLinearColor& Out
 	OutLocation = OrderMarkerLocation;
 	OutColor = OrderMarkerColor;
 	return true;
+}
+
+bool ALSPlayerController::HandleMinimapInput(const FVector& Location, bool bRightClick, bool bQueue)
+{
+	const ALSBattlefieldSettings* Settings = ALSBattlefieldSettings::Find(GetWorld());
+	if (!Settings || Location.ContainsNaN() || !Settings->GetWorldBounds().IsInsideOrOn(FVector2D(Location)))
+		return false;
+	if (bRightClick && PendingInput != ELSCommandInput::None)
+	{
+		CancelInput();
+		return true;
+	}
+	const FVector Ground(Location.X, Location.Y, Settings->GetGroundHeight());
+	if (!bRightClick && PendingInput == ELSCommandInput::CastleWeapon)
+	{
+		ConfirmCastleWeapon(Ground);
+		return true;
+	}
+	if (bRightClick || PendingInput == ELSCommandInput::Move || PendingInput == ELSCommandInput::Attack)
+	{
+		const ELSOrderKind Kind =
+		    PendingInput == ELSCommandInput::Attack ? ELSOrderKind::AttackMove : ELSOrderKind::Move;
+		const bool bAccepted = IssueSelectionOrder(Kind, Ground, nullptr, bQueue);
+		if (CVarRTSInputDebug.GetValueOnGameThread())
+			UE_LOG(LogTemp, Display, TEXT("RTS_MINIMAP order=%s location=%s selected=%d accepted=%d queue=%d"),
+			       *UEnum::GetValueAsString(Kind), *Ground.ToString(), GetSelectedActors().Num(), bAccepted, bQueue);
+		if (!bQueue)
+			CancelInput();
+		return true;
+	}
+	return false;
 }

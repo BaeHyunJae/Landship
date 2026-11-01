@@ -18,4 +18,7 @@ class LANDSHIP_API ULSCombatTargetLibrary : public UBlueprintFunctionLibrary
 	 * 쓰지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Combat")
 	static bool CanAutoAttackTarget(const AActor* Source, const AActor* Target);
+	/** 충돌 원기둥 외곽 사이의 거리다. 같은 규칙을 조준·추적·실제 타격에 사용한다. */
+	static double GetAttackDistance(const AActor* Source, const AActor* Target);
+	static double GetAttackDistanceAtLocation(const AActor* Source, const AActor* Target, const FVector& SourceLocation);
 };

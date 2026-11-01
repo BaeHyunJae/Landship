@@ -1,4 +1,7 @@
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleCommandProviderComponent.h"
+#include "Castle/LSCastleWeaponComponent.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "Vision/LSVisionParticipantComponent.h"
 
 #include "Combat/LSCollisionChannels.h"
@@ -13,6 +16,10 @@
 
 ALSMobileCastle::ALSMobileCastle()
 {
+	CreateDefaultSubobject<ULSCastleCommandProviderComponent>(TEXT("CommandProvider"));
+	Selection->CommandGroupName = FText::FromString(TEXT("이동 성"));
+	Weapons = CreateDefaultSubobject<ULSCastleWeaponComponent>(TEXT("Weapons"));
+	BasicAttack->SetAutoActivate(false);
 	static ConstructorHelpers::FObjectFinder<UDataTable> Table(
 	    TEXT("/Game/Landship/Troops/Data/DT_TroopStats.DT_TroopStats"));
 	StatsRow.DataTable = Table.Object;

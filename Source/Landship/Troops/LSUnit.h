@@ -15,6 +15,7 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 
   public:
 	ALSUnit();
+	virtual bool SupportsBasicAttack() const { return true; }
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSSelectableComponent> Selection;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")

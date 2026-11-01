@@ -15,4 +15,3 @@ struct FLSEnemySupportTestAccess
 	static FVector ActiveLocation(const ULSEnemyBehaviorComponent* Behavior) { return Behavior->ActiveSupport.OpponentLocation; }
 };
 #endif
-

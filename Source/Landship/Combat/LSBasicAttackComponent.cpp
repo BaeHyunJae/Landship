@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
+#include "Combat/LSBasicAttackTuningSubsystem.h"
 
 ULSBasicAttackComponent::ULSBasicAttackComponent()
 {
@@ -24,14 +25,63 @@ bool ULSBasicAttackComponent::ConfigureAttack(const FLSBasicAttackSettings& NewS
 	{
 		return false;
 	}
+	float Interval = 0;
+	if (!ResolveEffectiveInterval(NewSettings.Interval, Interval))
+	{
+		if ((GetWorld() && GetWorld()->HasBegunPlay()) || HasBegunPlay())
+		{
+			UE_LOG(LogTemp, Warning,
+			       TEXT("Basic attack configuration rejected: unavailable tuning or invalid effective interval: %s"),
+			       *GetPathName());
+			return false;
+		}
+		// 플레이 시작 전에는 원본만 준비한다. 월드 배율이 확정된 BeginPlay에서 실행 가능 여부를 정한다.
+		Settings = NewSettings;
+		bHasPendingSettings = true;
+		bConfigured = false;
+		EffectiveInterval = 0;
+		return true;
+	}
 	Settings = NewSettings;
+	EffectiveInterval = Interval;
 	bConfigured = true;
+	bHasPendingSettings = false;
+	if (HasBegunPlay() && GetWorld()->GetTimerManager().IsTimerActive(AttackTimer))
+	{
+		const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
+		// 같은 검사 주기로 재설정할 때 다음 검사 시각까지 밀어내지 않는다.
+		if (GetWorld()->GetTimerManager().GetTimerRate(AttackTimer) != FMath::Min(Period, EffectiveInterval))
+			StartAttackTimer();
+	}
+	return true;
+}
+
+bool ULSBasicAttackComponent::ResolveEffectiveInterval(float BaseInterval, float& OutInterval) const
+{
+	const ULSBasicAttackTuningSubsystem* Tuning =
+	    GetWorld() ? GetWorld()->GetSubsystem<ULSBasicAttackTuningSubsystem>() : nullptr;
+	float Multiplier = 0;
+	if (!Tuning || !Tuning->TryGetBasicAttackSpeedMultiplier(Multiplier))
+		return false;
+	const float Interval = BaseInterval / Multiplier;
+	if (!FMath::IsFinite(Interval) || Interval <= 0)
+		return false;
+	OutInterval = Interval;
 	return true;
 }
 
 void ULSBasicAttackComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (bHasPendingSettings)
+	{
+		bHasPendingSettings = false;
+		bConfigured = ResolveEffectiveInterval(Settings.Interval, EffectiveInterval);
+		if (!bConfigured)
+			UE_LOG(LogTemp, Warning,
+			       TEXT("Basic attack initialization rejected: unavailable tuning or invalid effective interval: %s"),
+			       *GetPathName());
+	}
 	if (bConfigured && bAutoAttackOnBeginPlay)
 	{
 		// 다른 진영·체력 컴포넌트의 BeginPlay가 끝난 뒤 처음 판정한다.
@@ -49,7 +99,7 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 		return false;
 	}
 	return ULSCombatTargetLibrary::CanAutoAttackTarget(Owner, Target) &&
-		   ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
+	       ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
 }
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)
@@ -68,8 +118,11 @@ bool ULSBasicAttackComponent::StartAttack(AActor* Target)
 void ULSBasicAttackComponent::StartAttackTimer()
 {
 	const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
+	FTimerManagerTimerParameters Parameters;
+	Parameters.bLoop = true;
+	Parameters.bMaxOncePerFrame = true;
 	GetWorld()->GetTimerManager().SetTimer(AttackTimer, this, &ULSBasicAttackComponent::UpdateAttack,
-	                                       FMath::Max(0.01f, FMath::Min(Period, Settings.Interval)), true);
+	                                       FMath::Min(Period, EffectiveInterval), Parameters);
 }
 
 bool ULSBasicAttackComponent::StartAutoAttack()
@@ -91,11 +144,16 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBasicAttack), false, GetOwner());
+	float SourceRadius, SourceHeight;
+	GetOwner()->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
 	TArray<FOverlapResult> Hits;
-	GetWorld()->OverlapMultiByObjectType(Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
-	                                     FCollisionShape::MakeSphere(FMath::Max(Settings.Range, 0.01f)), Query);
+	GetWorld()->OverlapMultiByObjectType(
+	    Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
+	    FCollisionShape::MakeBox(FVector(Settings.Range + SourceRadius + 1, Settings.Range + SourceRadius + 1,
+	                                     Settings.Range + SourceHeight + 1)),
+	    Query);
 	AActor* Nearest = nullptr;
-	double NearestDistance = FMath::Square(static_cast<double>(Settings.Range));
+	double NearestDistance = Settings.Range;
 	for (const FOverlapResult& Hit : Hits)
 	{
 		AActor* Candidate = Hit.GetActor();
@@ -103,7 +161,7 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 		{
 			continue;
 		}
-		const double Distance = FVector::DistSquared(GetOwner()->GetActorLocation(), Candidate->GetActorLocation());
+		const double Distance = ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Candidate);
 		if (Distance < NearestDistance ||
 		    (Distance == NearestDistance && (!Nearest || Candidate->GetUniqueID() < Nearest->GetUniqueID())))
 		{
@@ -130,8 +188,7 @@ void ULSBasicAttackComponent::UpdateAttack()
 	{
 		// 현재 교전이 유효하면 더 가까운 적이 나타나도 타격 대상을 유지한다.
 		if (!IsValidCombatPair(AttackTarget.Get()) ||
-		    FVector::DistSquared(GetOwner()->GetActorLocation(), AttackTarget->GetActorLocation()) >
-		        FMath::Square(static_cast<double>(Settings.Range)))
+		    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), AttackTarget.Get()) > Settings.Range)
 		{
 			AttackTarget = FindNearestTarget();
 		}
@@ -156,8 +213,8 @@ void ULSBasicAttackComponent::UpdateAttack()
 		// 콜백이 자기 바인딩을 바꾸어도 실행 중인 델리게이트는 유지한다.
 		const FLSResolveAttackTarget ResolverEvent = AttackTargetResolverEvent;
 		AActor* ResolvedTarget = ResolverEvent.Execute();
-		if (!IsValid(this) || Revision != StopRevision || !IsActive() || !GetWorld() ||
-		    GetWorld()->bIsTearingDown || !IsValidCombatPair(ResolvedTarget))
+		if (!IsValid(this) || Revision != StopRevision || !IsActive() || !GetWorld() || GetWorld()->bIsTearingDown ||
+		    !IsValidCombatPair(ResolvedTarget))
 		{
 			return;
 		}
@@ -169,13 +226,11 @@ void ULSBasicAttackComponent::UpdateAttack()
 		StopAttack();
 		return;
 	}
-	if (GetCooldownRemaining() > 0.0f ||
-	    FVector::DistSquared(GetOwner()->GetActorLocation(), Target->GetActorLocation()) >
-	        FMath::Square(static_cast<double>(Settings.Range)))
+	if (GetCooldownRemaining() > 0.0f || ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) > Settings.Range)
 	{
 		return;
 	}
-	NextAttackTime = GetWorld()->GetTimeSeconds() + Settings.Interval;
+	NextAttackTime = GetWorld()->GetTimeSeconds() + EffectiveInterval;
 	FLSAttackExecution Execution;
 	Execution.Source = GetOwner();
 	Execution.Target = Target;
