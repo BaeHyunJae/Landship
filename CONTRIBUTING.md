@@ -25,7 +25,7 @@
 
 - 개발 Task 하나에 PR 하나를 연다.
 - PR 제목 끝에 Notion Task ID를 괄호로 붙인다. 예: `feat(castle): 성 클릭 이동 (TASK-40)`
-- PR 주소는 Notion Task의 ‘산출물 링크’ 속성에 넣는다.
+- PR 주소는 Notion Task에 따로 넣지 않는다. Task의 ‘PR’ 속성이 제목의 Task ID로 PR을 찾아 링크를 만든다. 제목에 Task ID가 빠지면 Task에서 PR이 보이지 않는다.
 - PR 병합은 Task 완료와 같지 않다. Task 담당자가 Notion Task의 완료 기준을 확인한 뒤 직접 Done으로 바꾼다. 상태 변경은 자동화에 맡기지 않는다. Done 조건은 Notion의 프로젝트 사용 및 운영 가이드를 따른다.
 - 구현 범위와 완료 기준은 Notion의 해당 Task가 원본이다.
 
