@@ -49,7 +49,7 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 		return false;
 	}
 	return ULSCombatTargetLibrary::CanAutoAttackTarget(Owner, Target) &&
-		   ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
+	       ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
 }
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)
@@ -91,11 +91,16 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBasicAttack), false, GetOwner());
+	float SourceRadius, SourceHeight;
+	GetOwner()->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
 	TArray<FOverlapResult> Hits;
-	GetWorld()->OverlapMultiByObjectType(Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
-	                                     FCollisionShape::MakeSphere(FMath::Max(Settings.Range, 0.01f)), Query);
+	GetWorld()->OverlapMultiByObjectType(
+	    Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
+	    FCollisionShape::MakeBox(FVector(Settings.Range + SourceRadius + 1, Settings.Range + SourceRadius + 1,
+	                                     Settings.Range + SourceHeight + 1)),
+	    Query);
 	AActor* Nearest = nullptr;
-	double NearestDistance = FMath::Square(static_cast<double>(Settings.Range));
+	double NearestDistance = Settings.Range;
 	for (const FOverlapResult& Hit : Hits)
 	{
 		AActor* Candidate = Hit.GetActor();
@@ -103,7 +108,7 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 		{
 			continue;
 		}
-		const double Distance = FVector::DistSquared(GetOwner()->GetActorLocation(), Candidate->GetActorLocation());
+		const double Distance = ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Candidate);
 		if (Distance < NearestDistance ||
 		    (Distance == NearestDistance && (!Nearest || Candidate->GetUniqueID() < Nearest->GetUniqueID())))
 		{
@@ -130,8 +135,7 @@ void ULSBasicAttackComponent::UpdateAttack()
 	{
 		// 현재 교전이 유효하면 더 가까운 적이 나타나도 타격 대상을 유지한다.
 		if (!IsValidCombatPair(AttackTarget.Get()) ||
-		    FVector::DistSquared(GetOwner()->GetActorLocation(), AttackTarget->GetActorLocation()) >
-		        FMath::Square(static_cast<double>(Settings.Range)))
+		    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), AttackTarget.Get()) > Settings.Range)
 		{
 			AttackTarget = FindNearestTarget();
 		}
@@ -170,8 +174,7 @@ void ULSBasicAttackComponent::UpdateAttack()
 		return;
 	}
 	if (GetCooldownRemaining() > 0.0f ||
-	    FVector::DistSquared(GetOwner()->GetActorLocation(), Target->GetActorLocation()) >
-	        FMath::Square(static_cast<double>(Settings.Range)))
+	    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) > Settings.Range)
 	{
 		return;
 	}

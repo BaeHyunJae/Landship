@@ -3,6 +3,29 @@
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthComponent.h"
 #include "GameFramework/Actor.h"
+#include <limits>
+
+double ULSCombatTargetLibrary::GetAttackDistance(const AActor* Source, const AActor* Target)
+{
+	return IsValid(Source) ? GetAttackDistanceAtLocation(Source, Target, Source->GetActorLocation())
+	                       : std::numeric_limits<double>::infinity();
+}
+
+double ULSCombatTargetLibrary::GetAttackDistanceAtLocation(const AActor* Source, const AActor* Target,
+                                                           const FVector& SourceLocation)
+{
+	if (!IsValid(Source) || !IsValid(Target) || SourceLocation.ContainsNaN() ||
+	    Target->GetActorLocation().ContainsNaN())
+		return std::numeric_limits<double>::infinity();
+	float SourceRadius, SourceHeight, TargetRadius, TargetHeight;
+	Source->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
+	Target->GetSimpleCollisionCylinder(TargetRadius, TargetHeight);
+	const double Horizontal =
+	    FMath::Max(0.0, FVector::Dist2D(SourceLocation, Target->GetActorLocation()) - SourceRadius - TargetRadius);
+	const double Vertical =
+	    FMath::Max(0.0, FMath::Abs(SourceLocation.Z - Target->GetActorLocation().Z) - SourceHeight - TargetHeight);
+	return FMath::Sqrt(Horizontal * Horizontal + Vertical * Vertical);
+}
 
 bool ULSCombatTargetLibrary::CanAutoAttackTarget(const AActor* Source, const AActor* Target)
 {

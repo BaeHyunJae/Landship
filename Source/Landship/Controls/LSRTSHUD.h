@@ -4,6 +4,7 @@
 #include "GameFramework/HUD.h"
 #include "LSRTSHUD.generated.h"
 
+enum class ELSCastleWeapon : uint8;
 class ULSMinimapWidget;
 class SWidget;
 
@@ -17,6 +18,7 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	virtual void DrawHUD() override;
 	bool IsOverPanel(const FVector2D& Mouse) const;
 	bool HandleClick(const FVector2D& Mouse);
+	bool GetMinimapWorldPoint(FVector& OutLocation) const;
 	bool IsOverMinimap(const FVector2D& Mouse) const;
 	bool IsMinimapPointerCaptured() const;
 	bool IsMinimapWidget(const TSharedRef<SWidget>& Widget) const;
@@ -33,4 +35,11 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	FBox2D InfoPanel() const;
 	FBox2D ProductionPanel() const;
 	FBox2D ProductionButton(int32 Index) const;
+	FBox2D WeaponPanel() const;
+	FBox2D WeaponButton(int32 Index) const;
+	void DrawSelectionRing(AActor* Actor, const FLinearColor& Color);
+	void DrawWeaponShape(class ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const FVector& Aim,
+	                     const FLinearColor& Color, bool bPreview,
+	                     const struct FLSCastleWeaponSettings* Snapshot = nullptr);
+	void DrawWorldLine(const FVector& Start, const FVector& End, const FLinearColor& Color, float Thickness = 2);
 };

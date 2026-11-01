@@ -2,6 +2,7 @@
 
 #include "Troops/LSTroopUnit.h"
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
@@ -275,7 +276,9 @@ void ALSHMHTroopProbe::Tick(float DeltaSeconds)
 			FLSOrder Attack;
 			Attack.Kind = ELSOrderKind::AttackTarget;
 			Attack.Target = EnemyCastle;
-			Check(Castle->Orders->SubmitOrder(Attack), TEXT("성 지정 공격 요청"));
+			Check(!Castle->Orders->SubmitOrder(Attack), TEXT("성의 기본 지정 공격 제거"));
+			Check(Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, EnemyCastle->GetActorLocation()) == ELSWeaponCastResult::Ready,
+			      TEXT("성의 수동 원형 포격"));
 			Stage = 6;
 		}
 	}
@@ -285,7 +288,7 @@ void ALSHMHTroopProbe::Tick(float DeltaSeconds)
 		FLSHealthSnapshot Snapshot;
 		if (EnemyHealth->TryGetHealth(Snapshot) && Snapshot.CurrentHealth < Snapshot.MaxHealth)
 		{
-			Check(true, TEXT("성도 추적 후 근접 피해 적용"));
+			Check(true, TEXT("성의 수동 무장 피해 적용"));
 			EnemyHealth->ApplyDamage(ULSHealthComponent::MakeDamageRequest(10000, Castle, Castle));
 			Check(IsValid(EnemyCastle) && EnemyCastle->GetCharacterMovement()->MovementMode == MOVE_None,
 			      TEXT("파괴된 성은 보존하고 이동 차단"));

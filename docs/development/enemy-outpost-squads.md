@@ -96,3 +96,17 @@ TASK-45와의 시야·미니맵 표식·선택 체력 표시를 별도 체크아
 현재 프로젝트에서 `docs/development/verify-enemy-vision-pie.py`를 에디터 Python으로 실행하면 두 PIE 월드의 시야·선택·공격·초기화 검사와 DLL 지문·JSON·화면 근거를 `Saved/Review/TASK-46/integrated-branch` 폴더에 기록한다. 화면 가독성은 생성된 화면을 직접 확인해야 한다. 공개 공격 명령 프로브를 시야가 켜진 상태로 검사할 때는 먼저 `docs/development/prepare-enemy-command-map.py`를 실행해 성을 거점에서 1000cm 떨어진 곳으로 임시 배치하고, 실행 인수에 `-LSEnemyRequireVision`을 추가한다. 검증 뒤 `docs/development/setup-enemy-combat.py`를 다시 실행하면 성의 원래 초기 위치(-1800, -1200, 142)를 복원한다. 이 스크립트들의 준비만으로 현재 브랜치의 검증 통과를 의미하지 않는다.
 
 TASK-49 실제 소비자와 최종 TASK-48 배치안은 별도다. 자동화·NullRHI 맵 프로브 자체는 화면 가독성의 근거가 아니다.
+
+## 현재 RTS 브랜치 통합 검증 261101
+
+`troops/unit-types`의 `bd1d38c`에 prototype의 PR #17과 #18(`706b733`)을 통합했다. 타격 직전 표적 조회와 공격 실행 알림을 반영하고, 기존 충돌 외곽 사거리·다중 접근 위치·성 수동 무장·이동 후 출발점 검색 범위를 보존했다. 접근 도착 오차는 팀원 구현의 남은 사거리 계산을 충돌 외곽 거리와 같은 기준으로 적용한다. 창병·기병의 CSV와 DataTable 사거리는 250cm이며, 성의 기본 공격 수치는 0을 유지한다.
+
+Editor Development 빌드 성공. 최종 전체 자동화는 90 Success, 의도된 중복 setup 경고 포함 성공 1, 실패·미실행 0이다. 실제 맵 프로브는 적 거점·분대 41개, HMH 무장·이동 41개, HMH 병력 명령 17개, 적 거점 공개 근접 지정 공격 5개 조건이 통과했다. 현재 DLL에서의 프로그램 검사 결과이며, 모든 전장 배치나 화면 가독성 검증을 의미하지 않는다.
+
+- 전체 보고서: `Saved/Automation/MergedPR17Final/index.json`
+- 적 거점·분대: `Saved/Logs/MergedEnemyCombat.log`
+- 무장·후속 이동: `Saved/Logs/MergedHMHWeapons.log`
+- 병력 명령: `Saved/Logs/MergedHMHOrdersFinal.log`
+- 적 거점 공개 지정 공격: `Saved/Logs/MergedPublicAttack.log`
+
+PR #18의 JSON 설정은 파싱과 통합 빌드를 확인했다. `AllToolsets` 활성화 후 `-game` 시작에서는 엔진 Python 스크립트가 Editor 전용 `ToolsetDefinition`·`PythonTestRunner`를 찾지 못하는 오류를 남긴다. 위 전투 프로브의 완료 조건은 통과했으나 MCP 연결 자체와 다른 클라이언트 연결은 이번 통합 검증에서 확인하지 않았다. 엔진 플러그인 파일은 수정하지 않았다.
