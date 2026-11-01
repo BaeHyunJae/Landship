@@ -69,7 +69,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 ```
 
 - 담당이 아닌 폴더의 파일을 바꿔야 하면 직접 고치지 않고 담당자에게 요청한다. 담당자가 고쳐서 PR을 올린다.
-- `Content/` 아래 파일(`.uasset`, `.umap` 등)은 병합할 수 없으므로, 고치기 전에 잠근다([에셋 잠금 절차](docs/development/asset-locking.md)). 잠그지 않은 파일은 작업 공간에서 읽기 전용이다. 코드와 설정 같은 텍스트 파일은 병합할 수 있으므로 잠그지 않는다.
+- `Content/` 아래 파일(`.uasset`, `.umap` 등)은 병합할 수 없다. 공용 폴더의 `Content/` 파일은 고치기 전에 팀원에게 알려 두 사람이 같은 파일을 동시에 고치지 않게 한다. 기능 폴더는 담당자만 고치므로 알리지 않아도 된다. 코드와 설정 같은 텍스트 파일은 병합할 수 있다.
 - 폴더를 추가하는 PR에서 함께 한다: `CODEOWNERS`에 담당 추가, 위 트리에 폴더와 역할 추가, 소스 폴더의 CONTRACT.md 작성('문서' 절), `Build.cs` include 경로 추가([코딩 규칙](docs/coding-conventions.md)).
 - 템플릿이 만든 폴더와 코드(`TopDown/`, `Variant_*/`, `Characters/`, `LevelPrototyping/`, `Landship*` 클래스 등)는 참고용으로 두고 고치지 않는다. 쓰려면 담당 폴더로 복사한다.
 
