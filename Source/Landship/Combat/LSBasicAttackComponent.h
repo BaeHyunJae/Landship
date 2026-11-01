@@ -32,7 +32,7 @@ struct LANDSHIP_API FLSBasicAttackSettings
 	float Damage = 0.0f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Attack", meta = (ClampMin = "0.001", Units = "s"))
 	float Interval = 1.0f;
-	/** 액터 원점 사이의 거리다. 메시 크기에 따라 달라지는 경계 거리는 사용하지 않는다. */
+	/** 양측 충돌 원통 외곽 사이의 거리다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Attack", meta = (ClampMin = "0", Units = "cm"))
 	float Range = 0.0f;
 };
@@ -79,7 +79,8 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	/** 준비된 타격 직전에 대상을 새로 정한다. nullptr은 쿨타임을 소비하지 않는다. 중단해도 바인딩은 유지된다. */
 	void SetAttackTargetResolver(FLSResolveAttackTarget ResolverEvent);
 
-	/** 유효한 설정만 반영한다. 재설정으로 진행 중인 쿨타임을 초기화하지 않는다. */
+	/** 원본 수치를 받는다. 플레이 전에는 준비만 하고 BeginPlay에서 배율을 확정한다.
+	 * 재설정으로 진행 중인 쿨타임을 초기화하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
 	bool ConfigureAttack(const FLSBasicAttackSettings& NewSettings);
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
@@ -117,6 +118,12 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	{
 		return Settings;
 	}
+	/** 배율 적용 전의 설정은 GetAttackSettings로 조회한다. 준비 전 실제 간격은 0이다. */
+	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
+	float GetEffectiveAttackInterval() const
+	{
+		return EffectiveInterval;
+	}
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
 	bool IsConfigured() const
 	{
@@ -144,6 +151,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	void OnProjectileDamage(AActor* Target, float AppliedDamage);
 	void UpdateAttack();
 	void StartAttackTimer();
+	bool ResolveEffectiveInterval(float BaseInterval, float& OutInterval) const;
 	AActor* FindNearestTarget() const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Attack")
@@ -163,6 +171,8 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	FTimerHandle AttackTimer;
 	double NextAttackTime = 0.0;
 	bool bConfigured = false;
+	bool bHasPendingSettings = false;
+	float EffectiveInterval = 0.0f;
 	bool bResolvingAttack = false;
 	bool bAutoSearching = false;
 	bool bBattleActionsEnded = false;

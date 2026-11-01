@@ -171,6 +171,13 @@ ELSWeaponChangeResult ULSCastleWeaponComponent::UpgradeWeapon(ELSCastleWeapon We
 	NotifyStateChanged(Weapon);
 	return ELSWeaponChangeResult::Success;
 }
+float ULSCastleWeaponComponent::GetCooldownDuration(ELSCastleWeapon Weapon) const
+{
+	if (const float* Duration = CooldownDurations.Find(Weapon)) return *Duration;
+	const FLSCastleWeaponSettings* Settings = FindSettings(Weapon);
+	return Settings ? Settings->Cooldown : 0;
+}
+
 float ULSCastleWeaponComponent::GetRemainingCooldown(ELSCastleWeapon Weapon) const
 {
 	const FLSCastleWeaponState* State = States.Find(Weapon);
@@ -262,6 +269,7 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 	}
 	// 피해 알림에서 재진입하더라도 중복 시전하지 않게 먼저 쿨타임을 확정한다.
 	States.FindChecked(Weapon).ReadyTime = GetWorld()->GetTimeSeconds() + Settings.Cooldown;
+	CooldownDurations.Add(Weapon, Settings.Cooldown);
 	LastCastSettings = Settings;
 	LastWeapon = Weapon;
 	LastAim = Aim;

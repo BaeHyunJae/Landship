@@ -51,6 +51,9 @@ FString ULSBattleOutcomeInputInspection::Snapshot(APlayerController* InControlle
 		}
 	}
 	const FLSBattlefieldHUDLayout Layout = FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), MinimapSide > 0, MinimapSide);
+	// 겹침 검사는 모두 viewport 좌표로 수행한다. JSON의 minimap은 입력 재생용 desktop 좌표다.
+	const bool bResultOverPanel = Result.Intersect(Layout.Info) || Result.Intersect(Layout.CommandCard) ||
+		(MinimapSide > 0 && Result.Intersect(Layout.Minimap));
 	TArray<FString> Selection, ActorStates;
 	for (AActor* Actor : Controller->GetSelectedActors()) Selection.Add(FString::Printf(TEXT("\"%s\""), *Actor->GetPathName().ReplaceCharWithEscapedChar()));
 	for (TActorIterator<ALSUnit> It(World); It; ++It)
@@ -70,8 +73,8 @@ FString ULSBattleOutcomeInputInspection::Snapshot(APlayerController* InControlle
 		Client->Viewport->HasFocus() ? TEXT("true") : TEXT("false"), Client->Viewport->IsForegroundWindow() ? TEXT("true") : TEXT("false"),
 		P.X, P.Y, P.Z, Camera->GetZoomDistance(), static_cast<int32>(State->GetBattleOutcome()), static_cast<int32>(Controller->GetPendingInput()), State->GetCurrentPopulation(),
 		static_cast<int32>(Controller->GetLastProductionResult()), static_cast<int32>(Controller->GetLastWeaponResult()), Projectiles, *FString::Join(Selection, TEXT(",")), *FString::Join(ActorStates, TEXT(",")),
-		Result.Min.X, Result.Min.Y, Result.Max.X, Result.Max.Y, HUD->IsOverPanel(Result.GetCenter()) ? TEXT("true") : TEXT("false"),
-		MiniOrigin.X, MiniOrigin.Y, MiniEnd.X, MiniEnd.Y, Layout.Production.Min.X, Layout.Production.Min.Y, Layout.Production.Max.X, Layout.Production.Max.Y,
+		Result.Min.X, Result.Min.Y, Result.Max.X, Result.Max.Y, bResultOverPanel ? TEXT("true") : TEXT("false"),
+		MiniOrigin.X, MiniOrigin.Y, MiniEnd.X, MiniEnd.Y, Layout.CommandCard.Min.X, Layout.CommandCard.Min.Y, Layout.CommandCard.Max.X, Layout.CommandCard.Max.Y,
 		HUD->IsMinimapPointerCaptured() ? TEXT("true") : TEXT("false"));
 }
 

@@ -6,6 +6,7 @@
 
 enum class ELSCastleWeapon : uint8;
 class ULSMinimapWidget;
+class ULSBattleHUDWidget;
 class SWidget;
 class UFont;
 
@@ -22,10 +23,13 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	bool IsOverResultPanel(const FVector2D& Mouse) const;
 	FBox2D ResultPanel() const;
 	bool HandleClick(const FVector2D& Mouse);
+	FBox2D GetCommandCellRect(int32 Index) const;
 	bool GetMinimapWorldPoint(FVector& OutLocation) const;
 	bool IsOverMinimap(const FVector2D& Mouse) const;
 	bool IsMinimapPointerCaptured() const;
 	bool IsMinimapWidget(const TSharedRef<SWidget>& Widget) const;
+	bool IsBattleWidget(const TSharedRef<SWidget>& Widget) const;
+	ULSBattleHUDWidget* GetBattleWidget() const { return BattleWidget; }
 
   protected:
 	virtual void BeginPlay() override;
@@ -36,14 +40,15 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	TObjectPtr<ULSMinimapWidget> MinimapWidget;
 	UPROPERTY(Transient)
 	TObjectPtr<UFont> ResultFont;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|HUD")
+	TSoftClassPtr<ULSBattleHUDWidget> BattleWidgetClass;
+	UPROPERTY(Transient)
+	TObjectPtr<ULSBattleHUDWidget> BattleWidget;
 
   private:
 	void DrawBattleResult();
 	FBox2D InfoPanel() const;
-	FBox2D ProductionPanel() const;
-	FBox2D ProductionButton(int32 Index) const;
-	FBox2D WeaponPanel() const;
-	FBox2D WeaponButton(int32 Index) const;
+	FBox2D CommandPanel() const;
 	void DrawSelectionRing(AActor* Actor, const FLinearColor& Color);
 	void DrawWeaponShape(class ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const FVector& Aim,
 	                     const FLinearColor& Color, bool bPreview,

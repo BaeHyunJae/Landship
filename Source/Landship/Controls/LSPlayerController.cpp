@@ -1,4 +1,5 @@
 #include "Controls/LSPlayerController.h"
+#include "Controls/LSCommandCardComponent.h"
 
 #include "Castle/LSCastle.h"
 #include "Castle/LSMobileCastle.h"
@@ -30,6 +31,7 @@ TAutoConsoleVariable<int32> CVarRTSInputDebug(TEXT("LS.RTS.InputDebug"), 0, TEXT
 
 ALSPlayerController::ALSPlayerController()
 {
+	CommandCard = CreateDefaultSubobject<ULSCommandCardComponent>(TEXT("CommandCard"));
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
 	Production = CreateDefaultSubobject<ULSTroopProductionComponent>(TEXT("Production"));
@@ -39,24 +41,13 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (Params.Event == IE_Pressed && CanUseWorldInput(true, true))
 	{
-		const FKey WeaponKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(WeaponKeys); ++Index)
+		if (Params.Key == EKeys::Tab)
 		{
-			if (Params.Key == WeaponKeys[Index])
-			{
-				ArmCastleWeapon(static_cast<ELSCastleWeapon>(Index));
-				return true;
-			}
+			CommandCard->CycleGroup();
+			return true;
 		}
-		const FKey ProductionKeys[] = {EKeys::F1, EKeys::F2, EKeys::F3};
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(ProductionKeys); ++Index)
-		{
-			if (Params.Key == ProductionKeys[Index])
-			{
-				ProduceTroop(static_cast<ELSTroopType>(Index));
-				return true;
-			}
-		}
+		if (CommandCard->HandleHotkey(Params.Key))
+			return true;
 	}
 	if (Params.Event == IE_Pressed && CanUseWorldInput(false, true))
 	{
@@ -233,11 +224,13 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 	const TSharedPtr<SViewport> GameViewport = Client->GetGameViewportWidget();
 	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
 	bool bMinimapPath = false;
+	bool bBattleHUDPath = false;
 	if (HUD && Path.IsValid())
 	{
 		for (int32 Index = 0; Index < Path.Widgets.Num(); ++Index)
 		{
 			bMinimapPath |= HUD->IsMinimapWidget(Path.Widgets[Index].Widget);
+			bBattleHUDPath |= HUD->IsBattleWidget(Path.Widgets[Index].Widget);
 		}
 	}
 	const bool bMinimap = HUD && bMinimapPath;
@@ -247,12 +240,12 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 		return false;
 	}
 	if (!Path.IsValid() || !GameViewport.IsValid() ||
-	    (Path.Widgets.Last().Widget != GameViewport && !(bKeyboard && (bMinimap || bCaptured))))
+	    (Path.Widgets.Last().Widget != GameViewport && !(bKeyboard && (bMinimap || bCaptured || bBattleHUDPath))))
 	{
 		return false;
 	}
 	// UMG 위에서는 전장 뷰포트의 마우스 좌표가 없을 수 있으므로 실제 Slate 경로를 사용한다.
-	if (bKeyboard && (bMinimap || bCaptured))
+	if (bKeyboard && (bMinimap || bCaptured || bBattleHUDPath))
 		return true;
 	float X;
 	float Y;

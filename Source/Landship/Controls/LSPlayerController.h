@@ -7,6 +7,7 @@
 #include "Castle/LSCastleWeaponComponent.h"
 #include "LSPlayerController.generated.h"
 
+class ULSCommandCardComponent;
 class ALSCastle;
 class ALSMobileCastle;
 
@@ -36,6 +37,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	ALSPlayerController();
 	/** 기존 선택을 유지하고 준비 입력·미니맵 드래그·명령 표식을 정리한다. */
 	void EndBattleActions();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Commands")
+	TObjectPtr<ULSCommandCardComponent> CommandCard;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
 	TObjectPtr<ULSTroopProductionComponent> Production;
 	void ProduceTroop(ELSTroopType Type);

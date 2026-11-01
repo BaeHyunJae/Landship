@@ -6,6 +6,8 @@
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSRTSHUD.h"
 #include "Controls/LSSelectableComponent.h"
+#include "Controls/LSCommandCardComponent.h"
+#include "HUD/LSBattleHUDWidget.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -57,7 +59,8 @@ void ALSHMHCastleWeaponsProbe::Finish()
 
 void ALSHMHCastleWeaponsProbe::Capture()
 {
-	GetWorld()->GetFirstPlayerController()->ConsoleCommand(TEXT("HighResShot 1600x900"));
+	// UMG는 고해상도 장면 캡처에서 제외되므로 뷰포트 UI를 포함하는 캡처를 사용한다.
+	GetWorld()->GetFirstPlayerController()->ConsoleCommand(TEXT("Shot ShowUI"));
 }
 
 void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
@@ -142,8 +145,11 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		int32 Width, Height;
 		Controller->GetViewportSize(Width, Height);
 		ALSRTSHUD* HUD = Cast<ALSRTSHUD>(Controller->GetHUD());
+		// 선택 직후 같은 틱에서 클릭하므로, 사용자가 보게 될 카드를 먼저 갱신한다.
+		if (HUD && HUD->GetBattleWidget())
+			HUD->GetBattleWidget()->RefreshState();
 		const int32 Population = GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation();
-		Check(HUD && HUD->HandleClick(FVector2D(Width - 360 + 64, Height - 336 + 80)), TEXT("Q 무장 버튼 클릭"));
+		Check(HUD && HUD->HandleClick(HUD->GetCommandCellRect(5).GetCenter()), TEXT("Q 무장 버튼 클릭"));
 		Check(Controller->GetPendingInput() == ELSCommandInput::CastleWeapon, TEXT("버튼 클릭은 발사 대신 조준 대기"));
 		Check(GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation() == Population,
 		      TEXT("Q는 더 이상 병력을 생산하지 않음"));
@@ -184,6 +190,9 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 	}
 	else if (Stage == 6 && StageTime > 0.25f)
 	{
+		Check(GetWorld()->GetSubsystem<ULSVisionSubsystem>()->HasDiscoveredEnemy() &&
+		          !GetWorld()->GetSubsystem<ULSVisionSubsystem>()->HasPendingDiscoveryCaption(),
+		      TEXT("최초 적 발견 알림을 실제 HUD에서 표시"));
 		Check(Enemies[0]->GetCharacterMovement()->Velocity.X > 100, TEXT("실제 바닥에서 적 병력이 밀려남"));
 		Check(Enemies[0]->Orders->IsKnockedBack() && Enemies[0]->Orders->GetQueuedCount() == 1,
 		      TEXT("넉백 중 기존 명령·예약 보존"));
@@ -252,8 +261,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 	}
 	else if (Stage == 7 && StageTime > 1)
 	{
-		Check(FVector::Dist2D(PostShotMoveStart, Castle->GetActorLocation()) > 50,
-		      TEXT("이동·산탄 이후 성 재이동"));
+		Check(FVector::Dist2D(PostShotMoveStart, Castle->GetActorLocation()) > 50, TEXT("이동·산탄 이후 성 재이동"));
 		// 생산 검사는 원래 지도에서 이동 가능하게 배치한 성 위치에서 별도로 수행한다.
 		Castle->SetActorLocation(FVector(-800, -1100, 144));
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) == 0 &&
@@ -263,7 +271,8 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		int32 Width, Height;
 		Controller->GetViewportSize(Width, Height);
 		const int32 Before = GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation();
-		Cast<ALSRTSHUD>(Controller->GetHUD())->HandleClick(FVector2D(Width - 360 + 64, Height - 180 + 95));
+		Cast<ALSRTSHUD>(Controller->GetHUD())
+		    ->HandleClick(Cast<ALSRTSHUD>(Controller->GetHUD())->GetCommandCellRect(10).GetCenter());
 		Check(GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation() == Before + 1,
 		      TEXT("F1 생산 버튼은 기존 생산 기능 유지"));
 		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_PRODUCTION result=%s before=%d after=%d"),
@@ -282,6 +291,35 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		StageTime = 0;
 	}
 	else if (Stage == 5 && StageTime > 0.2f)
+	{
+		Controller->ApplySelection({Ally});
+		const auto Cells = Controller->CommandCard->BuildCard();
+		Check(!Cells[0].Entry.Id.IsNone() && Cells[5].Entry.Id.IsNone(), TEXT("병력 선택 시 공통 명령만 표시"));
+		Stage = 11;
+		StageTime = 0;
+	}
+	else if (Stage == 11 && StageTime > 0.2f)
+	{
+		Capture();
+		Stage = 12;
+		StageTime = 0;
+	}
+	else if (Stage == 12 && StageTime > 0.2f)
+	{
+		Controller->ApplySelection({Castle, Ally});
+		Controller->CommandCard->CycleGroup();
+		Check(!Controller->CommandCard->BuildCard()[5].Entry.Id.IsNone(),
+		      TEXT("혼합 선택의 Tab 전환으로 성 무장 표시"));
+		Stage = 13;
+		StageTime = 0;
+	}
+	else if (Stage == 13 && StageTime > 0.2f)
+	{
+		Capture();
+		Stage = 14;
+		StageTime = 0;
+	}
+	else if (Stage == 14 && StageTime > 0.2f)
 	{
 		Finish();
 	}

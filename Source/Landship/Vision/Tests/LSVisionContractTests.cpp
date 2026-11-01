@@ -240,7 +240,7 @@ bool FLSVisionHUDLayoutContractTest::RunTest(const FString& Parameters)
 		 {FVector2D(1920, 1080), FVector2D(960, 540), FVector2D(640, 360), FVector2D(320, 180)})
 	{
 		const FLSBattlefieldHUDLayout Layout = FLSBattlefieldHUDLayout::Calculate(Viewport, true);
-		for (const FBox2D& Rect : {Layout.Minimap, Layout.Info, Layout.Production})
+		for (const FBox2D& Rect : {Layout.Minimap, Layout.Info, Layout.CommandCard})
 		{
 			TestTrue(TEXT("패널 양의 크기"), Rect.bIsValid && Rect.GetSize().X > 0 && Rect.GetSize().Y > 0);
 			TestTrue(TEXT("패널 화면 안"), Rect.Min.X >= -0.001 && Rect.Min.Y >= -0.001 &&
@@ -248,14 +248,14 @@ bool FLSVisionHUDLayoutContractTest::RunTest(const FString& Parameters)
 											   Rect.Max.Y <= Viewport.Y + 0.001);
 		}
 		TestFalse(TEXT("미니맵과 정보 비중첩"), HasPositiveOverlap(Layout.Minimap, Layout.Info));
-		TestFalse(TEXT("미니맵과 생산 비중첩"), HasPositiveOverlap(Layout.Minimap, Layout.Production));
-		TestFalse(TEXT("정보와 생산 비중첩"), HasPositiveOverlap(Layout.Info, Layout.Production));
+		TestFalse(TEXT("미니맵과 명령 카드 비중첩"), HasPositiveOverlap(Layout.Minimap, Layout.CommandCard));
+		TestFalse(TEXT("정보와 명령 카드 비중첩"), HasPositiveOverlap(Layout.Info, Layout.CommandCard));
 		TestTrue(TEXT("미니맵 정사각형 보존"),
 				 FMath::IsNearlyEqual(Layout.Minimap.GetSize().X, Layout.Minimap.GetSize().Y, 0.001));
 		TestTrue(TEXT("정보 패널 크기 비율 보존"),
 				 Layout.Info.GetSize().Equals(FVector2D(340, 125) * Layout.Scale, 0.001));
 		TestTrue(TEXT("생산 패널 크기 비율 보존"),
-				 Layout.Production.GetSize().Equals(FVector2D(360, 180) * Layout.Scale, 0.001));
+				 Layout.CommandCard.GetSize().Equals(FVector2D(420, 336) * Layout.Scale, 0.001));
 	}
 	const FLSBattlefieldHUDLayout Typical = FLSBattlefieldHUDLayout::Calculate(FVector2D(1920, 1080), true);
 	TestTrue(TEXT("일반 화면 원래 지도 크기"), Typical.Minimap.GetSize().Equals(FVector2D(260, 260)));
