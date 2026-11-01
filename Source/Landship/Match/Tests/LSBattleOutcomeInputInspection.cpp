@@ -77,4 +77,3 @@ FString ULSBattleOutcomeInputInspection::Snapshot(APlayerController* InControlle
 		MiniOrigin.X, MiniOrigin.Y, MiniEnd.X, MiniEnd.Y, Layout.CommandCard.Min.X, Layout.CommandCard.Min.Y, Layout.CommandCard.Max.X, Layout.CommandCard.Max.Y,
 		HUD->IsMinimapPointerCaptured() ? TEXT("true") : TEXT("false"));
 }
-
