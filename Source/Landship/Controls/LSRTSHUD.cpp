@@ -7,12 +7,17 @@
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Engine/Canvas.h"
+#include "Engine/Font.h"
 #include "Match/LSGameState.h"
 #include "Engine/World.h"
 #include "Castle/LSMobileCastle.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Match/LSBattleOutcomePolicy.h"
+#include "CanvasItem.h"
+#include "Misc/Paths.h"
+#include "Fonts/CompositeFont.h"
 
 ALSRTSHUD::ALSRTSHUD()
 {
@@ -48,6 +53,11 @@ void ALSRTSHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		MinimapWidget = nullptr;
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void ALSRTSHUD::EndBattleActions()
+{
+	if (MinimapWidget) MinimapWidget->EndBattleActions();
 }
 
 bool ALSRTSHUD::IsOverMinimap(const FVector2D& Mouse) const
@@ -110,10 +120,14 @@ bool ALSRTSHUD::IsOverPanel(const FVector2D& Mouse) const
 
 bool ALSRTSHUD::HandleClick(const FVector2D& Mouse)
 {
+	if (IsOverResultPanel(Mouse))
+		return true;
 	if (!IsOverPanel(Mouse))
 	{
 		return false;
 	}
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return true;
 	if (ALSPlayerController* Controller = Cast<ALSPlayerController>(PlayerOwner))
 	{
 		for (int32 Index = 0; Index < 3; ++Index)
@@ -295,6 +309,7 @@ void ALSRTSHUD::DrawHUD()
 	else if (Controller->GetLastProductionResult() == ELSProductionResult::NoSpace)
 		Message = TEXT("No reachable space near castle");
 	DrawPanelText(Message, FLinearColor::White, Panel.X, ProductionPanel().Max.Y - 24 * PanelScale);
+	const bool bBattleEnded = LSBattleOutcome::AreActionsStopped(GetWorld());
 	const FVector2D Weapons = WeaponPanel().Min + FVector2D(12, 10) * PanelScale;
 	DrawPanelText(TEXT("Castle Weapons"), FLinearColor::White, Weapons.X, Weapons.Y);
 	const TCHAR* WeaponLabels[] = {TEXT("Q  Cannon"), TEXT("W  Shotgun"), TEXT("E  Ballista")};
@@ -310,7 +325,7 @@ void ALSRTSHUD::DrawHUD()
 		         Button.Min.X, Button.Min.Y, Button.GetSize().X, Button.GetSize().Y);
 		DrawPanelText(WeaponLabels[Index], bReady ? FLinearColor::White : FLinearColor::Gray,
 		              Button.Min.X + 8 * PanelScale, Button.Min.Y + 10 * PanelScale);
-		const float Remaining = ArmedCastle ? ArmedCastle->Weapons->GetRemainingCooldown(Weapon) : 0;
+		const float Remaining = !bBattleEnded && ArmedCastle ? ArmedCastle->Weapons->GetRemainingCooldown(Weapon) : 0;
 		FLSCastleWeaponState WeaponState;
 		const bool bHasState = ArmedCastle && ArmedCastle->Weapons->GetWeaponState(Weapon, WeaponState);
 		if (bHasState)
@@ -318,9 +333,9 @@ void ALSRTSHUD::DrawHUD()
 			    FString::Printf(TEXT("Lv %d / %d"), WeaponState.Level, ArmedCastle->Weapons->GetMaxLevel(Weapon)),
 			    FLinearColor::White, Button.Min.X + 8 * PanelScale, Button.Min.Y + 27 * PanelScale);
 		const TCHAR* Availability = bReady ? TEXT("Ready") : TEXT("Unavailable");
-		if (bHasState && !WeaponState.bUnlocked)
+		if (!bBattleEnded && bHasState && !WeaponState.bUnlocked)
 			Availability = TEXT("Locked");
-		else if (bHasState && !WeaponState.bEnabled)
+		else if (!bBattleEnded && bHasState && !WeaponState.bEnabled)
 			Availability = TEXT("Disabled");
 		DrawPanelText(Remaining > 0 && bHasState && WeaponState.bUnlocked && WeaponState.bEnabled
 		                  ? FString::Printf(TEXT("%.1fs"), Remaining)
@@ -331,12 +346,68 @@ void ALSRTSHUD::DrawHUD()
 			DrawPanelText(FString::Printf(TEXT("CD %.1fs"), Remaining), FLinearColor::Yellow,
 			              Button.Min.X + 8 * PanelScale, Button.Min.Y + 60 * PanelScale);
 	}
-	const TCHAR* WeaponMessage = ArmedCastle ? TEXT("Select weapon, then left click") : TEXT("Select an allied castle");
-	if (Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
+	const TCHAR* WeaponMessage = bBattleEnded ? TEXT("Battle ended")
+		: (ArmedCastle ? TEXT("Select weapon, then left click") : TEXT("Select an allied castle"));
+	if (!bBattleEnded && Controller->GetPendingInput() == ELSCommandInput::CastleWeapon)
 		WeaponMessage = Controller->GetLastWeaponResult() == ELSWeaponCastResult::OutOfRange
 		                    ? TEXT("Out of range | RMB/Esc: cancel")
 		                    : TEXT("Left click: fire | RMB/Esc: cancel");
 	DrawPanelText(WeaponMessage, FLinearColor::White, Weapons.X, WeaponPanel().Max.Y - 24 * PanelScale);
+	DrawBattleResult();
+}
+
+FBox2D ALSRTSHUD::ResultPanel() const
+{
+	int32 Width = 0, Height = 0;
+	if (PlayerOwner)
+		PlayerOwner->GetViewportSize(Width, Height);
+	float AvailableHeight = FMath::Max(0.0, FMath::Min(InfoPanel().Min.Y, WeaponPanel().Min.Y));
+	if (MinimapWidget)
+		AvailableHeight = FMath::Min(AvailableHeight,
+		    static_cast<float>(FLSBattlefieldHUDLayout::Calculate(FVector2D(Width, Height), true, MinimapWidget->PanelSide)
+		                           .Minimap.Min.Y));
+	const FVector2D Size(FMath::Min(520.0f, Width * 0.8f), FMath::Min(180.0f, AvailableHeight * 0.6f));
+	const FVector2D Center(Width * 0.5f, AvailableHeight * 0.5f);
+	return FBox2D(Center - Size * 0.5f, Center + Size * 0.5f);
+}
+
+bool ALSRTSHUD::IsOverResultPanel(const FVector2D& Mouse) const
+{
+	return LSBattleOutcome::AreActionsStopped(GetWorld()) && ResultPanel().IsInsideOrOn(Mouse);
+}
+
+void ALSRTSHUD::DrawBattleResult()
+{
+	const ALSGameState* State = GetWorld()->GetGameState<ALSGameState>();
+	if (!State || !State->IsBattleOutcomeEnabled() || !State->HasBattleEnded())
+		return;
+	DrawRect(FLinearColor(0, 0, 0, 0.5f), 0, 0, Canvas->SizeX, Canvas->SizeY);
+	const FBox2D Panel = ResultPanel();
+	DrawRect(FLinearColor(0.025f, 0.04f, 0.07f, 0.96f), Panel.Min.X, Panel.Min.Y,
+	         Panel.GetSize().X, Panel.GetSize().Y);
+	const bool bVictory = LSBattleOutcome::IsVictory(State->GetBattleOutcome());
+	// 기본 Canvas 폰트에 의존하지 않고 프로토타입은 에디터에 포함된 한글 폰트를 사용한다.
+	if (!ResultFont)
+	{
+		// Canvas는 Slate 정보뿐 아니라 실제 UFont가 있어야 텍스트를 그린다.
+		ResultFont = NewObject<UFont>(this);
+		ResultFont->FontCacheType = EFontCacheType::Runtime;
+		ResultFont->GetMutableInternalCompositeFont() = FCompositeFont(
+			NAME_None, FPaths::EngineContentDir() / TEXT("Editor/Slate/Fonts/NanumGothic.ttf"),
+			EFontHinting::Default, EFontLoadingPolicy::LazyLoad);
+	}
+	const float Scale = FMath::Min(Panel.GetSize().X / 520.0f, Panel.GetSize().Y / 180.0f);
+	auto DrawResultText = [&](const TCHAR* Text, float Size, float Y, FLinearColor Color)
+	{
+		FCanvasTextItem Item(FVector2D(Panel.GetCenter().X, Y), FText::FromString(Text),
+		                     FSlateFontInfo(ResultFont.Get(), Size * Scale), Color);
+		Item.bCentreX = true;
+		Canvas->DrawItem(Item);
+	};
+	DrawResultText(bVictory ? TEXT("승리") : TEXT("패배"), 36, Panel.Min.Y + 34 * Scale,
+	               bVictory ? FLinearColor(0.4f, 1, 0.6f) : FLinearColor(1, 0.35f, 0.3f));
+	DrawResultText(bVictory ? TEXT("핵심 거점 함락") : TEXT("성 파괴"), 20,
+	               Panel.Min.Y + 108 * Scale, FLinearColor::White);
 }
 
 FBox2D ALSRTSHUD::WeaponPanel() const

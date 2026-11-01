@@ -7,6 +7,7 @@
 enum class ELSCastleWeapon : uint8;
 class ULSMinimapWidget;
 class SWidget;
+class UFont;
 
 /** 선택과 명령 상태를 확인하기 위한 기본 HUD. 최종 아트·위젯과 분리한다. */
 UCLASS()
@@ -16,7 +17,10 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
   public:
 	ALSRTSHUD();
 	virtual void DrawHUD() override;
+	void EndBattleActions();
 	bool IsOverPanel(const FVector2D& Mouse) const;
+	bool IsOverResultPanel(const FVector2D& Mouse) const;
+	FBox2D ResultPanel() const;
 	bool HandleClick(const FVector2D& Mouse);
 	bool GetMinimapWorldPoint(FVector& OutLocation) const;
 	bool IsOverMinimap(const FVector2D& Mouse) const;
@@ -30,8 +34,11 @@ class LANDSHIP_API ALSRTSHUD : public AHUD
 	TSubclassOf<ULSMinimapWidget> MinimapWidgetClass;
 	UPROPERTY(Transient)
 	TObjectPtr<ULSMinimapWidget> MinimapWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UFont> ResultFont;
 
   private:
+	void DrawBattleResult();
 	FBox2D InfoPanel() const;
 	FBox2D ProductionPanel() const;
 	FBox2D ProductionButton(int32 Index) const;

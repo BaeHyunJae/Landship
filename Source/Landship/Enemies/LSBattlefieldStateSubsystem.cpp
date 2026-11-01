@@ -89,6 +89,12 @@ bool ULSBattlefieldStateSubsystem::IsBattleEndedForEnemies() const
 	return bCastleDeathObserved || bCoreCaptured;
 }
 
+bool ULSBattlefieldStateSubsystem::HasObservedPlayerCastleDeath() const
+{
+	ObserveCastleDeath();
+	return bCastleDeathObserved;
+}
+
 void ULSBattlefieldStateSubsystem::OnCastleDied(const FLSDamageResult& Damage)
 {
 	bCastleDeathObserved = true;

@@ -47,6 +47,8 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	GENERATED_BODY()
   public:
 	ULSOrderComponent();
+	/** 현재 명령과 예약을 비우고 이후 행동 재개를 거절한다. */
+	void EndBattleActions();
 	UFUNCTION(BlueprintCallable, Category = "Landship|Orders")
 	bool SubmitOrder(const FLSOrder& Order, bool bQueue = false);
 	/** 현재 명령과 예약은 보존하고, 넉백 착지 뒤 실행을 재개한다. */
@@ -125,6 +127,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	TObjectPtr<ULSBasicAttackComponent> Attack;
 	double NextRepathTime = 0;
 	bool bHasEngagement = false;
+	bool bBattleActionsEnded = false;
 	FAIRequestID MovementRequestId = FAIRequestID::InvalidRequest;
 	bool bMovementCompleted = false;
 	bool bLastMovementSucceeded = false;

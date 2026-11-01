@@ -5,6 +5,7 @@
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
 #include "Engine/World.h"
+#include "Match/LSBattleOutcomePolicy.h"
 
 ULSCastleWeaponComponent::ULSCastleWeaponComponent()
 {
@@ -60,6 +61,13 @@ void ULSCastleWeaponComponent::BeginPlay()
 	States = InitialStates;
 	for (auto& Pair : States)
 		Pair.Value.ReadyTime = 0;
+	if (LSBattleOutcome::AreActionsStopped(GetWorld())) EndBattleActions();
+}
+
+void ULSCastleWeaponComponent::EndBattleActions()
+{
+	bBattleActionsEnded = true;
+	LastCastTime = -100;
 }
 
 bool ULSCastleWeaponComponent::GetWeaponState(ELSCastleWeapon Weapon, FLSCastleWeaponState& OutState) const
@@ -172,7 +180,8 @@ float ULSCastleWeaponComponent::GetRemainingCooldown(ELSCastleWeapon Weapon) con
 ELSWeaponCastResult ULSCastleWeaponComponent::GetStatus(ELSCastleWeapon Weapon) const
 {
 	const FLSCastleWeaponSettings* Settings = FindSettings(Weapon);
-	if (!HasBegunPlay() || !IsActive() || !GetWorld() || GetWorld()->bIsTearingDown || !IsValid(GetOwner()) ||
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()) ||
+	    !HasBegunPlay() || !IsActive() || !GetWorld() || GetWorld()->bIsTearingDown || !IsValid(GetOwner()) ||
 	    GetOwner()->IsActorBeingDestroyed() || !ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
 		return ELSWeaponCastResult::Unavailable;

@@ -13,6 +13,9 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "InputCoreTypes.h"
+#include "Match/LSBattleOutcomePolicy.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/SlateUser.h"
 
 FLSBattlefieldHUDLayout FLSBattlefieldHUDLayout::Calculate(FVector2D Viewport, bool bMinimap, float MinimapSide)
 {
@@ -193,6 +196,8 @@ bool ULSMinimapWidget::ResolveWorldPoint(const FGeometry& Geometry, FVector2D Sc
 }
 bool ULSMinimapWidget::FocusCamera(const FGeometry& Geometry, FVector2D ScreenPosition, bool bClampToMap)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+		return false;
 	APlayerController* Controller = GetOwningPlayer();
 	ALSRTSCameraPawn* Camera = Controller ? Cast<ALSRTSCameraPawn>(Controller->GetPawn()) : nullptr;
 	FVector Location;
@@ -203,6 +208,11 @@ bool ULSMinimapWidget::FocusCamera(const FGeometry& Geometry, FVector2D ScreenPo
 }
 FReply ULSMinimapWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		EndBattleActions();
+		return FReply::Handled();
+	}
 	// 미니맵이 마우스를 처리해도 RTS 단축키의 키보드 포커스는 전장에 둔다.
 	auto FocusViewport = [this](FReply Reply)
 	{
@@ -235,6 +245,11 @@ FReply ULSMinimapWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, cons
 }
 FReply ULSMinimapWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		EndBattleActions();
+		return FReply::Handled();
+	}
 	if (Event.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		bDragging = false;
@@ -244,6 +259,11 @@ FReply ULSMinimapWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const 
 }
 FReply ULSMinimapWidget::NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	{
+		EndBattleActions();
+		return FReply::Handled();
+	}
 	if (bDragging)
 	{
 		FocusCamera(Geometry, Event.GetScreenSpacePosition(), true);
@@ -254,4 +274,15 @@ void ULSMinimapWidget::NativeOnMouseCaptureLost(const FCaptureLostEvent& Event)
 {
 	bDragging = false;
 	Super::NativeOnMouseCaptureLost(Event);
+}
+
+void ULSMinimapWidget::EndBattleActions()
+{
+	bDragging = false;
+	if (!FSlateApplication::IsInitialized())
+		return;
+	const TSharedPtr<SWidget> Widget = GetCachedWidget();
+	const TSharedPtr<FSlateUser> CursorUser = FSlateApplication::Get().GetCursorUser();
+	if (Widget && CursorUser && CursorUser->DoesWidgetHaveCursorCapture(Widget))
+		CursorUser->ReleaseCursorCapture();
 }

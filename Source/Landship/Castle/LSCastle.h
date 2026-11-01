@@ -17,6 +17,8 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 
   public:
 	ALSCastle();
+	/** 체력·충돌·시야는 유지하고 이동과 공격을 영구 정지한다. */
+	void EndBattleActions();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSSelectableComponent> Selection;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
@@ -86,6 +88,7 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 	ELSFaction Faction = ELSFaction::Ally;
 
 	bool bFactionLocked = false;
+	bool bBattleActionsEnded = false;
 
 	/** 현재 전투 상태와 구분되는 초기 수치 복사본이다. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Stats")

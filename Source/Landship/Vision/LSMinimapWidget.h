@@ -29,6 +29,8 @@ class LANDSHIP_API ULSMinimapWidget : public UUserWidget
 
 	bool ResolveWorldPoint(const FGeometry& Geometry, FVector2D ScreenPosition, FVector& OutWorld,
 	                       bool bClampToMap = false) const;
+	/** 진행 중인 드래그를 취소하고 이 위젯이 소유한 마우스 캡처만 해제한다. */
+	void EndBattleActions();
 
   protected:
 	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
