@@ -11,6 +11,8 @@
 #include "Enemies/LSEnemyBehaviorComponent.h"
 #include "Enemies/LSEnemyOutpost.h"
 #include "Enemies/LSEnemyTroop.h"
+#include "Vision/LSVisionParticipantComponent.h"
+#include "Vision/LSVisionSubsystem.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
@@ -22,6 +24,9 @@
 #include "NavMesh/RecastNavMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Combat/LSCollisionChannels.h"
+#include "AI/Navigation/AvoidanceManager.h"
 
 ALSEnemyCombatProbe::ALSEnemyCombatProbe()
 {
@@ -153,7 +158,13 @@ void ALSEnemyCombatProbe::CaptureCore()
 	FLSOrder CoreAttack;
 	CoreAttack.Kind = ELSOrderKind::AttackTarget;
 	CoreAttack.Target = Core.Get();
-	Check(Castle->Orders->SubmitOrder(CoreAttack), TEXT("player castle accepts explicit core attack from outside range"));
+	const ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>();
+	const bool bCoreVisible = !Vision || !Vision->IsVisionEnabled() || Vision->IsActorVisibleToFriendly(Core.Get());
+	const bool bOrderAccepted = Castle->Orders->SubmitOrder(CoreAttack);
+	UE_LOGFMT(LogTemp, Display, "[{Function}] ENEMY_CAPTURE_ORDER_SMOKE visible={Visible} accepted={Accepted}",
+		("Function", __FUNCTION__), ("Visible", bCoreVisible), ("Accepted", bOrderAccepted));
+	Check(bOrderAccepted == bCoreVisible,
+		TEXT("player castle core order obeys current friendly sight"));
 	Castle->Orders->SubmitOrder(FLSOrder());
 	for (const auto& Unit : Units) { Unit->Behavior->SetComponentTickEnabled(true); }
 	const auto Result = Core->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(
@@ -426,6 +437,10 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 				ReturnBlocker->Orders->SetComponentTickEnabled(false);
 				ReturnBlocker->BasicAttack->Deactivate();
 				ReturnBlocker->GetCharacterMovement()->DisableMovement();
+				if (FParse::Param(FCommandLine::Get(), TEXT("LSEnemyReturnExactAvoidance")))
+				{
+					GetWorld()->GetAvoidanceManager()->ArtificialRadiusExpansion = 1.0f;
+				}
 			}
 		}
 		Stage = 3; StageTime = 0;
@@ -445,7 +460,19 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 				UE_LOGFMT(LogTemp, Display, "[{Function}] ENEMY_RETURN_OBSERVE alternate={Alternate} state={State} distance={Distance}",
 					("Function", __FUNCTION__), ("Alternate", bAlternate),
 					("State", static_cast<int32>(SupportMelee->Behavior->GetState())), ("Distance", ReturnDistance));
-				Check(bObservedReturnBlocked && (bAlternate ? ReturnDistance > 84 : ReturnDistance > SupportMelee->Behavior->ReturnAreaRadius),
+				UE_LOGFMT(LogTemp, Display, "[{Function}] ENEMY_RETURN_AVOIDANCE expansion={Expansion} rvo={RVO} speed={Speed} pose={Pose} home={Home}",
+					("Function", __FUNCTION__), ("Expansion", GetWorld()->GetAvoidanceManager()->ArtificialRadiusExpansion),
+					("RVO", SupportMelee->GetCharacterMovement()->bUseRVOAvoidance != 0),
+					("Speed", SupportMelee->GetVelocity().Size2D()), ("Pose", SupportMelee->GetActorLocation().ToString()),
+					("Home", SupportMelee->Behavior->GetInitialPosition().ToString()));
+				const UCapsuleComponent* Capsule = SupportMelee->GetCapsuleComponent();
+				FCollisionObjectQueryParams Objects;
+				Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+				Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+				const bool bOverlaps = GetWorld()->OverlapAnyTestByObjectType(SupportMelee->GetActorLocation(), FQuat::Identity,
+					Objects, FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()),
+					FCollisionQueryParams(SCENE_QUERY_STAT(LSEnemyReturnObservation), false, SupportMelee.Get()));
+				Check(bObservedReturnBlocked && (bAlternate ? ReturnDistance > 1 && !bOverlaps : ReturnDistance > SupportMelee->Behavior->ReturnAreaRadius),
 					bAlternate ? TEXT("occupied initial point returns to an actual alternative inside return area") :
 					TEXT("occupied return area produces blocked state without fake arrival"));
 				if (ReturnBlocker.IsValid()) { ReturnBlocker->Destroy(); }
@@ -476,6 +503,12 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 		Projectile.ProjectileClass = ALSBasicProjectile::StaticClass();
 		Projectile.Speed = 4000;
 		SupportAttacker->Attack->ConfigureProjectile(Projectile);
+		// 실제 아군 발사 조건을 갖춘 뒤 확정된 시야 스냅샷을 기다린다.
+		ULSVisionParticipantComponent* Sight = NewObject<ULSVisionParticipantComponent>(SupportAttacker.Get());
+		Sight->bProvidesSight = true;
+		Sight->SetSightRadius(Shot.Range);
+		SupportAttacker->AddInstanceComponent(Sight);
+		Sight->RegisterComponent();
 		FLSHealthSnapshot CoreHealth;
 		Core->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(CoreHealth);
 		CoreHealthBeforeSupport = CoreHealth.CurrentHealth;
@@ -485,8 +518,16 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 			if (Unit->GetTroopType() == ELSTroopType::Spearman) { SupportMelee = Unit; SupportMeleeStart = Unit->GetActorLocation(); }
 			else { SupportRanged = Unit; SupportRangedStart = Unit->GetActorLocation(); }
 		}
-		Check(SupportAttacker->Attack->StartAttack(Core.Get()), TEXT("real remote projectile attack accepted"));
-		Stage = 4; StageTime = 0;
+		Stage = 9; StageTime = 0;
+	}
+	else if (Stage == 9)
+	{
+		if (ULSVisionSubsystem::PassesFriendlySight(SupportAttacker.Get(), Core.Get()))
+		{
+			Check(SupportAttacker->Attack->StartAttack(Core.Get()), TEXT("real remote projectile attack accepted with friendly sight"));
+			Stage = 4; StageTime = 0;
+		}
+		else if (StageTime > 2) { Check(false, TEXT("remote attacker friendly sight timeout")); Finish(); }
 	}
 	else if (Stage == 4)
 	{

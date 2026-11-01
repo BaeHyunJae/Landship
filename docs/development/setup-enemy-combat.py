@@ -74,6 +74,14 @@ if floor_extent.x < 3900 or floor_extent.y < 3400:
 castle = spawn('LSMobileCastle', 'EnemyCombat_PlayerCastle', (-1800, -1200, 142))
 castle.set_editor_property('faction', unreal.LSFaction.ALLY)
 core = spawn('LSEnemyOutpost', 'EnemyCombat_Core', (1800, 1500, 100))
+# 실제 전투 검증에서도 전장 경계와 지형을 명시해 시야를 활성화한다.
+settings = spawn('LSBattlefieldSettings', 'EnemyCombat_VisionSettings', (0, 0, 200))
+settings.set_editor_property('bounds_min', unreal.Vector2D(-4000, -3500))
+settings.set_editor_property('bounds_max', unreal.Vector2D(4000, 3500))
+settings.set_editor_property('terrain_actors', [floor])
+spawn('LSVisionPresentation', 'EnemyCombat_VisionPresentation', (0, 0, 200))
+# 공개 위치 표식은 실물의 시야·선택·공격 가능 여부와 구분한다.
+core.get_component_by_class(unreal.LSVisionParticipantComponent).set_editor_property('public_core_position', True)
 setup = spawn('LSBattlefieldSetup', 'EnemyCombat_Setup', (0, 0, 200))
 setup.set_editor_property('player_castle', castle)
 setup.set_editor_property('core_outpost', core)
@@ -90,6 +98,7 @@ for label, role, kind, xyz in [
     behavior.set_editor_property('role', role)
     behavior.set_editor_property('guarded_outpost', core)
 spawn('LSEnemyCombatProbe', 'EnemyCombat_Probe', (0, 0, 200))
+spawn('LSEnemyVisionRuntimeProbe', 'EnemyCombat_VisionRuntimeProbe', (0, 0, 200))
 spawn('LSEnemyBoundaryProbe', 'EnemyCombat_BoundaryProbe', (0, 0, 200))
 spawn('LSEnemySupportProbe', 'EnemyCombat_SupportProbe', (-500, -2500, 88))
 spawn('LSEnemyRegressionProbe', 'EnemyCombat_RegressionProbe', (0, 0, 200))

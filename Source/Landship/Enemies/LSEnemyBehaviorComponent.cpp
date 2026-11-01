@@ -223,15 +223,21 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 			if (Role == ELSEnemyRole::Guard && !bReturning) { BeginReturn(TEXT("Guard boundary")); }
 			else if (Role == ELSEnemyRole::Assault && bEngagementLatched && !bRecovering) { BeginRecovery(); }
 		}
-		else if (Distance > Radius && !bReturning && State != ELSEnemyState::ReenteringDomain)
+		// 경계 지점의 부동소수점 왕복 오차를 실제 영역 이탈로 취급하지 않는다.
+		else if (Distance - Radius > UE_KINDA_SMALL_NUMBER && !bReturning && State != ELSEnemyState::ReenteringDomain)
 		{
+			UE_LOGFMT(LogTemp, Verbose,
+				"[{Function}] ENEMY_BOUNDARY_ENTRY distance={Distance} excess={Excess} goal={Goal} velocity={Velocity}",
+				("Function", __FUNCTION__), ("Distance", FString::Printf(TEXT("%.17g"), Distance)),
+				("Excess", FString::Printf(TEXT("%.17g"), Distance - Radius)),
+				("Goal", MovementGoal.ToString()), ("Velocity", GetOwner()->GetVelocity().ToString()));
 			StateBeforeReentry = State;
 			bMovementFailedBeforeReentry = bMovementFailed;
 			StopMovement();
 			State = ELSEnemyState::ReenteringDomain;
 			LastStopReason = TEXT("Soft boundary reentry");
 		}
-		else if (Distance <= Radius && State == ELSEnemyState::ReenteringDomain)
+		else if (Distance - Radius <= UE_KINDA_SMALL_NUMBER && State == ELSEnemyState::ReenteringDomain)
 		{
 			StopMovement();
 			State = StateBeforeReentry;
@@ -426,7 +432,11 @@ bool ULSEnemyBehaviorComponent::Move(const FVector& Goal, const FVector* AttackP
 	{
 		// 전략 목표인 성의 근접 추격도 공격 접근이다. 회피가 도주하는 성과의 간격을 유지하지 않게 한다.
 		const bool bAttackPursuit = AttackPosition && FVector::Dist2D(GetOwner()->GetActorLocation(), *AttackPosition) <= DetectionRadius;
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(State != ELSEnemyState::Engaging && !bAttackPursuit);
+		// 충돌 검사를 통과한 좁은 복귀 지점은 RVO의 팽창 반경 대신 실제 캡슐로 접근한다.
+		const bool bPreciseReturn = State == ELSEnemyState::Returning &&
+			FVector::Dist2D(GetOwner()->GetActorLocation(), InitialPosition) <=
+			ReturnAreaRadius + Character->GetCapsuleComponent()->GetScaledCapsuleRadius();
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(State != ELSEnemyState::Engaging && !bAttackPursuit && !bPreciseReturn);
 	}
 	float Acceptance = ArrivalTolerance;
 	if (AttackPosition && Pawn && Attack.IsValid())
@@ -536,6 +546,11 @@ void ULSEnemyBehaviorComponent::StopMovement()
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	if (AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr) { Controller->StopMovement(); }
+	if (State == ELSEnemyState::GuardIdle || State == ELSEnemyState::ReturnBlocked)
+	{
+		// 정지한 수비병도 다른 병력의 회피 대상에 남아야 한다.
+		if (ACharacter* Character = Cast<ACharacter>(Pawn)) { Character->GetCharacterMovement()->SetAvoidanceEnabled(true); }
+	}
 }
 
 void ULSEnemyBehaviorComponent::OnMovementFinished(FAIRequestID Id, const FPathFollowingResult& Result)
@@ -607,16 +622,17 @@ void ULSEnemyBehaviorComponent::ReturnHome()
 	const bool bInDomain = GetMovementDomain(Center, Radius) && FVector::Dist2D(Here, Center) <= Radius;
 	if (FVector::Dist2D(Here, InitialPosition) <= ReturnAreaRadius && bInDomain)
 	{
-		StopMovement();
 		State = ELSEnemyState::GuardIdle;
+		StopMovement();
 		return;
 	}
-	if (GetWorld()->GetTimeSeconds() < NextMoveAttempt) { return; }
 	if (bMovementFailed)
 	{
 		State = ELSEnemyState::ReturnBlocked;
 		bMovementFailed = false;
+		StopMovement();
 	}
+	if (GetWorld()->GetTimeSeconds() < NextMoveAttempt) { return; }
 	for (int32 Index = 0; Index < 25; ++Index)
 	{
 		const float Distance = Index == 0 ? 0.0f : ReturnAreaRadius * (Index <= 8 ? 0.5f : 0.9f);
@@ -641,8 +657,8 @@ void ULSEnemyBehaviorComponent::ReturnHome()
 		if (Move(Goal)) { return; }
 		if (GetWorld()->GetTimeSeconds() < NextMoveAttempt) { break; }
 	}
-	StopMovement();
 	State = ELSEnemyState::ReturnBlocked;
+	StopMovement();
 	LastStopReason = TEXT("No reachable return point");
 	NextMoveAttempt = GetWorld()->GetTimeSeconds() + FailedPathRetryInterval;
 }

@@ -6,6 +6,10 @@
 #include "Enemies/LSOutpost.h"
 #include "EngineUtils.h"
 #include "Misc/DataValidation.h"
+#if WITH_EDITOR
+#include "Maps/LSBattlefieldSettings.h"
+#include "Vision/LSVisionParticipantComponent.h"
+#endif
 
 ALSBattlefieldSetup::ALSBattlefieldSetup()
 {
@@ -68,6 +72,38 @@ EDataValidationResult ALSBattlefieldSetup::IsDataValid(FDataValidationContext& C
 	{
 		Context.AddError(FText::FromString(Error));
 		return EDataValidationResult::Invalid;
+	}
+	const bool bHasBattlefieldSettings = GetWorld() && TActorIterator<ALSBattlefieldSettings>(GetWorld());
+	if (bHasBattlefieldSettings)
+	{
+		bool bInvalidCoreMarker = false;
+		const ULSVisionParticipantComponent* CoreVision = CoreOutpost->FindComponentByClass<ULSVisionParticipantComponent>();
+		if (!CoreVision || !CoreVision->bPublicCorePosition)
+		{
+			Context.AddError(FText::FromString(TEXT("CoreOutpost must have a vision participant with bPublicCorePosition enabled")));
+			bInvalidCoreMarker = true;
+		}
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			if (*It == CoreOutpost.Get())
+			{
+				continue;
+			}
+			TInlineComponentArray<ULSVisionParticipantComponent*> Participants(*It);
+			for (const ULSVisionParticipantComponent* Participant : Participants)
+			{
+				if (Participant->bPublicCorePosition)
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Only CoreOutpost may enable bPublicCorePosition; found on %s"), *It->GetPathName())));
+					bInvalidCoreMarker = true;
+				}
+			}
+		}
+		if (bInvalidCoreMarker)
+		{
+			return EDataValidationResult::Invalid;
+		}
 	}
 	return ParentResult == EDataValidationResult::Invalid ? ParentResult : EDataValidationResult::Valid;
 }
