@@ -96,3 +96,11 @@ PIE에서 이동 → 산탄 발사 → 새 이동 순서로 `No reachable path`�
 `LSNavigationSetup`은 내비게이션 초기화 시 기본 수평 검색 범위를 에이전트 반경 이상으로 설정한다. 성은 142cm를 사용한다. 부분 경로 허용이나 순간이동으로 실패를 숨기지 않는다. 무장 실행 검사는 이제 실제 첫 이동, 이동한 위치에서 산탄 발사, 새 이동 명령과 실제 재이동까지 검사한다.
 
 수정 후 Editor 빌드, 전체 자동 검사 69개, 실제 맵 검사 41개가 통과했다. 새 PIE 창에서도 수정 전 실패했던 화면 좌표를 같은 순서로 클릭해 성이 후속 목적지까지 이동하고 Idle로 복귀하는 것을 확인했다. 보고서는 `Saved/Automation/MoveShotMove/index.json`, 맵 실행 로그는 `Saved/Logs/HMHMoveShotMove.log`다.
+
+## 집단 교전의 회피 정책
+
+교전·공격 접근에서는 RVO를 사용하지 않는다. 예측 회피가 앞줄 병력과 표적을 피하면서 근접 공격 위치 진입을 막을 수 있기 때문이다. 일반 이동·새 명령·교전 종료에서는 다시 활성화한다. NavMesh 경로 탐색, 빈 공격 위치 우선 선택, 실제 캡슐 충돌과 타격 사거리 판정은 유지한다.
+
+회귀 확인은 HMH 맵을 `-game -HMHMeleeAvoidanceTestExit`로 실행한다. `-MeleeProbeStaticTargets`는 적의 추적을 끄고, `-MeleeProbeCount=1`은 1대1, `-MeleeProbeRange=250`은 시험 사거리다. `-MeleeProbeNoRVO`는 비교용으로 회피 반경을 0으로 만든다. 프로브는 시험 전용 병력을 생성하며 데이터 에셋을 수정하지 않는다.
+
+`Landship.Controls.CombatAvoidanceState`는 교전 중 회피 해제, 표적 사망에 따른 교전 종료 후 복원, 새 명령에서 복원을 검사한다.

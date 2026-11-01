@@ -8,6 +8,7 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UMaterialInterface;
+class UAnimSequence;
 struct FLSDamageResult;
 
 UENUM(BlueprintType)
@@ -47,9 +48,14 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
   private:
 	void RefreshDefinition();
+	void InitializeAnimations();
+	void PlayIdleAnimation();
+	UFUNCTION()
+	void OnTroopAttackExecuted(const FLSAttackExecution& Execution);
 	UFUNCTION()
 	void OnTroopDied(const FLSDamageResult& Damage);
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landship|Troops",
@@ -72,5 +78,18 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	TObjectPtr<UStaticMesh> CavalryShape;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops")
 	FLSProjectileAttackSettings RangedAttack;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Animation")
+	TSoftObjectPtr<UAnimSequence> MeleeIdleAnimation;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Animation")
+	TSoftObjectPtr<UAnimSequence> MeleeAttackAnimation;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Animation")
+	TSoftObjectPtr<UAnimSequence> ArcherIdleAnimation;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Animation")
+	TSoftObjectPtr<UAnimSequence> ArcherAttackAnimation;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> ActiveIdleAnimation;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> ActiveAttackAnimation;
+	FTimerHandle AttackAnimationTimer;
 	bool bTroopTypeLocked = false;
 };

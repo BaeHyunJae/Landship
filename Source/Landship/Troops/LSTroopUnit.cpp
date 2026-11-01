@@ -1,6 +1,10 @@
 #include "Troops/LSTroopUnit.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
+#include "Animation/AnimSequence.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 #include "Controls/LSSelectableComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -16,6 +20,14 @@
 ALSTroopUnit::ALSTroopUnit()
 {
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
+	MeleeIdleAnimation = TSoftObjectPtr<UAnimSequence>(
+	    FSoftObjectPath(TEXT("/Game/ReflectionLab/Gameplay/Player/Animations/A_2HandIdle.A_2HandIdle")));
+	MeleeAttackAnimation = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(
+	    TEXT("/Game/ReflectionLab/Gameplay/Player/Animations/A_Parry_BaseballHit.A_Parry_BaseballHit")));
+	ArcherIdleAnimation = TSoftObjectPtr<UAnimSequence>(
+	    FSoftObjectPath(TEXT("/Game/ReflectionLab/Gameplay/Enemies/Animations/A_Enemy_Idle.A_Enemy_Idle")));
+	ArcherAttackAnimation = TSoftObjectPtr<UAnimSequence>(
+	    FSoftObjectPath(TEXT("/Game/ReflectionLab/Gameplay/Enemies/Animations/A_Enemy_Shoot.A_Enemy_Shoot")));
 	TroopStatsTable =
 	    TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Landship/Troops/Data/DT_TroopStats.DT_TroopStats")));
 	PrototypeMaterial = TSoftObjectPtr<UMaterialInterface>(
@@ -136,10 +148,75 @@ void ALSTroopUnit::BeginPlay()
 	RefreshDefinition();
 	Super::BeginPlay();
 	Health->OnDiedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDied);
+	InitializeAnimations();
+}
+
+void ALSTroopUnit::InitializeAnimations()
+{
+	if (!ULSCombatTargetLibrary::IsCombatAlive(this))
+		return;
+	const bool bArcher = TroopType == ELSTroopType::Archer;
+	UAnimSequence* Idle = (bArcher ? ArcherIdleAnimation : MeleeIdleAnimation).LoadSynchronous();
+	UAnimSequence* Attack = (bArcher ? ArcherAttackAnimation : MeleeAttackAnimation).LoadSynchronous();
+	const USkeletalMesh* MeshAsset = GetMesh()->GetSkeletalMeshAsset();
+	const auto IsValidClip = [MeshAsset](const UAnimSequence* Clip)
+	{
+		return Clip && MeshAsset && Clip->GetSkeleton() == MeshAsset->GetSkeleton() &&
+		       FMath::IsFinite(Clip->GetPlayLength()) && Clip->GetPlayLength() > 0 &&
+		       FMath::IsFinite(Clip->RateScale) && Clip->RateScale > 0;
+	};
+	if (!IsValidClip(Idle) || !IsValidClip(Attack))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: 병종 애니메이션이 없거나 메시·재생 설정과 호환되지 않습니다"), *GetName());
+		return;
+	}
+	ActiveIdleAnimation = Idle;
+	ActiveAttackAnimation = Attack;
+	BasicAttack->OnAttackExecutedEvent.AddUniqueDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
+	PlayIdleAnimation();
+}
+
+void ALSTroopUnit::PlayIdleAnimation()
+{
+	if (ActiveIdleAnimation && ULSCombatTargetLibrary::IsCombatAlive(this) && !GetMesh()->IsSimulatingPhysics())
+	{
+		GetMesh()->PlayAnimation(ActiveIdleAnimation, true);
+		GetMesh()->SetPlayRate(1.0f);
+	}
+}
+
+void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
+{
+	if (Execution.Source.Get() != this || !ActiveAttackAnimation || !ULSCombatTargetLibrary::IsCombatAlive(this) ||
+	    GetMesh()->IsSimulatingPhysics())
+		return;
+	// 피해와 투사체 발사는 기존 전투 코드가 소유한다. 애니메이션은 확정된 공격만 표현한다.
+	const float Interval = BasicAttack->GetEffectiveAttackInterval();
+	const float Length = ActiveAttackAnimation->GetPlayLength() / ActiveAttackAnimation->RateScale;
+	if (!FMath::IsFinite(Interval) || Interval <= 0 || !FMath::IsFinite(Length) || Length <= 0)
+		return;
+	const float PlayRate = FMath::Max(1.0f, Length / Interval);
+	if (!FMath::IsFinite(PlayRate))
+		return;
+	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	GetMesh()->PlayAnimation(ActiveAttackAnimation, false);
+	GetMesh()->SetPlayRate(PlayRate);
+	GetWorldTimerManager().SetTimer(AttackAnimationTimer, this, &ALSTroopUnit::PlayIdleAnimation, Length / PlayRate,
+	                                false);
+}
+
+void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	BasicAttack->OnAttackExecutedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
+	Health->OnDiedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopDied);
+	Super::EndPlay(EndPlayReason);
 }
 
 void ALSTroopUnit::OnTroopDied(const FLSDamageResult& Damage)
 {
+	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	BasicAttack->OnAttackExecutedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
 	TroopMarker->SetVisibility(false);
 	TroopLabel->SetVisibility(false);
 }
