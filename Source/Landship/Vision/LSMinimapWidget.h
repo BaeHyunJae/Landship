@@ -8,7 +8,7 @@ struct LANDSHIP_API FLSBattlefieldHUDLayout
 {
 	FBox2D Minimap;
 	FBox2D Info;
-	FBox2D Production;
+	FBox2D CommandCard;
 	float Scale = 1.0f;
 	static FLSBattlefieldHUDLayout Calculate(FVector2D Viewport, bool bMinimap, float MinimapSide = 260.0f);
 };
