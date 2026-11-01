@@ -1,6 +1,9 @@
 #include "Castle/LSCastleWeaponComponent.h"
 
 #include "Combat/LSBasicProjectile.h"
+#include "Components/PrimitiveComponent.h"
+#include "Obstacles/LSPathObstacle.h"
+#include "Vision/LSVisionSubsystem.h"
 #include "Castle/LSCastleProjectile.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
@@ -220,7 +223,43 @@ ELSWeaponCastResult ULSCastleWeaponComponent::ValidateAim(ELSCastleWeapon Weapon
 	return Distance > KINDA_SMALL_NUMBER ? ELSWeaponCastResult::Ready : ELSWeaponCastResult::InvalidAim;
 }
 
+bool ULSCastleWeaponComponent::GetObstacleAimPoint(ALSPathObstacle* Target, FVector& OutAim) const
+{
+	if (!IsValid(Target) || Target->IsActorBeingDestroyed() || !Target->IsObstacleActive() ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(Target) || !GetWorld())
+		return false;
+	const UPrimitiveComponent* Body = Target->GetObstacleBody();
+	if (!IsValid(Body) || !Body->IsQueryCollisionEnabled())
+		return false;
+	const ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>();
+	if (Vision && Vision->IsVisionEnabled() && !Vision->IsPointVisible(Target->GetInteractionLocation()))
+		return false;
+	OutAim = Body->Bounds.Origin;
+	return !OutAim.ContainsNaN();
+}
+
+ELSWeaponCastResult ULSCastleWeaponComponent::ValidateObstacleAim(ELSCastleWeapon Weapon,
+                                                                 ALSPathObstacle* Target) const
+{
+	FVector Aim;
+	return GetObstacleAimPoint(Target, Aim) ? ValidateAim(Weapon, Aim) : ELSWeaponCastResult::InvalidAim;
+}
+
+ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponAtObstacle(ELSCastleWeapon Weapon, ALSPathObstacle* Target)
+{
+	FVector Aim;
+	if (!GetObstacleAimPoint(Target, Aim))
+		return ELSWeaponCastResult::InvalidAim;
+	return CastWeaponInternal(Weapon, Aim, true);
+}
+
 ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon, const FVector& Aim)
+{
+	return CastWeaponInternal(Weapon, Aim, false);
+}
+
+ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon Weapon, const FVector& Aim,
+                                                                bool bFirstBlocking)
 {
 	const ELSWeaponCastResult Status = ValidateAim(Weapon, Aim);
 	if (Status != ELSWeaponCastResult::Ready)
@@ -229,7 +268,8 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 	const FLSCastleWeaponSettings Settings = *FindSettings(Weapon);
 	if (Weapon == ELSCastleWeapon::Ballista)
 	{
-		const FVector Direction = (Aim - GetOwner()->GetActorLocation()).GetSafeNormal2D();
+		const FVector Offset = Aim - GetOwner()->GetActorLocation();
+		const FVector Direction = bFirstBlocking ? Offset.GetSafeNormal() : Offset.GetSafeNormal2D();
 		const FTransform Transform(Direction.Rotation(), GetOwner()->GetActorLocation());
 		ALSBasicProjectile* Projectile = GetWorld()->SpawnActorDeferred<ALSBasicProjectile>(
 		    ALSBasicProjectile::StaticClass(), Transform, nullptr, nullptr,
@@ -237,8 +277,12 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 		if (!IsValid(Projectile))
 			return ELSWeaponCastResult::Unavailable;
 		const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
-		if (!Projectile->LaunchFirstEnemy(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
-		                                  Settings.Range / Settings.ProjectileSpeed))
+		const bool bLaunched = bFirstBlocking
+		    ? Projectile->LaunchFirstBlocking(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
+		                                      Settings.Range / Settings.ProjectileSpeed)
+		    : Projectile->LaunchFirstEnemy(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
+		                                   Settings.Range / Settings.ProjectileSpeed);
+		if (!bLaunched)
 		{
 			Projectile->Destroy();
 			return ELSWeaponCastResult::Unavailable;
@@ -258,7 +302,7 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 		if (!IsValid(Projectile))
 			return ELSWeaponCastResult::Unavailable;
 		const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
-		if (!Projectile->Launch(Weapon, Settings, Request, Aim))
+		if (!Projectile->Launch(Weapon, Settings, Request, Aim, bFirstBlocking))
 		{
 			Projectile->Destroy();
 			return ELSWeaponCastResult::Unavailable;

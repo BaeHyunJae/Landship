@@ -14,7 +14,7 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	GENERATED_BODY()
 
   public:
-	ALSUnit();
+	ALSUnit(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	/** 명령과 공격을 영구 정지하되 낙하·착지와 명중에 의한 물리 반응은 유지한다. */
 	void EndBattleActions();
 	virtual bool SupportsBasicAttack() const { return true; }

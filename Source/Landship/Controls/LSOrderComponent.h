@@ -6,6 +6,8 @@
 #include "LSOrderComponent.generated.h"
 
 class ULSBasicAttackComponent;
+class ALSMine;
+struct FLSDamageResult;
 struct FPathFollowingResult;
 
 UENUM(BlueprintType)
@@ -15,7 +17,8 @@ enum class ELSOrderKind : uint8
 	Move,
 	AttackTarget,
 	AttackMove,
-	Hold
+	Hold,
+	Disarm
 };
 
 UENUM(BlueprintType)
@@ -73,6 +76,9 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 		return EngagedTarget.Get();
 	}
 	bool CanAttack() const;
+	bool PrepareDisarm(ALSMine* Mine, FVector& Destination, double& Length) const;
+	bool BeginClaimedDisarm(ALSMine* Mine, const FVector& Destination);
+	void CancelDisarm();
 	bool CanMove() const;
 	bool CanExecuteOrderKind(ELSOrderKind Kind) const;
 	FVector GetOrderDestination() const
@@ -102,9 +108,17 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	float ArrivalTolerance = 30.0f;
 
   private:
+	UFUNCTION()
+	void OnOwnerDamaged(const FLSDamageResult& Damage);
+	void TickDisarm(float DeltaTime);
+	bool IsDisarmTargetValid(ALSMine* Mine) const;
+	bool UsesMineAvoidance() const;
+	void SetMineAvoidance(bool bEnabled);
+	void StopForMine();
 	bool ResolveDestination(const FVector& Goal, FVector& OutDestination) const;
 	bool GetNavigationOriginHeight(double& OutHeight) const;
-	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination) const;
+	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination, bool bAvoidMines,
+	                              bool* OutMineBlocked = nullptr) const;
 	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const;
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
 	bool MoveTo(const FVector& Goal, bool bAttackApproach = false);
@@ -125,6 +139,12 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	TWeakObjectPtr<AActor> EngagedTarget;
 	UPROPERTY(Transient)
 	TObjectPtr<ULSBasicAttackComponent> Attack;
+	TWeakObjectPtr<ALSMine> DisarmMine;
+	float DisarmElapsed = 0;
+	bool bDisarmWorking = false;
+	bool bMineBlocked = false;
+	FVector MineBlockedGoal = FVector::ZeroVector;
+	bool bMineBlockedAttackApproach = false;
 	double NextRepathTime = 0;
 	bool bHasEngagement = false;
 	bool bBattleActionsEnded = false;

@@ -3,6 +3,9 @@
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthComponent.h"
 #include "GameFramework/Actor.h"
+#include "Obstacles/LSPathObstacle.h"
+#include "Obstacles/LSMine.h"
+#include "Obstacles/LSObstacleGeometry.h"
 #include <limits>
 
 double ULSCombatTargetLibrary::GetAttackDistance(const AActor* Source, const AActor* Target)
@@ -17,6 +20,8 @@ double ULSCombatTargetLibrary::GetAttackDistanceAtLocation(const AActor* Source,
 	if (!IsValid(Source) || !IsValid(Target) || SourceLocation.ContainsNaN() ||
 	    Target->GetActorLocation().ContainsNaN())
 		return std::numeric_limits<double>::infinity();
+	if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Target))
+		return LSObstacleGeometry::GetAttackDistance(Source, Obstacle, SourceLocation);
 	float SourceRadius, SourceHeight, TargetRadius, TargetHeight;
 	Source->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
 	Target->GetSimpleCollisionCylinder(TargetRadius, TargetHeight);
@@ -33,6 +38,10 @@ bool ULSCombatTargetLibrary::CanAutoAttackTarget(const AActor* Source, const AAc
 	{
 		return false;
 	}
+	if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Target); Obstacle && !Obstacle->IsObstacleActive())
+		return false;
+	if (const ALSMine* Mine = Cast<ALSMine>(Target); Mine && !Mine->IsArmed())
+		return false;
 	const ILSFactionInterface* SourceFaction = Cast<ILSFactionInterface>(Source);
 	const ILSFactionInterface* TargetFaction = Cast<ILSFactionInterface>(Target);
 	if (!SourceFaction || !TargetFaction || !LSFaction::IsValid(SourceFaction->GetFaction()) ||

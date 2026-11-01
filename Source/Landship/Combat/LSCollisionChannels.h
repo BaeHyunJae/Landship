@@ -10,4 +10,6 @@ namespace LSCollisionChannels
 	inline constexpr ECollisionChannel PathObstacle = ECC_GameTraceChannel3;
 	inline constexpr ECollisionChannel Projectile = ECC_GameTraceChannel4;
 	inline constexpr ECollisionChannel Ground = ECC_GameTraceChannel5;
+	inline constexpr ECollisionChannel ExplosionOcclusion = ECC_GameTraceChannel6;
+	inline constexpr ECollisionChannel ObstacleProjectile = ECC_GameTraceChannel7;
 }

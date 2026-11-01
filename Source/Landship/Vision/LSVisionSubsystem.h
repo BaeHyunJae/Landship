@@ -78,6 +78,7 @@ class LANDSHIP_API ULSVisionSubsystem : public UTickableWorldSubsystem
 	TSet<TWeakObjectPtr<AActor>> VisibleActors;
 	TArray<FLSMinimapMarker> MinimapMarkers;
 	TMap<TWeakObjectPtr<AActor>, FLSMinimapMarker> PublicCoreMarkers;
+	TSet<TWeakObjectPtr<AActor>> DiscoveredMines;
 	float Elapsed = 0.0f;
 	uint64 SnapshotGeneration = 0;
 	bool bWorldStarted = false;

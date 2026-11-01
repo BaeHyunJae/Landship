@@ -2,6 +2,7 @@
 
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthComponent.h"
+#include "Obstacles/LSMine.h"
 #include "Vision/LSVisionGeometry.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Vision/LSVisionPresentation.h"
@@ -92,6 +93,7 @@ void ULSVisionSubsystem::UnregisterParticipant(ULSVisionParticipantComponent* Pa
 	if (Participant && Participant->GetOwner())
 	{
 		VisibleActors.Remove(Participant->GetOwner());
+		DiscoveredMines.Remove(Participant->GetOwner());
 	}
 	RequestRefresh();
 }
@@ -148,6 +150,10 @@ bool ULSVisionSubsystem::PassesFriendlySight(const AActor* Observer, const AActo
 	}
 	const UWorld* World = Observer->GetWorld();
 	const ULSVisionSubsystem* Vision = World ? World->GetSubsystem<ULSVisionSubsystem>() : nullptr;
+	if (const ALSMine* Mine = Cast<ALSMine>(Target))
+	{
+		return !Vision || !Vision->IsVisionEnabled() || Vision->IsPointVisible(Mine->GetTriggerCenter());
+	}
 	// 에디터 미리보기에는 플레이 시야가 없다. 게임 월드에서는 서브시스템이 생성된다.
 	return !Vision || Vision->IsActorVisibleToFriendly(Target);
 }
@@ -193,6 +199,13 @@ void ULSVisionSubsystem::Refresh()
 	TGuardValue<bool> RefreshGuard(bRefreshing, true);
 	bRefreshPending = false;
 	Participants.RemoveAll([](const auto& Weak) { return !Weak.IsValid() || Weak->IsBeingDestroyed(); });
+	for (auto It = DiscoveredMines.CreateIterator(); It; ++It)
+	{
+		if (!It->IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
 	TArray<FLSSightCircle> NewCircles;
 	for (const auto& Weak : Participants)
 	{
@@ -217,6 +230,32 @@ void ULSVisionSubsystem::Refresh()
 			continue;
 		}
 		AActor* Actor = Participant->GetOwner();
+		if (const ALSMine* Mine = Cast<ALSMine>(Actor))
+		{
+			NewVisible.Add(Actor);
+			if (!Mine->IsHazardActive())
+			{
+				DiscoveredMines.Remove(Actor);
+				continue;
+			}
+			for (const FLSSightCircle& Circle : NewCircles)
+			{
+				if (LSVisionGeometry::IsInsideSight(FVector2D(Mine->GetTriggerCenter()), Circle.Center, Circle.Radius))
+				{
+					DiscoveredMines.Add(Actor);
+					break;
+				}
+			}
+			if (DiscoveredMines.Contains(Actor))
+			{
+				FLSMinimapMarker Marker;
+				Marker.Location = Mine->GetTriggerCenter();
+				Marker.Kind = ELSMinimapMarkerKind::Obstacle;
+				Marker.ExplosionRadius = Mine->GetExplosionRadius();
+				NewMarkers.Add(Marker);
+			}
+			continue;
+		}
 		bool bVisible = !Participant->ShouldConceal();
 		for (const FLSSightCircle& Circle : NewCircles)
 		{
@@ -268,5 +307,6 @@ void ULSVisionSubsystem::Deinitialize()
 	VisibleActors.Reset();
 	MinimapMarkers.Reset();
 	PublicCoreMarkers.Reset();
+	DiscoveredMines.Reset();
 	Super::Deinitialize();
 }

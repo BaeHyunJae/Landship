@@ -124,6 +124,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 		return {ELSApplyDamageStatus::RejectedDead, 0.0f};
 	}
 	if (!ensureAlwaysMsgf(FMath::IsFinite(Request.DamageAmount) && Request.DamageAmount >= 0.0f
+		&& (Request.Policy == ELSDamagePolicy::Standard || Request.Policy == ELSDamagePolicy::EnvironmentalHazard)
 		&& (!Request.bHasSourceFaction || LSFaction::IsValid(Request.SourceFaction)),
 		TEXT("[LSHealthComponent::ApplyDamage] Invalid damage: Owner=%s Amount=%g HasSourceFaction=%d SourceFaction=%d"),
 		*GetPathNameSafe(GetOwner()), Request.DamageAmount, !!Request.bHasSourceFaction, static_cast<int32>(Request.SourceFaction)))
@@ -140,7 +141,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	{
 		return {ELSApplyDamageStatus::RejectedSelfDamageDisabled, 0.0f};
 	}
-	if (!bSelfDamage && !Settings->bAllowFriendlyFire)
+	if (!bSelfDamage && !Settings->bAllowFriendlyFire && Request.Policy == ELSDamagePolicy::Standard)
 	{
 		bool bHasSourceFaction = Request.bHasSourceFaction;
 		ELSFaction SourceFaction = Request.SourceFaction;

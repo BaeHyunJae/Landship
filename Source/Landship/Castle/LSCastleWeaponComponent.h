@@ -4,6 +4,8 @@
 #include "Castle/LSCastleWeaponData.h"
 #include "LSCastleWeaponComponent.generated.h"
 
+class ALSPathObstacle;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLSWeaponStateChanged, ELSCastleWeapon, Weapon,
                                              const FLSCastleWeaponState&, State);
 
@@ -41,6 +43,9 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	ELSWeaponCastResult GetStatus(ELSCastleWeapon Weapon) const;
 	ELSWeaponCastResult ValidateAim(ELSCastleWeapon Weapon, const FVector& Aim) const;
 	ELSWeaponCastResult CastWeapon(ELSCastleWeapon Weapon, const FVector& Aim);
+	bool GetObstacleAimPoint(ALSPathObstacle* Target, FVector& OutAim) const;
+	ELSWeaponCastResult ValidateObstacleAim(ELSCastleWeapon Weapon, ALSPathObstacle* Target) const;
+	ELSWeaponCastResult CastWeaponAtObstacle(ELSCastleWeapon Weapon, ALSPathObstacle* Target);
 	bool GetRecentCast(ELSCastleWeapon& Weapon, FVector& Aim, FLSCastleWeaponSettings* Settings = nullptr) const;
 
   protected:
@@ -51,6 +56,7 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	TMap<ELSCastleWeapon, FLSCastleWeaponState> InitialStates;
 
   private:
+	ELSWeaponCastResult CastWeaponInternal(ELSCastleWeapon Weapon, const FVector& Aim, bool bFirstBlocking);
 	ELSWeaponChangeResult ValidateChange(ELSCastleWeapon Weapon) const;
 	void NotifyStateChanged(ELSCastleWeapon Weapon);
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Weapons",

@@ -38,6 +38,7 @@ ALSCastle::ALSCastle()
 	Collision->SetBoxExtent(FVector(100.0f));
 	Collision->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	Collision->SetCollisionObjectType(LSCollisionChannels::Building);
+	Collision->SetCollisionResponseToChannel(LSCollisionChannels::ObstacleProjectile, ECR_Block);
 	Collision->SetCanEverAffectNavigation(false);
 	Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Movement"));
 	Movement->SetUpdatedComponent(Collision);
