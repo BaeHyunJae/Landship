@@ -1,4 +1,5 @@
 #include "Combat/LSBasicAttackComponent.h"
+#include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
 
 #include "Combat/LSCombatTargetLibrary.h"
@@ -47,7 +48,8 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 	{
 		return false;
 	}
-	return ULSCombatTargetLibrary::CanAutoAttackTarget(Owner, Target);
+	return ULSCombatTargetLibrary::CanAutoAttackTarget(Owner, Target) &&
+		   ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
 }
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)

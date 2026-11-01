@@ -1,4 +1,5 @@
 #include "Troops/LSUnit.h"
+#include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -23,6 +24,10 @@ ALSUnit::ALSUnit()
 	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
 	Selection->Kind = ELSSelectionKind::Unit;
 	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	Vision = CreateDefaultSubobject<ULSVisionParticipantComponent>(TEXT("Vision"));
+	Vision->MarkerKind = ELSMinimapMarkerKind::Unit;
+	Vision->bTriggersEnemyDiscovery = true;
+	Vision->bProvidesSight = true;
 	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
 	BasicAttack->SetAutoAttackOnBeginPlay(false);
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
@@ -68,6 +73,10 @@ void ALSUnit::BeginPlay()
 		AttackSettings.Range = Stats.AttackRange;
 		BasicAttack->ConfigureAttack(AttackSettings);
 		GetCharacterMovement()->MaxWalkSpeed = Stats.MovementSpeed;
+	}
+	if (IsStatsInitialized())
+	{
+		Vision->SetSightRadius(Stats.VisionRadius);
 	}
 	Super::BeginPlay();
 }
@@ -177,6 +186,7 @@ void ALSUnit::NeutralizeCombat()
 
 void ALSUnit::PrepareForDeath()
 {
+	Vision->NotifyCombatDeath();
 	NeutralizeCombat();
 	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 	{

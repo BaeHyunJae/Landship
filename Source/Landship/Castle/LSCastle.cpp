@@ -1,4 +1,5 @@
 #include "Castle/LSCastle.h"
+#include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -26,6 +27,10 @@ ALSCastle::ALSCastle()
 	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
 	Selection->Kind = ELSSelectionKind::Castle;
 	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	Vision = CreateDefaultSubobject<ULSVisionParticipantComponent>(TEXT("Vision"));
+	Vision->MarkerKind = ELSMinimapMarkerKind::Castle;
+	Vision->bTriggersEnemyDiscovery = true;
+	Vision->bProvidesSight = true;
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	SetRootComponent(Collision);
@@ -63,6 +68,10 @@ void ALSCastle::BeginPlay()
 	Selection->SetPlayerControlled(GetFaction() == ELSFaction::Ally);
 	Movement->MaxSpeed =
 	    Health->GetInitializationState() == ELSHealthInitializationState::Ready ? Stats.MovementSpeed : 0.0f;
+	if (IsStatsInitialized())
+	{
+		Vision->SetSightRadius(Stats.VisionRadius);
+	}
 	Super::BeginPlay();
 }
 
@@ -160,6 +169,7 @@ void ALSCastle::NeutralizeCombat()
 
 void ALSCastle::PrepareForDeath()
 {
+	Vision->NotifyCombatDeath();
 	NeutralizeCombat();
 }
 

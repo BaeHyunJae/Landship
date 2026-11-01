@@ -1,4 +1,5 @@
 #include "Controls/LSOrderComponent.h"
+#include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
@@ -362,7 +363,8 @@ bool ULSOrderComponent::IsMoving() const
 
 bool ULSOrderComponent::IsHostile(AActor* Target) const
 {
-	return ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Target);
+	return ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Target) &&
+		   ULSVisionSubsystem::PassesFriendlySight(GetOwner(), Target);
 }
 
 bool ULSOrderComponent::IsInAttackRange(AActor* Target) const

@@ -1,4 +1,5 @@
 #include "Enemies/LSOutpost.h"
+#include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -20,6 +21,9 @@ ALSOutpost::ALSOutpost()
 	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
 	Selection->Kind = ELSSelectionKind::Building;
 	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	Vision = CreateDefaultSubobject<ULSVisionParticipantComponent>(TEXT("Vision"));
+	Vision->MarkerKind = ELSMinimapMarkerKind::Building;
+	Vision->bTriggersEnemyDiscovery = true;
 	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
 	BasicAttack->SetAutoAttackOnBeginPlay(false);
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
@@ -157,6 +161,7 @@ void ALSOutpost::PrepareForDeath()
 		}
 		CaptureTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &ALSOutpost::BroadcastCapture);
 	}
+	Vision->NotifyCombatDeath();
 	NeutralizeCombat();
 }
 
