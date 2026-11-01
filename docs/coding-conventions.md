@@ -1,6 +1,6 @@
 # Landship 코딩 규칙
 
-[Epic C++ 코딩 표준](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine)을 기본으로 따른다. 이 문서에는 표준이 정해 주지 않아 팀이 따로 정한 것만 적는다. 폴더 구조와 담당은 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)를 따른다.
+[Epic C++ 코딩 표준](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine)을 기본으로 따른다. 이 문서에는 표준이 정해 주지 않아 팀이 따로 정한 것만 적는다. 폴더 구조와 담당은 [`CONTRIBUTING.md`](../CONTRIBUTING.md)를 따른다.
 
 ## 이름
 
