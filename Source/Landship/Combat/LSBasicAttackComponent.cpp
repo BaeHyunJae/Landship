@@ -119,10 +119,19 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 	return Nearest;
 }
 
+void ULSBasicAttackComponent::SetAttackTargetResolver(FLSResolveAttackTarget ResolverEvent)
+{
+	AttackTargetResolverEvent = MoveTemp(ResolverEvent);
+}
+
 void ULSBasicAttackComponent::UpdateAttack()
 {
-	if (bAutoSearching && IsActive() && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() &&
-	    ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
+	if (bResolvingAttack)
+	{
+		return;
+	}
+	if (!AttackTargetResolverEvent.IsBound() && bAutoSearching && IsActive() && IsValid(GetOwner()) &&
+	    !GetOwner()->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
 		// 현재 교전이 유효하면 더 가까운 적이 나타나도 타격 대상을 유지한다.
 		if (!IsValidCombatPair(AttackTarget.Get()) ||
@@ -135,29 +144,63 @@ void ULSBasicAttackComponent::UpdateAttack()
 			return;
 		}
 	}
-	AActor* Target = AttackTarget.Get();
-	if (!IsActive() || !bConfigured || !IsValidCombatPair(Target))
+	if (!IsActive() || !bConfigured || !ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
 		StopAttack();
 		return;
 	}
-	if (bResolvingAttack || GetCooldownRemaining() > 0.0f ||
+	TGuardValue<bool> ResolvingGuard(bResolvingAttack, true);
+	if (AttackTargetResolverEvent.IsBound())
+	{
+		if (GetCooldownRemaining() > 0.0f)
+		{
+			return;
+		}
+		const uint64 Revision = StopRevision;
+		// 콜백이 자기 바인딩을 바꾸어도 실행 중인 델리게이트는 유지한다.
+		const FLSResolveAttackTarget ResolverEvent = AttackTargetResolverEvent;
+		AActor* ResolvedTarget = ResolverEvent.Execute();
+		if (!IsValid(this) || Revision != StopRevision || !IsActive() || !GetWorld() ||
+		    GetWorld()->bIsTearingDown || !IsValidCombatPair(ResolvedTarget))
+		{
+			return;
+		}
+		AttackTarget = ResolvedTarget;
+	}
+	AActor* Target = AttackTarget.Get();
+	if (!IsValidCombatPair(Target))
+	{
+		StopAttack();
+		return;
+	}
+	if (GetCooldownRemaining() > 0.0f ||
 	    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) > Settings.Range)
 	{
 		return;
 	}
-	// 피해 처리나 알림에서 다시 명령을 내려도 같은 시점에 중복 공격할 수 없게 한다.
-	TGuardValue<bool> ResolvingGuard(bResolvingAttack, true);
 	NextAttackTime = GetWorld()->GetTimeSeconds() + Settings.Interval;
-	if (ProjectileSettings.ProjectileClass)
+	FLSAttackExecution Execution;
+	Execution.Source = GetOwner();
+	Execution.Target = Target;
+	Execution.SourceLocation = GetOwner()->GetActorLocation();
+	Execution.TargetLocation = Target->GetActorLocation();
+	Execution.bProjectile = ProjectileSettings.ProjectileClass != nullptr;
+	if (Execution.bProjectile)
 	{
-		FireProjectile(Target);
+		FireProjectile(Target, Execution);
 		return;
 	}
 	ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
 	if (!Health)
 	{
 		StopAttack();
+		return;
+	}
+	Execution.ExecutionId = ++LastExecutionId;
+	OnAttackExecutedEvent.Broadcast(Execution);
+	// 알림에서 액터를 제거할 수 있으므로 확정된 시도라도 피해 적용 전 다시 검증한다.
+	if (!IsValid(this) || !GetWorld() || GetWorld()->bIsTearingDown || !IsValidCombatPair(Target) || !IsValid(Health))
+	{
 		return;
 	}
 	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), GetOwner());
@@ -168,7 +211,6 @@ void ULSBasicAttackComponent::UpdateAttack()
 		OnAttackPerformed.Broadcast(Target, AppliedDamage);
 	}
 }
-
 float ULSBasicAttackComponent::GetCooldownRemaining() const
 {
 	return GetWorld() ? static_cast<float>(FMath::Max(0.0, NextAttackTime - GetWorld()->GetTimeSeconds())) : 0.0f;
@@ -176,6 +218,7 @@ float ULSBasicAttackComponent::GetCooldownRemaining() const
 
 void ULSBasicAttackComponent::StopAttack()
 {
+	++StopRevision;
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(AttackTimer);
@@ -187,6 +230,7 @@ void ULSBasicAttackComponent::StopAttack()
 void ULSBasicAttackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopAttack();
+	AttackTargetResolverEvent.Unbind();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -210,7 +254,7 @@ bool ULSBasicAttackComponent::ConfigureProjectile(const FLSProjectileAttackSetti
 	return true;
 }
 
-void ULSBasicAttackComponent::FireProjectile(AActor* Target)
+void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExecution& Execution)
 {
 	if (!GetWorld() || GetWorld()->bIsTearingDown)
 	{
@@ -239,7 +283,14 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target)
 	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
 	    !GetWorld()->bIsTearingDown && IsValid(Projectile))
 	{
-		OnProjectileLaunched.Broadcast(Projectile);
+		FLSAttackExecution LaunchedExecution = Execution;
+		LaunchedExecution.ExecutionId = ++LastExecutionId;
+		OnAttackExecutedEvent.Broadcast(LaunchedExecution);
+		if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
+		    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+		{
+			OnProjectileLaunched.Broadcast(Projectile);
+		}
 	}
 }
 

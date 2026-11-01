@@ -93,6 +93,19 @@ bool ULSOrderComponent::ResolveDestination(const FVector& Goal, FVector& OutDest
 	return true;
 }
 
+bool ULSOrderComponent::GetNavigationOriginHeight(double& OutHeight) const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	FNavLocation ProjectedHere;
+	if (!Pawn || !Nav || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), ProjectedHere,
+	                                                 FVector(150, 150, 300)))
+		return false;
+	// 경로의 바닥 좌표에서 실제 원점 위치를 예측한다.
+	OutHeight = Pawn->GetActorLocation().Z - ProjectedHere.Location.Z;
+	return true;
+}
+
 bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 {
 	switch (Kind)
@@ -232,14 +245,25 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementCompleted = false;
 	FAIMoveRequest Request(Goal);
-	Request.SetAcceptanceRadius(bAttackApproach && Attack
-	                                ? FMath::Min(ArrivalTolerance, Attack->GetAttackSettings().Range * 0.1f)
-	                                : ArrivalTolerance);
+	float AcceptanceRadius = ArrivalTolerance;
 	if (bAttackApproach)
+	{
+		double OriginHeight;
+		if (!Attack || !EngagedTarget.IsValid() || !GetNavigationOriginHeight(OriginHeight))
+			return false;
+		const double RemainingRange = Attack->GetAttackSettings().Range -
+		    ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), EngagedTarget.Get(),
+		                                                     Goal + FVector(0, 0, OriginHeight)) - 1.0;
+		if (RemainingRange <= 0)
+			return false;
+		AcceptanceRadius = FMath::Min(ArrivalTolerance, static_cast<float>(RemainingRange));
 		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetReachTestIncludesGoalRadius(false);
+	}
+	Request.SetAcceptanceRadius(AcceptanceRadius);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(false);
-	Request.SetProjectGoalLocation(true);
+	Request.SetProjectGoalLocation(!bAttackApproach);
 	const FPathFollowingRequestResult Result = Controller->MoveTo(Request);
 	MovementRequestId = Result.MoveId;
 	if (Result.Code != EPathFollowingRequestResult::RequestSuccessful)
@@ -335,7 +359,10 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
 	Target->GetSimpleCollisionCylinder(TargetRadius, TargetHeight);
 	const APawn* Pawn = CastChecked<APawn>(GetOwner());
-	const FVector CenterOffset = GetOwner()->GetActorLocation() - Pawn->GetNavAgentLocation();
+	double OriginHeight;
+	if (!GetNavigationOriginHeight(OriginHeight))
+		return false;
+	const FVector CenterOffset(0, 0, OriginHeight);
 	FVector Direction = (GetOwner()->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
 	if (Direction.IsNearlyZero())
 		Direction = FVector::ForwardVector;
@@ -345,11 +372,12 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSAttackApproach), false, GetOwner());
 	Query.AddIgnoredActor(Target);
-	FVector OccupiedFallback;
+	FVector OccupiedFallback = FVector::ZeroVector;
 	bool bHasFallback = false;
 	// 가까운 측면부터 검사해 대상 중심이 장애물 안에 있어도 접근 지점을 선택한다.
-	for (float Angle : {0.0f, 45.0f, -45.0f, 90.0f, -90.0f, 135.0f, -135.0f, 180.0f})
+	for (int32 Index = 0; Index < 17; ++Index)
 	{
+		const float Angle = Index == 0 ? 0.0f : (Index % 2 ? 1.0f : -1.0f) * ((Index + 1) / 2) * 22.5f;
 		FVector Goal = Target->GetActorLocation() + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Distance;
 		Goal.Z = Pawn->GetNavAgentLocation().Z;
 		FVector Projected;

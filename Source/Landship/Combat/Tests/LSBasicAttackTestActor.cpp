@@ -66,3 +66,23 @@ void ALSBasicAttackTestActor::ObserveAttack(AActor* Target, float AppliedDamage)
 		bReentrantAccepted |= Attack->StartAttack(Target);
 	}
 }
+
+void ALSBasicAttackTestActor::ObserveExecution(const FLSAttackExecution& Execution)
+{
+	Executions.Add(Execution);
+	ALSBasicAttackTestActor* Target = Cast<ALSBasicAttackTestActor>(Execution.Target.Get());
+	HealthAtExecution = Target ? Target->GetCurrentHealth() : -1.0f;
+	if (bReenterOnExecution)
+	{
+		bReentrantAccepted |= Attack->StartAttack(Target);
+		bReentrantAccepted |= Attack->StartAutoAttack();
+	}
+	if (bDestroyTargetOnExecution && Target)
+	{
+		Target->Destroy();
+	}
+	if (bDestroySourceOnExecution)
+	{
+		Destroy();
+	}
+}

@@ -130,7 +130,8 @@ void ALSHMHCombatOrdersProbe::Tick(float DeltaSeconds)
 	else if (Stage == 1 && Hits[0] > 0 && Hits[1] > 0 && Hits[2] > 0)
 	{
 		Check(true, TEXT("창병·궁병·기병 모두 같은 대상을 실제 타격"));
-		Check(ULSCombatTargetLibrary::GetAttackDistance(Army[0], TargetCastle) <= 150,
+		Check(ULSCombatTargetLibrary::GetAttackDistance(Army[0], TargetCastle) <=
+		          Army[0]->BasicAttack->GetAttackSettings().Range,
 		      TEXT("큰 대상 외곽에서 근접 교전"));
 		GetWorld()->GetFirstPlayerController()->ConsoleCommand(TEXT("HighResShot 1600x900"));
 		for (int32& Hit : Hits)

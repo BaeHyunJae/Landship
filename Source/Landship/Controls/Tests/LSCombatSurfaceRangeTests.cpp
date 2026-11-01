@@ -24,6 +24,9 @@ bool FLSCombatSurfaceRangeTest::RunTest(const FString& Parameters)
 	if (!Fixture.BeginPlayInTestWorld())
 		return false;
 	Source->Orders->SetComponentTickEnabled(false);
+	FLSBasicAttackSettings Settings = Source->BasicAttack->GetAttackSettings();
+	Settings.Range = 150;
+	TestTrue(TEXT("경계 검사용 사거리 고정"), Source->BasicAttack->ConfigureAttack(Settings));
 	Target->Orders->SetComponentTickEnabled(false);
 	Source->GetCharacterMovement()->SetComponentTickEnabled(false);
 	Target->GetCharacterMovement()->SetComponentTickEnabled(false);

@@ -37,6 +37,28 @@ struct LANDSHIP_API FLSBasicAttackSettings
 	float Range = 0.0f;
 };
 
+/** 피해 결과가 아닌 공격 확정 시점의 기록이다. 참조는 소비 시 다시 검증해야 한다. */
+USTRUCT(BlueprintType)
+struct LANDSHIP_API FLSAttackExecution
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	TWeakObjectPtr<AActor> Source;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	TWeakObjectPtr<AActor> Target;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	FVector SourceLocation = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	FVector TargetLocation = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	uint8 bProjectile : 1 = false;
+	/** 이 공격 컴포넌트 안에서 증가한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	int64 ExecutionId = 0;
+};
+
+DECLARE_DELEGATE_RetVal(AActor*, FLSResolveAttackTarget);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSAttackExecuted, const FLSAttackExecution&, Execution);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSProjectileLaunched, ALSBasicProjectile*, Projectile);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLSBasicAttackPerformed, AActor*, Target, float, AppliedDamage);
@@ -54,6 +76,8 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 		bAutoAttackOnBeginPlay = bEnabled;
 	}
 	virtual void Deactivate() override;
+	/** 준비된 타격 직전에 대상을 새로 정한다. nullptr은 쿨타임을 소비하지 않는다. 중단해도 바인딩은 유지된다. */
+	void SetAttackTargetResolver(FLSResolveAttackTarget ResolverEvent);
 
 	/** 유효한 설정만 반영한다. 재설정으로 진행 중인 쿨타임을 초기화하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
@@ -101,6 +125,10 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	/** 투사체 발사 알림이다. OnAttackPerformed는 실제 피해가 적용된 명중 시에 발생한다. */
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Attack")
 	FLSProjectileLaunched OnProjectileLaunched;
+	/** 근접 시도는 피해 처리 직전(피해 0 포함), 투사체는 발사 성공 직후 한 번 발생한다.
+	 * 소비자는 후속 작업만 큐에 넣고, 처리할 때 약한 참조와 전투 상태를 다시 검증해야 한다. */
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Attack")
+	FLSAttackExecuted OnAttackExecutedEvent;
 
   protected:
 	virtual void BeginPlay() override;
@@ -108,7 +136,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 
   private:
 	bool IsValidCombatPair(AActor* Target) const;
-	void FireProjectile(AActor* Target);
+	void FireProjectile(AActor* Target, const FLSAttackExecution& Execution);
 	UFUNCTION()
 	void OnProjectileDamage(AActor* Target, float AppliedDamage);
 	void UpdateAttack();
@@ -134,4 +162,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	bool bConfigured = false;
 	bool bResolvingAttack = false;
 	bool bAutoSearching = false;
+	FLSResolveAttackTarget AttackTargetResolverEvent;
+	int64 LastExecutionId = 0;
+	uint64 StopRevision = 0;
 };

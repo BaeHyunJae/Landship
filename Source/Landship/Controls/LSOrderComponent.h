@@ -101,6 +101,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 
   private:
 	bool ResolveDestination(const FVector& Goal, FVector& OutDestination) const;
+	bool GetNavigationOriginHeight(double& OutHeight) const;
 	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination) const;
 	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const;
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);

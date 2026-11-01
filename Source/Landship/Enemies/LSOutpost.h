@@ -5,9 +5,12 @@
 #include "Combat/LSCombatStatRows.h"
 #include "Combat/LSCombatStats.h"
 #include "Combat/LSFactionInterface.h"
+#include "Enemies/LSBattlefieldStateSubsystem.h"
 #include "LSOutpost.generated.h"
 
 class UBoxComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnOutpostCaptured, const FLSOutpostCaptureSnapshot&, Capture);
 
 /** 초기 수치·진영·체력과 사망 처리를 소유한다. 공격 실행은 별도 기능에서 담당한다. */
 UCLASS(Blueprintable)
@@ -31,6 +34,18 @@ class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 	/** 전투 준비가 시작되기 전에 지정한다. C++ 지연 생성에서도 사용할 수 있다. */
 	void SetInitialFaction(ELSFaction InFaction);
 	FString GetCombatConfigurationError() const;
+	UFUNCTION(BlueprintPure, Category = "Landship|Outpost")
+	bool HasBeenCaptured() const { return bCaptured; }
+	UFUNCTION(BlueprintPure, Category = "Landship|Outpost")
+	bool IsArmed() const { return bArmed; }
+	UFUNCTION(BlueprintPure, Category = "Landship|Outpost")
+	float GetDefenseRadius() const { return DefenseRadius; }
+	UFUNCTION(BlueprintPure, Category = "Landship|Outpost")
+	bool TryGetCapture(FLSOutpostCaptureSnapshot& Out) const;
+
+	/** 체력 0 사실과 필수 정리가 확정된 뒤 한 번 발생한다. 제거 후 핵심 함락은 월드 조회를 쓴다. */
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Outpost")
+	FLSOnOutpostCaptured OnOutpostCapturedEvent;
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* InProperty) const override;
@@ -59,6 +74,13 @@ class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/** 피해량 0과 무장 없음을 구분한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Outpost")
+	uint8 bArmed : 1 = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Outpost", meta = (ClampMin = "0", Units = "cm"))
+	float DefenseRadius = 1200.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSHealthComponent> Health;
@@ -75,6 +97,10 @@ class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 	/** 실패 시 실행만 차단하며 사망 알림·랙돌·제거를 수행하지 않는다. */
 	void NeutralizeCombat();
 	void PrepareForDeath();
+	void BroadcastCapture();
+	FLSOutpostCaptureSnapshot Capture;
+	FTimerHandle CaptureTimer;
+	bool bCaptured = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landship|Combat",
 	          meta = (ExposeOnSpawn = "true", AllowPrivateAccess = "true"))

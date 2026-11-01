@@ -10,6 +10,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Misc/DataValidation.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "UObject/UnrealType.h"
 #include "Components/BoxComponent.h"
 #include "Logging/StructuredLog.h"
@@ -62,6 +63,10 @@ void ALSOutpost::BeginPlay()
 		AttackSettings.Range = Stats.AttackRange;
 		BasicAttack->ConfigureAttack(AttackSettings);
 	}
+	if (!bArmed)
+	{
+		BasicAttack->Deactivate();
+	}
 	Super::BeginPlay();
 }
 
@@ -90,6 +95,10 @@ FString ALSOutpost::GetCombatConfigurationError() const
 	if (!LSFaction::IsValid(Faction))
 	{
 		return TEXT("Invalid faction");
+	}
+	if (!FMath::IsFinite(DefenseRadius) || DefenseRadius < 0)
+	{
+		return TEXT("DefenseRadius must be finite and nonnegative");
 	}
 	TInlineComponentArray<ULSHealthComponent*> HealthComponents(this);
 	if (HealthComponents.Num() != 1 || HealthComponents[0] != Health)
@@ -138,8 +147,49 @@ void ALSOutpost::NeutralizeCombat()
 
 void ALSOutpost::PrepareForDeath()
 {
+	// 충돌 정리가 동기 콜백에서 액터를 제거해도 함락 사실은 월드에 남는다.
+	if (!bCaptured)
+	{
+		bCaptured = true;
+		Capture.Outpost = this;
+		Capture.OutpostName = GetFName();
+		Capture.Location = GetActorLocation();
+		if (ULSBattlefieldStateSubsystem* State = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>())
+		{
+			Capture.bIsCoreOutpost = State->GetCoreOutpost() == this;
+			State->RecordOutpostCaptured(this);
+		}
+		CaptureTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &ALSOutpost::BroadcastCapture);
+	}
 	Vision->NotifyCombatDeath();
 	NeutralizeCombat();
+}
+
+bool ALSOutpost::TryGetCapture(FLSOutpostCaptureSnapshot& Out) const
+{
+	if (!bCaptured)
+	{
+		return false;
+	}
+	Out = Capture;
+	return true;
+}
+
+void ALSOutpost::BroadcastCapture()
+{
+	if (IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown)
+	{
+		OnOutpostCapturedEvent.Broadcast(Capture);
+	}
+}
+
+void ALSOutpost::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CaptureTimer);
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 #if WITH_EDITOR
