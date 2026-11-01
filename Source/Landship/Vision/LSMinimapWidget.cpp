@@ -17,22 +17,13 @@
 FLSBattlefieldHUDLayout FLSBattlefieldHUDLayout::Calculate(FVector2D Viewport, bool bMinimap, float MinimapSide)
 {
 	FLSBattlefieldHUDLayout Result;
-	if (!bMinimap)
-	{
-		Result.Minimap = FBox2D(ForceInit);
-		Result.Info = FBox2D(FVector2D(0, FMath::Max(0.0, Viewport.Y - 125)),
-		                     FVector2D(FMath::Min(340.0, Viewport.X), Viewport.Y));
-		Result.Production =
-		    FBox2D(FVector2D(FMath::Max(0.0, Viewport.X - 360), FMath::Max(0.0, Viewport.Y - 180)), Viewport);
-		return Result;
-	}
 	const float Side = bMinimap ? MinimapSide : 0.0f;
 	Result.Scale = FMath::Max(
-	    0.0, FMath::Min(1.0, FMath::Min(Viewport.X / (Side + 700.0), Viewport.Y / FMath::Max(180.0f, Side))));
+	    0.0, FMath::Min(1.0, FMath::Min(Viewport.X / (Side + 760.0), Viewport.Y / FMath::Max(336.0f, Side))));
 	const float S = Result.Scale;
 	Result.Minimap = FBox2D(FVector2D(0, Viewport.Y - Side * S), FVector2D(Side * S, Viewport.Y));
 	Result.Info = FBox2D(FVector2D(Side * S, Viewport.Y - 125 * S), FVector2D((Side + 340) * S, Viewport.Y));
-	Result.Production = FBox2D(FVector2D(Viewport.X - 360 * S, Viewport.Y - 180 * S), Viewport);
+	Result.CommandCard = FBox2D(FVector2D(Viewport.X - 420 * S, Viewport.Y - 336 * S), Viewport);
 	return Result;
 }
 

@@ -7,6 +7,7 @@
 #include "Castle/LSCastleWeaponComponent.h"
 #include "LSPlayerController.generated.h"
 
+class ULSCommandCardComponent;
 class ALSCastle;
 class ALSMobileCastle;
 
@@ -34,6 +35,8 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	GENERATED_BODY()
   public:
 	ALSPlayerController();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Commands")
+	TObjectPtr<ULSCommandCardComponent> CommandCard;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
 	TObjectPtr<ULSTroopProductionComponent> Production;
 	void ProduceTroop(ELSTroopType Type);

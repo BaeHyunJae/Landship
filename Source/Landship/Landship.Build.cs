@@ -26,6 +26,10 @@ public class Landship : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "UMGEditor", "AssetRegistry" });
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Landship",

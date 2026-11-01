@@ -34,6 +34,8 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	FLSWeaponStateChanged OnWeaponStateChanged;
 	const FLSCastleWeaponSettings* FindSettings(ELSCastleWeapon Weapon) const;
 	float GetRemainingCooldown(ELSCastleWeapon Weapon) const;
+	/** 현재 쿨타임을 시작할 때 확정한 길이. 강화로 진행 막대가 바뀌지 않는다. */
+	float GetCooldownDuration(ELSCastleWeapon Weapon) const;
 	ELSWeaponCastResult GetStatus(ELSCastleWeapon Weapon) const;
 	ELSWeaponCastResult ValidateAim(ELSCastleWeapon Weapon, const FVector& Aim) const;
 	ELSWeaponCastResult CastWeapon(ELSCastleWeapon Weapon, const FVector& Aim);
@@ -52,6 +54,7 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Weapons",
 	          meta = (AllowPrivateAccess = "true"))
 	TMap<ELSCastleWeapon, FLSCastleWeaponState> States;
+	TMap<ELSCastleWeapon, float> CooldownDurations;
 	UPROPERTY(Transient)
 	TMap<ELSCastleWeapon, TObjectPtr<ULSCastleWeaponData>> Definitions;
 	FLSCastleWeaponSettings LastCastSettings;

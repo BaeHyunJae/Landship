@@ -87,6 +87,9 @@ void ALSTroopUnit::RefreshDefinition()
 	StatsRow.DataTable = TroopStatsTable.LoadSynchronous();
 	StatsRow.RowName = GetStatsRowName(TroopType);
 	Selection->SelectionType = StatsRow.RowName;
+	const TCHAR* GroupNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
+	if (static_cast<uint8>(TroopType) < UE_ARRAY_COUNT(GroupNames))
+		Selection->CommandGroupName = FText::FromString(GroupNames[static_cast<uint8>(TroopType)]);
 	UStaticMesh* Shape = nullptr;
 	FVector Scale = FVector::OneVector;
 	switch (TroopType)

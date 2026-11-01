@@ -26,6 +26,7 @@ class LANDSHIP_API ULSTroopProductionComponent : public UActorComponent
 	ELSProductionResult GetStatus(ELSTroopType Type) const;
 	ELSProductionResult Produce(ELSTroopType Type);
 	float GetRemainingCooldown(ELSTroopType Type) const;
+	float GetCooldownSeconds() const { return CooldownSeconds; }
 	ALSTroopUnit* GetLastProducedUnit() const
 	{
 		return LastProducedUnit.Get();
