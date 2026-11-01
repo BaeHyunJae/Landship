@@ -42,10 +42,20 @@ struct LANDSHIP_API FLSHealthSnapshot
 	uint8 bIsDead : 1 = false;
 };
 
+UENUM(BlueprintType)
+enum class ELSDamagePolicy : uint8
+{
+	Standard,
+	EnvironmentalHazard
+};
+
 USTRUCT(BlueprintType)
 struct LANDSHIP_API FLSDamageRequest
 {
 	GENERATED_BODY()
+	/** 환경 위험의 양진영 피해를 일반 공격의 아군 피해 설정과 구분한다. 자기 피해 설정은 유지한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
+	ELSDamagePolicy Policy = ELSDamagePolicy::Standard;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
 	float DamageAmount = 0.0f;

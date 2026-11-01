@@ -1,6 +1,9 @@
 #include "Castle/LSCastleProjectile.h"
 
 #include "Combat/LSCollisionChannels.h"
+#include "Obstacles/LSPathObstacle.h"
+#include "Obstacles/LSObstacleGeometry.h"
+#include "Components/PrimitiveComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthComponent.h"
@@ -22,13 +25,14 @@ ALSCastleProjectile::ALSCastleProjectile()
 }
 
 bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings,
-                                 const FLSDamageRequest& Request, const FVector& Aim)
+                                 const FLSDamageRequest& Request, const FVector& Aim, bool bFirstBlocking)
 {
 	if (bLaunched || (Weapon != ELSCastleWeapon::Cannon && Weapon != ELSCastleWeapon::Shotgun) ||
 	    !ULSCastleWeaponData::AreSettingsValid(Weapon, Settings) || Aim.ContainsNaN() ||
 	    GetActorLocation().ContainsNaN() || !FMath::IsFinite(Request.DamageAmount) || Request.DamageAmount < 0 ||
 	    !Request.bHasSourceFaction || !LSFaction::IsValid(Request.SourceFaction))
 		return false;
+	bHitsFirstBlocking = bFirstBlocking;
 	Kind = Weapon;
 	ShotSettings = Settings;
 	ShotRequest = Request;
@@ -37,7 +41,8 @@ bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSe
 	ShotRequest.DamageCauser = nullptr;
 	LaunchLocation = GetActorLocation();
 	TargetLocation = Aim;
-	const FVector Direction = (Aim - LaunchLocation).GetSafeNormal2D();
+	const FVector Direction = bHitsFirstBlocking ? (Aim - LaunchLocation).GetSafeNormal()
+	                                            : (Aim - LaunchLocation).GetSafeNormal2D();
 	if (Weapon == ELSCastleWeapon::Shotgun && Direction.IsNearlyZero())
 		return false;
 	FlightTime =
@@ -94,6 +99,16 @@ bool ALSCastleProjectile::IsEnemy(AActor* Target) const
 
 bool ALSCastleProjectile::FindPelletHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
 {
+	if (bHitsFirstBlocking)
+	{
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(LSObstaclePellet), false, this);
+		Query.bFindInitialOverlaps = true;
+		if (Source.IsValid())
+			Query.AddIgnoredActor(Source.Get());
+		return GetWorld()->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity,
+		    LSCollisionChannels::ObstacleProjectile, FCollisionShape::MakeSphere(ShotSettings.PelletRadius), Query) &&
+		    (OutHit.bBlockingHit || OutHit.bStartPenetrating) && IsValid(OutHit.GetComponent());
+	}
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
@@ -156,8 +171,17 @@ void ALSCastleProjectile::Detonate()
 	SetActorTickEnabled(false);
 	TArray<TWeakObjectPtr<AActor>> Targets;
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
-		if (IsEnemy(*It) && FVector::Dist2D(It->GetActorLocation(), TargetLocation) <= ShotSettings.Radius)
+	{
+		if (!IsEnemy(*It))
+			continue;
+		double Distance = FVector::Dist2D(It->GetActorLocation(), TargetLocation);
+		if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(*It))
+		{
+			Distance = LSObstacleGeometry::GetPlanarBodyDistance(Obstacle->GetObstacleBody(), TargetLocation);
+		}
+		if (Distance <= ShotSettings.Radius)
 			Targets.Add(*It);
+	}
 	for (const TWeakObjectPtr<AActor>& Target : Targets)
 	{
 		if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
@@ -202,7 +226,8 @@ void ALSCastleProjectile::Tick(float DeltaSeconds)
 			ActivePellets[Index] = false;
 			Bullets[Index]->SetVisibility(false);
 			ApplyHit(Hit.GetActor(), ShotSettings.Damage / ShotSettings.PelletCount,
-			         (Hit.GetActor()->GetActorLocation() - LaunchLocation).GetSafeNormal2D(), true);
+			         bHitsFirstBlocking ? Directions[Index].GetSafeNormal2D()
+			                          : (Hit.GetActor()->GetActorLocation() - LaunchLocation).GetSafeNormal2D(), true);
 			if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 				return;
 		}

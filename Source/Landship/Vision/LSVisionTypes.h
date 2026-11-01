@@ -27,6 +27,8 @@ struct FLSMinimapMarker
 	UPROPERTY(BlueprintReadOnly)
 	FVector Location = FVector::ZeroVector;
 	UPROPERTY(BlueprintReadOnly)
+	float ExplosionRadius = 0.0f;
+	UPROPERTY(BlueprintReadOnly)
 	ELSMinimapMarkerKind Kind = ELSMinimapMarkerKind::Unit;
 	UPROPERTY(BlueprintReadOnly)
 	uint8 bFriendly : 1 = false;

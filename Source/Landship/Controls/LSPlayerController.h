@@ -9,6 +9,8 @@
 
 class ULSCommandCardComponent;
 class ALSCastle;
+class ALSMine;
+class ALSPathObstacle;
 class ALSMobileCastle;
 
 USTRUCT()
@@ -91,6 +93,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	virtual void SetupInputComponent() override;
 
   private:
+	friend class ALSObstacleReviewRuntimeProbe;
 	UFUNCTION()
 	void PruneSelection();
 	void OnSelectPressed();
@@ -101,7 +104,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	UFUNCTION()
 	void OnAimedWeaponStateChanged(ELSCastleWeapon Weapon, const FLSCastleWeaponState& State);
 	bool IsShiftDown() const;
-	bool HitWorld(FHitResult& Hit) const;
+	bool HitWorld(FHitResult& Hit, bool bNormalRightClick = false) const;
 	void ZoomCamera(float Value);
 	bool CanUseWorldInput(bool bAllowHUD = false, bool bKeyboard = false) const;
 
@@ -124,12 +127,14 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	ELSCastleWeapon PendingWeapon = ELSCastleWeapon::Cannon;
 	ELSWeaponCastResult LastWeaponResult = ELSWeaponCastResult::Ready;
 	TWeakObjectPtr<ALSMobileCastle> AimingCastle;
+	mutable TWeakObjectPtr<ALSPathObstacle> AimedObstacle;
 	ELSProductionResult LastProductionResult = ELSProductionResult::Ready;
 	int32 LastGroup = INDEX_NONE;
 	double LastGroupTime = -1;
 	FVector OrderMarkerLocation = FVector::ZeroVector;
 	FLinearColor OrderMarkerColor = FLinearColor::Green;
 	double OrderMarkerExpiresAt = -1;
+	TWeakObjectPtr<ALSMine> HoveredMine;
 	TWeakObjectPtr<AActor> AttackCommandTarget;
 	double AttackCommandMarkerExpiresAt = -1;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0"))

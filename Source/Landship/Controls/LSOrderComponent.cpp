@@ -1,5 +1,11 @@
 #include "Controls/LSOrderComponent.h"
 #include "Match/LSBattleOutcomePolicy.h"
+#include "Obstacles/LSMine.h"
+#include "Obstacles/LSPathObstacle.h"
+#include "Obstacles/LSObstacleGeometry.h"
+#include "Navigation/LSMineAvoidance.h"
+#include "Navigation/LSMineAwareMovementComponent.h"
+#include "Combat/LSHealthComponent.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -27,6 +33,11 @@ ULSOrderComponent::ULSOrderComponent()
 void ULSOrderComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (ULSHealthComponent* Health = GetOwner()->FindComponentByClass<ULSHealthComponent>())
+	{
+		Health->OnDamagedEvent.AddDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+		Health->OnDiedEvent.AddDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+	}
 	Attack = GetOwner()->FindComponentByClass<ULSBasicAttackComponent>();
 	if (Attack)
 	{
@@ -41,6 +52,9 @@ void ULSOrderComponent::EndBattleActions()
 	bKnockbackActive = false;
 	if (bBattleActionsEnded) return;
 	bBattleActionsEnded = true;
+	CancelDisarm();
+	bMineBlocked = false;
+	SetMineAvoidance(false);
 	PendingOrders.Reset();
 	ActiveOrder = FLSOrder();
 	EngagedTarget.Reset();
@@ -62,7 +76,8 @@ bool ULSOrderComponent::CanAttack() const
 
 bool ULSOrderComponent::CanMove() const
 {
-	if (!ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()) ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
 	{
 		return false;
 	}
@@ -128,6 +143,11 @@ bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 {
 	switch (Kind)
 	{
+	case ELSOrderKind::Disarm:
+	{
+		const ULSSelectableComponent* Selection = GetOwner()->FindComponentByClass<ULSSelectableComponent>();
+		return Selection && Selection->Kind == ELSSelectionKind::Unit && Cast<ALSUnit>(GetOwner()) && CanMove();
+	}
 	case ELSOrderKind::Move:
 		return CanMove();
 	case ELSOrderKind::AttackMove:
@@ -163,7 +183,7 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 	{
 		FVector TargetDestination;
 		return CanAttack() && IsHostile(Order.Target.Get()) &&
-		       (IsInAttackRange(Order.Target.Get()) || ResolveAttackDestination(Order.Target.Get(), TargetDestination));
+		       (IsInAttackRange(Order.Target.Get()) || ResolveAttackDestination(Order.Target.Get(), TargetDestination, false));
 	}
 	default:
 		return false;
@@ -178,6 +198,19 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 		return false;
 	}
 	LastFailure = ELSOrderFailure::None;
+	if (Order.Kind == ELSOrderKind::Disarm)
+	{
+		ALSMine* Mine = Cast<ALSMine>(Order.Target.Get());
+		FVector Destination;
+		double Length;
+		if (bQueue || !PrepareDisarm(Mine, Destination, Length) || !Mine->TryClaimDisarm(GetOwner()))
+		{
+			LastFailure = ELSOrderFailure::InvalidTarget;
+			return false;
+		}
+		CancelDisarm();
+		return BeginClaimedDisarm(Mine, Destination);
+	}
 	FLSOrder PreparedOrder;
 	if (!HasBegunPlay() || !PrepareOrder(Order, PreparedOrder))
 	{
@@ -188,6 +221,11 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 		                         ? ELSOrderFailure::InvalidTarget
 		                         : ELSOrderFailure::Unreachable);
 		return false;
+	}
+	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
+	{
+		CancelDisarm();
+		bQueue = false;
 	}
 	if (bQueue && ActiveOrder.Kind != ELSOrderKind::Idle && ActiveOrder.Kind != ELSOrderKind::Hold)
 	{
@@ -208,6 +246,7 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
+	bMineBlocked = false;
 	if (bKnockbackActive)
 	{
 		// 공중에서 새 명령을 받아도 강제 이동 자체는 취소하지 않는다.
@@ -229,6 +268,7 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	EngagedTarget.Reset();
 	ActiveOrder = Order;
 	bHasEngagement = false;
+	SetMineAvoidance(UsesMineAvoidance());
 	NextRepathTime = 0;
 	if (Order.Kind == ELSOrderKind::Move || Order.Kind == ELSOrderKind::AttackMove)
 	{
@@ -257,6 +297,7 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 	{
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 	}
+	SetMineAvoidance(UsesMineAvoidance());
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
 	if (!Controller || !Controller->GetPathFollowingComponent())
@@ -287,11 +328,36 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 		Request.SetReachTestIncludesAgentRadius(false);
 		Request.SetReachTestIncludesGoalRadius(false);
 	}
+	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
+	{
+		AcceptanceRadius = 5;
+		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetReachTestIncludesGoalRadius(false);
+	}
 	Request.SetAcceptanceRadius(AcceptanceRadius);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(false);
-	Request.SetProjectGoalLocation(!bAttackApproach);
-	const FPathFollowingRequestResult Result = Controller->MoveTo(Request);
+	Request.SetProjectGoalLocation(!bAttackApproach && ActiveOrder.Kind != ELSOrderKind::Disarm);
+	FPathFollowingRequestResult Result;
+	if (UsesMineAvoidance())
+	{
+		const FLSMineSafePath Safe = LSMineAvoidance::BuildSafePath(Pawn, Goal, LSMineAvoidance::Snapshot(GetWorld()));
+		if (Safe.Result != ELSMinePathResult::SafePath)
+		{
+			if (Safe.Result == ELSMinePathResult::HazardBlocked || Safe.Result == ELSMinePathResult::SearchLimit)
+			{
+				StopForMine();
+				MineBlockedGoal = Goal;
+				bMineBlockedAttackApproach = bAttackApproach;
+				return ActiveOrder.Kind != ELSOrderKind::Disarm;
+			}
+			return false;
+		}
+		bMineBlocked = false;
+		MovementRequestId = Controller->RequestMove(Request, Safe.Path);
+		return MovementRequestId != FAIRequestID::InvalidRequest;
+	}
+	Result = Controller->MoveTo(Request);
 	MovementRequestId = Result.MoveId;
 	if (Result.Code != EPathFollowingRequestResult::RequestSuccessful)
 	{
@@ -309,6 +375,8 @@ bool ULSOrderComponent::ApplyKnockback(const FVector& Velocity)
 	if (!HasBegunPlay() || !IsValid(Character) || Character->IsActorBeingDestroyed() || Velocity.ContainsNaN() ||
 	    !ULSCombatTargetLibrary::IsCombatAlive(Character) || !GetWorld() || GetWorld()->bIsTearingDown)
 		return false;
+	CancelDisarm();
+	SetMineAvoidance(false);
 	StopMovement();
 	if (Attack)
 		Attack->StopAttack();
@@ -333,6 +401,17 @@ void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFo
 	if (MovementRequestId == FAIRequestID::InvalidRequest || RequestId != MovementRequestId)
 	{
 		return;
+	}
+	if (!Result.IsSuccess() && UsesMineAvoidance())
+	{
+		const ACharacter* Character = Cast<ACharacter>(GetOwner());
+		const ULSMineAwareMovementComponent* Movement = Character ? Cast<ULSMineAwareMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+		if (Movement && Movement->GetMineConstraintDuration() >= RepathInterval)
+		{
+			if (ActiveOrder.Kind == ELSOrderKind::Disarm) CancelDisarm();
+			else StopForMine();
+			return;
+		}
 	}
 	bMovementCompleted = true;
 	bLastMovementSucceeded = Result.IsSuccess();
@@ -383,8 +462,10 @@ bool ULSOrderComponent::IsInAttackRange(AActor* Target) const
 	       ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Component->GetAttackSettings().Range;
 }
 
-bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDestination) const
+bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDestination, bool bAvoidMines,
+                                                bool* OutMineBlocked) const
 {
+	if (OutMineBlocked) *OutMineBlocked = false;
 	if (!IsHostile(Target) || !Attack || !CanMove())
 		return false;
 	float Radius, Height, TargetRadius, TargetHeight;
@@ -406,14 +487,33 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	Query.AddIgnoredActor(Target);
 	FVector OccupiedFallback = FVector::ZeroVector;
 	bool bHasFallback = false;
-	// 가까운 측면부터 검사해 대상 중심이 장애물 안에 있어도 접근 지점을 선택한다.
-	for (int32 Index = 0; Index < 17; ++Index)
+	TArray<FVector> Candidates;
+	if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Target))
 	{
-		const float Angle = Index == 0 ? 0.0f : (Index % 2 ? 1.0f : -1.0f) * ((Index + 1) / 2) * 22.5f;
-		FVector Goal = Target->GetActorLocation() + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Distance;
+		Candidates = LSObstacleGeometry::GetAttackApproachCandidates(GetOwner(), Obstacle, Attack->GetAttackSettings().Range);
+	}
+	else
+	{
+		for (int32 Index = 0; Index < 17; ++Index)
+		{
+			const float Angle = Index == 0 ? 0.0f : (Index % 2 ? 1.0f : -1.0f) * ((Index + 1) / 2) * 22.5f;
+			Candidates.Add(Target->GetActorLocation() + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Distance);
+		}
+	}
+	for (FVector Goal : Candidates)
+	{
 		Goal.Z = Pawn->GetNavAgentLocation().Z;
 		FVector Projected;
-		if (ResolveDestination(Goal, Projected) &&
+		bool bResolved = false;
+		if (bAvoidMines)
+		{
+			const FLSMineSafePath Safe = LSMineAvoidance::BuildSafePath(const_cast<APawn*>(Pawn), Goal, LSMineAvoidance::Snapshot(GetWorld()));
+			if (OutMineBlocked) *OutMineBlocked |= Safe.Result == ELSMinePathResult::HazardBlocked || Safe.Result == ELSMinePathResult::SearchLimit;
+			bResolved = Safe.Result == ELSMinePathResult::SafePath;
+			Projected = Safe.Destination;
+		}
+		else bResolved = ResolveDestination(Goal, Projected);
+		if (bResolved &&
 		    ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), Target, Projected + CenterOffset) <=
 		        Attack->GetAttackSettings().Range)
 		{
@@ -467,7 +567,8 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 	for (const FOverlapResult& Hit : Hits)
 	{
 		AActor* Candidate = Hit.GetActor();
-		if (!IsHostile(Candidate))
+		const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Candidate);
+		if (!IsHostile(Candidate) || (Obstacle && !Obstacle->CanBeAutomaticallyAcquired()))
 		{
 			continue;
 		}
@@ -497,6 +598,7 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 	}
 	EngagedTarget = Target;
 	bHasEngagement = true;
+	SetMineAvoidance(UsesMineAvoidance());
 	if (IsInAttackRange(Target))
 	{
 		StopMovement();
@@ -515,8 +617,14 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 		{
 			NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
 			FVector Destination;
-			if (!ResolveAttackDestination(Target, Destination) || !MoveTo(Destination, true))
+			bool bAttackPathMineBlocked = false;
+			if (!ResolveAttackDestination(Target, Destination, UsesMineAvoidance(), &bAttackPathMineBlocked) || !MoveTo(Destination, true))
 			{
+				if (UsesMineAvoidance() && bAttackPathMineBlocked)
+				{
+					StopForMine();
+					return;
+				}
 				LastFailure = ELSOrderFailure::Unreachable;
 				EngagedTarget.Reset();
 				FinishOrder();
@@ -579,6 +687,66 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		const FLSOrder ResumeOrder = ActiveOrder;
 		BeginOrder(ResumeOrder);
 	}
+	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
+	{
+		TickDisarm(DeltaTime);
+		return;
+	}
+	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		const ULSMineAwareMovementComponent* Movement = Cast<ULSMineAwareMovementComponent>(Character->GetCharacterMovement());
+		if (UsesMineAvoidance() && Movement && Movement->GetMineConstraintDuration() >= RepathInterval && !bMineBlocked)
+		{
+			StopForMine();
+		}
+	}
+	if (bMineBlocked && bMineBlockedAttackApproach)
+	{
+		AActor* BlockedTarget = EngagedTarget.Get();
+		if (!IsHostile(BlockedTarget) ||
+		    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), BlockedTarget) > GetDetectionRange())
+		{
+			bMineBlocked = false;
+			StopMovement();
+			EngagedTarget.Reset();
+			bHasEngagement = false;
+			if (Attack) Attack->StopAttack();
+		}
+		else
+		{
+			AActor* StationaryTarget = IsInAttackRange(BlockedTarget) ? BlockedTarget :
+			    (CanAttack() ? FindEnemy(Attack->GetAttackSettings().Range) : nullptr);
+			if (StationaryTarget)
+			{
+				if (Attack && Attack->GetAttackTarget() != StationaryTarget) Attack->StartAttack(StationaryTarget);
+				return;
+			}
+			if (Attack) Attack->StopAttack();
+		}
+	}
+	if (bMineBlocked)
+	{
+		if (GetWorld()->GetTimeSeconds() >= NextRepathTime)
+		{
+			NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
+			if (bMineBlockedAttackApproach)
+			{
+				if (!IsHostile(EngagedTarget.Get()))
+				{
+					bMineBlocked = false;
+				}
+				else
+				{
+					FVector Destination;
+					bool bAttackPathMineBlocked = false;
+					if (ResolveAttackDestination(EngagedTarget.Get(), Destination, true, &bAttackPathMineBlocked)) MoveTo(Destination, true);
+					else if (!bAttackPathMineBlocked) { bMineBlocked = false; FinishOrder(); }
+				}
+			}
+			else if (!MoveTo(MineBlockedGoal, false)) { bMineBlocked = false; FinishOrder(); }
+		}
+		if (bMineBlocked) return;
+	}
 	if (ActiveOrder.Kind == ELSOrderKind::Move)
 	{
 		if (bMovementCompleted)
@@ -637,6 +805,12 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 
 void ULSOrderComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+	CancelDisarm();
+	if (ULSHealthComponent* Health = GetOwner()->FindComponentByClass<ULSHealthComponent>())
+	{
+		Health->OnDamagedEvent.RemoveDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+		Health->OnDiedEvent.RemoveDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+	}
 	PendingOrders.Reset();
 	if (const APawn* Pawn = Cast<APawn>(GetOwner()))
 	{
@@ -677,4 +851,125 @@ TArray<FVector> ULSOrderComponent::MakeFormation(const FVector& Center, int32 Co
 		Point += Center - Mean;
 	}
 	return Points;
+}
+
+
+bool ULSOrderComponent::IsDisarmTargetValid(ALSMine* Mine) const
+{
+	return IsValid(Mine) && Mine->IsArmed() && !Mine->IsActorBeingDestroyed() &&
+	       ULSCombatTargetLibrary::IsCombatAlive(Mine) && ULSVisionSubsystem::PassesFriendlySight(GetOwner(), Mine);
+}
+
+bool ULSOrderComponent::PrepareDisarm(ALSMine* Mine, FVector& Destination, double& Length) const
+{
+	const ULSSelectableComponent* Selection = GetOwner()->FindComponentByClass<ULSSelectableComponent>();
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()) ||
+	    !HasBegunPlay() || !Selection || !Selection->CanPlayerControl() || Selection->Kind != ELSSelectionKind::Unit || !Cast<ALSUnit>(GetOwner()) ||
+	    !CanMove() || bKnockbackActive || !IsDisarmTargetValid(Mine) || Mine->HasDisarmWorker())
+		return false;
+	const FLSMineSafePath Path = LSMineAvoidance::FindDisarmPath(Cast<APawn>(GetOwner()), Mine);
+	if (Path.Result != ELSMinePathResult::SafePath) return false;
+	Destination = Path.Destination;
+	Length = Path.Length;
+	return true;
+}
+
+bool ULSOrderComponent::BeginClaimedDisarm(ALSMine* Mine, const FVector& Destination)
+{
+	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()) ||
+	    !IsDisarmTargetValid(Mine) || !CanMove())
+	{
+		if (IsValid(Mine)) Mine->ReleaseDisarm(GetOwner());
+		return false;
+	}
+	PendingOrders.Reset();
+	DisarmMine = Mine;
+	DisarmElapsed = 0;
+	bDisarmWorking = false;
+	FLSOrder Order;
+	Order.Kind = ELSOrderKind::Disarm;
+	Order.Target = Mine;
+	Order.Destination = Destination;
+	BeginOrder(Order);
+	if (!MoveTo(Destination))
+	{
+		CancelDisarm();
+		return false;
+	}
+	return true;
+}
+
+void ULSOrderComponent::CancelDisarm()
+{
+	if (ALSMine* Mine = DisarmMine.Get()) Mine->ReleaseDisarm(GetOwner());
+	DisarmMine.Reset();
+	DisarmElapsed = 0;
+	bDisarmWorking = false;
+	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
+	{
+		PendingOrders.Reset();
+		FLSOrder Hold;
+		Hold.Kind = ELSOrderKind::Hold;
+		BeginOrder(Hold);
+	}
+}
+
+void ULSOrderComponent::OnOwnerDamaged(const FLSDamageResult& Damage)
+{
+	if (Damage.AppliedDamage > 0) CancelDisarm();
+}
+
+void ULSOrderComponent::TickDisarm(float DeltaTime)
+{
+	ALSMine* Mine = DisarmMine.Get();
+	if (!IsDisarmTargetValid(Mine)) { CancelDisarm(); return; }
+	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+		if (const ULSMineAwareMovementComponent* Movement = Cast<ULSMineAwareMovementComponent>(Character->GetCharacterMovement()))
+			if (Movement->GetMineConstraintDuration() >= RepathInterval) { CancelDisarm(); return; }
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const double Distance = LSMineAvoidance::GetDisarmDistance(Pawn, Mine);
+	const bool bInRange = Distance > Mine->GetTriggerRadius() && Distance <= Mine->GetDisarmDistance();
+	if (bDisarmWorking && !bInRange) { CancelDisarm(); return; }
+	if (!bDisarmWorking)
+	{
+		if (!bMovementCompleted) return;
+		if (!bLastMovementSucceeded || !bInRange) { CancelDisarm(); return; }
+		StopMovement();
+		bDisarmWorking = true;
+		return;
+	}
+	if (!Pawn || !Pawn->GetVelocity().IsNearlyZero()) { CancelDisarm(); return; }
+	if (!LSMineAvoidance::HasDisarmLine(Pawn, Mine)) { CancelDisarm(); return; }
+	DisarmElapsed += DeltaTime;
+	Mine->SetDisarmProgress(GetOwner(), DisarmElapsed / Mine->GetDisarmDuration());
+	if (DisarmElapsed >= Mine->GetDisarmDuration())
+	{
+		Mine->TryCompleteDisarm(GetOwner());
+		CancelDisarm();
+	}
+}
+
+bool ULSOrderComponent::UsesMineAvoidance() const
+{
+	return ActiveOrder.Kind == ELSOrderKind::Disarm ||
+	       (bHasEngagement && ActiveOrder.Kind != ELSOrderKind::AttackTarget);
+}
+
+void ULSOrderComponent::SetMineAvoidance(bool bEnabled)
+{
+	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+		if (ULSMineAwareMovementComponent* Movement = Cast<ULSMineAwareMovementComponent>(Character->GetCharacterMovement()))
+			Movement->SetMineAvoidanceEnabled(bEnabled);
+}
+
+void ULSOrderComponent::StopForMine()
+{
+	if (!bMineBlocked)
+	{
+		MineBlockedGoal = bHasEngagement ? (EngagedTarget.IsValid() ? EngagedTarget->GetActorLocation() : ActiveOrder.Destination) : ActiveOrder.Destination;
+		bMineBlockedAttackApproach = bHasEngagement;
+	}
+	bMineBlocked = true;
+	NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
+	StopMovement();
 }

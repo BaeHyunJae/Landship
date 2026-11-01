@@ -86,6 +86,25 @@ int32 ULSMinimapWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geo
 			continue;
 		}
 		const FVector2D Position = Rect.Min + UV * Rect.GetSize();
+		if (Marker.ExplosionRadius > 0.0f)
+		{
+			TArray<FVector2f> Ring;
+			constexpr int32 Segments = 64;
+			for (int32 Index = 0; Index <= Segments; ++Index)
+			{
+				const double Angle = 2.0 * PI * Index / Segments;
+				const FVector2D WorldPoint = FVector2D(Marker.Location) +
+					FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Marker.ExplosionRadius;
+				FVector2D RingUV;
+				LSVisionGeometry::WorldToUV(WorldPoint, Settings->GetWorldBounds(), RingUV);
+				Ring.Add(FVector2f(Rect.Min + RingUV * Rect.GetSize()));
+			}
+			Elements.PushClip(FSlateClippingZone(Geometry.ToPaintGeometry(FVector2f(Rect.GetSize()),
+				FSlateLayoutTransform(FVector2f(Rect.Min)))));
+			FSlateDrawElement::MakeLines(Elements, ++Layer, Geometry.ToPaintGeometry(), Ring,
+				ESlateDrawEffect::None, FLinearColor(1.0f, 0.15f, 0.1f, 0.22f), true, 1.0f);
+			Elements.PopClip();
+		}
 		const float Radius = Marker.Kind == ELSMinimapMarkerKind::Unit ? 2.0f : 4.0f;
 		const FLinearColor Color = Marker.bPublicPosition
 		                               ? FLinearColor::Yellow

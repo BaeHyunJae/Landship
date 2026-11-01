@@ -16,7 +16,7 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	ALSCastleProjectile();
 	/** Deferred 생성 중 한 번 준비하고, 성공했을 때만 FinishSpawning한다. */
 	bool Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings, const FLSDamageRequest& Request,
-	            const FVector& Aim);
+	            const FVector& Aim, bool bFirstBlocking = false);
 	virtual void Tick(float DeltaSeconds) override;
 
   protected:
@@ -45,4 +45,5 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	float Elapsed = 0;
 	bool bLaunched = false;
 	bool bResolved = false;
+	bool bHitsFirstBlocking = false;
 };

@@ -1,4 +1,6 @@
 #include "Controls/LSPlayerController.h"
+#include "Obstacles/LSMine.h"
+#include "Obstacles/LSPathObstacle.h"
 #include "Controls/LSCommandCardComponent.h"
 
 #include "Castle/LSCastle.h"
@@ -134,7 +136,9 @@ ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
 		LastWeaponResult = ELSWeaponCastResult::Unavailable;
 		return LastWeaponResult;
 	}
-	LastWeaponResult = AimingCastle->Weapons->CastWeapon(PendingWeapon, Aim);
+	LastWeaponResult = AimedObstacle.IsValid()
+	                       ? AimingCastle->Weapons->CastWeaponAtObstacle(PendingWeapon, AimedObstacle.Get())
+	                       : AimingCastle->Weapons->CastWeapon(PendingWeapon, Aim);
 	if (LastWeaponResult == ELSWeaponCastResult::Ready)
 		CancelInput();
 	return LastWeaponResult;
@@ -142,6 +146,7 @@ ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
 
 bool ALSPlayerController::GetCastleWeaponAim(FVector& Aim) const
 {
+	AimedObstacle.Reset();
 	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
 	    GetSelectedArmedCastle() != AimingCastle.Get() || !GetWorld())
 		return false;
@@ -149,6 +154,18 @@ bool ALSPlayerController::GetCastleWeaponAim(FVector& Aim) const
 	{
 		if (HUD->GetMinimapWorldPoint(Aim))
 			return true;
+	}
+	FHitResult ObstacleHit;
+	if (HitWorld(ObstacleHit))
+	{
+		if (ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(ObstacleHit.GetActor()))
+		{
+			if (AimingCastle->Weapons->GetObstacleAimPoint(Obstacle, Aim))
+			{
+				AimedObstacle = Obstacle;
+				return true;
+			}
+		}
 	}
 	FVector Origin, Direction;
 	if (!DeprojectMousePositionToWorld(Origin, Direction))
@@ -265,6 +282,8 @@ void ALSPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		Vision->OnSnapshotCommittedEvent.RemoveDynamic(this, &ALSPlayerController::PruneSelection);
 	}
+	if (HoveredMine.IsValid()) HoveredMine->SetHovered(false);
+	HoveredMine.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -282,6 +301,15 @@ void ALSPlayerController::PruneSelection()
 void ALSPlayerController::PlayerTick(float DeltaSeconds)
 {
 	Super::PlayerTick(DeltaSeconds);
+	ALSMine* NewHover = nullptr;
+	FHitResult HoverHit;
+	if (CanUseWorldInput() && HitWorld(HoverHit)) NewHover = Cast<ALSMine>(HoverHit.GetActor());
+	if (HoveredMine.Get() != NewHover)
+	{
+		if (HoveredMine.IsValid()) HoveredMine->SetHovered(false);
+		HoveredMine = NewHover;
+		if (NewHover) NewHover->SetHovered(true);
+	}
 	PruneSelection();
 	if (PendingInput == ELSCommandInput::CastleWeapon &&
 	    (!AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get() ||
@@ -461,7 +489,7 @@ bool ALSPlayerController::IsShiftDown() const
 	return IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
 }
 
-bool ALSPlayerController::HitWorld(FHitResult& Hit) const
+bool ALSPlayerController::HitWorld(FHitResult& Hit, bool bNormalRightClick) const
 {
 	FVector Origin, Direction;
 	if (!GetWorld() || !DeprojectMousePositionToWorld(Origin, Direction))
@@ -479,6 +507,18 @@ bool ALSPlayerController::HitWorld(FHitResult& Hit) const
 			TArray<AActor*> ConcealedChildren;
 			Actor->FindComponentByClass<ULSVisionParticipantComponent>()->GetAttachedVisualActors(ConcealedChildren);
 			Params.AddIgnoredActors(ConcealedChildren);
+		}
+	}
+	if (bNormalRightClick)
+	{
+		for (TActorIterator<ALSMine> It(GetWorld()); It; ++It)
+		{
+			const ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>();
+			if (!Vision || Vision->IsPointVisible(It->GetTriggerCenter())) continue;
+			Params.AddIgnoredActor(*It);
+			TArray<AActor*> Visuals;
+			It->GetAttachedActors(Visuals, true, true);
+			Params.AddIgnoredActors(Visuals);
 		}
 	}
 	return GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HitResultTraceDistance,
@@ -671,6 +711,7 @@ void ALSPlayerController::CancelInput()
 		AimingCastle->Weapons->OnWeaponStateChanged.RemoveDynamic(this,
 		                                                          &ALSPlayerController::OnAimedWeaponStateChanged);
 	AimingCastle.Reset();
+	AimedObstacle.Reset();
 	bSelecting = false;
 }
 
@@ -750,7 +791,7 @@ void ALSPlayerController::OnRightClick()
 		return;
 	}
 	FHitResult Hit;
-	if (!HitWorld(Hit))
+	if (!HitWorld(Hit, true))
 	{
 		return;
 	}
@@ -760,7 +801,7 @@ void ALSPlayerController::OnRightClick()
 	}
 	else
 	{
-		IssueSelectionOrder(ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown());
+		IssueSelectionOrder(Cast<ALSMine>(Hit.GetActor()) ? ELSOrderKind::Disarm : ELSOrderKind::AttackTarget, FVector::ZeroVector, Hit.GetActor(), IsShiftDown());
 	}
 }
 
@@ -790,6 +831,31 @@ bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& 
 {
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return false;
+	if (Kind == ELSOrderKind::Disarm)
+	{
+		ALSMine* Mine = Cast<ALSMine>(Target);
+		if (bQueue || !Mine || !Mine->IsArmed() || Mine->HasDisarmWorker()) return false;
+		ULSOrderComponent* Worker = nullptr;
+		FVector Destination;
+		double BestLength = TNumericLimits<double>::Max();
+		TArray<ULSOrderComponent*> Group;
+		for (AActor* Actor : GetSelectedActors())
+		{
+			ULSOrderComponent* Orders = Actor->FindComponentByClass<ULSOrderComponent>();
+			if (!Orders || !Actor->FindComponentByClass<ULSSelectableComponent>()->CanPlayerControl()) continue;
+			Group.Add(Orders);
+			FVector Candidate;
+			double Length;
+			if (Actor->FindComponentByClass<ULSSelectableComponent>()->Kind == ELSSelectionKind::Unit &&
+			    Orders->PrepareDisarm(Mine, Candidate, Length) && Length < BestLength)
+			{ Worker = Orders; Destination = Candidate; BestLength = Length; }
+		}
+		if (!Worker || !Mine->TryClaimDisarm(Worker->GetOwner())) return false;
+		FLSOrder Hold;
+		Hold.Kind = ELSOrderKind::Hold;
+		for (ULSOrderComponent* Orders : Group) Orders->SubmitOrder(Hold);
+		return Worker->BeginClaimedDisarm(Mine, Destination);
+	}
 	TArray<AActor*> Controlled;
 	float Spacing = FormationSpacing;
 	for (AActor* Actor : GetSelectedActors())
@@ -916,6 +982,7 @@ bool ALSPlayerController::HandleMinimapInput(const FVector& Location, bool bRigh
 	const FVector Ground(Location.X, Location.Y, Settings->GetGroundHeight());
 	if (!bRightClick && PendingInput == ELSCommandInput::CastleWeapon)
 	{
+		AimedObstacle.Reset();
 		ConfirmCastleWeapon(Ground);
 		return true;
 	}

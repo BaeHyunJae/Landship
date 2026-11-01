@@ -19,6 +19,7 @@
 #include "Logging/StructuredLog.h"
 #include "Engine/World.h"
 #include "UObject/UnrealType.h"
+#include "Navigation/LSMineAwareMovementComponent.h"
 
 namespace
 {
@@ -55,7 +56,8 @@ struct FLSPreservedBattleMotion
 };
 }
 
-ALSUnit::ALSUnit()
+ALSUnit::ALSUnit(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<ULSMineAwareMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
@@ -71,6 +73,7 @@ ALSUnit::ALSUnit()
 	Health->bDestroyOnDeath = true;
 	GetCapsuleComponent()->SetCollisionObjectType(LSCollisionChannels::Unit);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(LSCollisionChannels::ObstacleProjectile, ECR_Block);
 	AIControllerClass = AAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	GetCharacterMovement()->bUseRVOAvoidance = true;
@@ -256,6 +259,7 @@ void ALSUnit::NeutralizeCombat()
 
 void ALSUnit::PrepareForDeath()
 {
+	Orders->CancelDisarm();
 	Vision->NotifyCombatDeath();
 	NeutralizeCombat();
 	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)

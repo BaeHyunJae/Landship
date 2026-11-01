@@ -10,6 +10,7 @@
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
 #include "Combat/LSBasicAttackTuningSubsystem.h"
+#include "Obstacles/LSPathObstacle.h"
 
 ULSBasicAttackComponent::ULSBasicAttackComponent()
 {
@@ -162,6 +163,9 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 	for (const FOverlapResult& Hit : Hits)
 	{
 		AActor* Candidate = Hit.GetActor();
+		if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Candidate);
+			Obstacle && !Obstacle->CanBeAutomaticallyAcquired())
+			continue;
 		if (!IsValidCombatPair(Candidate))
 		{
 			continue;

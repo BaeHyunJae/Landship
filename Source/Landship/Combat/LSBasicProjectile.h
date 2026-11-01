@@ -29,6 +29,9 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	/** 발리스타: 지형·아군을 통과하고 진행 경로의 첫 적에게만 명중한다. */
 	bool LaunchFirstEnemy(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                      float Lifetime, UMaterialInterface* Material = nullptr);
+	/** 지형과 아군을 포함한 첫 실제 몸체에서 멈춘다. 피해는 적에게만 적용한다. */
+	bool LaunchFirstBlocking(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
+	                         float Lifetime, UMaterialInterface* Material = nullptr);
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Projectile")
 	FLSProjectileDamageApplied OnDamageApplied;
 
@@ -57,4 +60,5 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	bool bLaunched = false;
 	bool bResolved = false;
 	bool bHitsFirstEnemy = false;
+	bool bHitsFirstBlocking = false;
 };
