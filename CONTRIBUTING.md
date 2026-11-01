@@ -64,10 +64,15 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 - 담당이 여러 명인 폴더(`Combat/` 등)와 여러 기능이 함께 기대는 파일(`Config/*.ini`, `*.uproject`, `Source/**/*.Build.cs`, `Source/*.Target.cs`)은 고치기 전에 팀원에게 알려 동시에 같은 파일을 열지 않게 한다.
 - 새 기능이 생겨 폴더를 추가할 때는 `CODEOWNERS`에 담당을 함께 적는다.
 - 템플릿이 만든 폴더와 코드(`TopDown/`, `Variant_*/`, `Characters/`, `LevelPrototyping/`, `Landship*` 클래스 등)는 참고용으로 두고 고치지 않는다. 쓰려면 담당 기능 폴더로 복사한다.
-- 에셋 이름은 언리얼 커뮤니티 표준 접두사를 따른다. 예: `BP_`, `WBP_`, `M_`, `IA_`. 코딩 규칙은 [`docs/development/coding-conventions.md`](docs/development/coding-conventions.md)를 따른다.
+
+## 코딩 규칙
+
+C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전에 [`docs/development/coding-conventions.md`](docs/development/coding-conventions.md)를 읽고 따른다. 이름, 파일 위치, C++과 블루프린트의 경계처럼 무엇을 어떻게 만들지에 관한 규칙은 그 문서가 원본이다.
+
+- 이 문서에는 코딩 규칙을 옮겨 쓰지 않는다. 팀이 새 코딩 규칙을 정하면 그 문서에 추가한다.
 
 ## PR 리뷰
 
-- PR을 열면 팀원를 리뷰어로 지정한다. `CODEOWNERS`로 자동 지정됐으면 따로 지정하지 않아도 된다.
+- PR을 열면 팀원을 리뷰어로 지정한다. `CODEOWNERS`로 자동 지정됐으면 따로 지정하지 않아도 된다.
 - 충돌을 해결했으면 작성자가 바로 병합한다. 프로토타입 기간에는 빠른 병합을 우선한다.
 - 코드 리뷰 의견은 PR에 남긴다.
