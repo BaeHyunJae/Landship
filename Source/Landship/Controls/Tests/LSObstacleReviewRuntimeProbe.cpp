@@ -215,7 +215,7 @@ void ALSObstacleReviewRuntimeProbe::Tick(float DeltaSeconds)
     TEXT("F4 farther troop claims mine and closer castle Holds"));
    EventTime = PhaseTime;
   }
-  else
+  else if (Phase == 6)
   {
    ALSPlayerController* Player = Cast<ALSPlayerController>(GetWorld()->GetFirstPlayerController());
    const ALSBattlefieldSettings* Settings = ALSBattlefieldSettings::Find(GetWorld());
@@ -232,7 +232,12 @@ void ALSObstacleReviewRuntimeProbe::Tick(float DeltaSeconds)
    Check(bArmed && Player->GetLastWeaponResult() == ELSWeaponCastResult::Ready && bCast && Weapon == ELSCastleWeapon::Shotgun && ActualAim.Equals(MinimapAim, .1) && !ActualAim.Equals(WorkMine->GetInteractionLocation(), .1),
     TEXT("F7b recent real Shotgun cast uses minimap ground despite stale visible mine hover cache"));
    UE_LOG(LogTemp, Display, TEXT("OBSTACLE_REVIEW_MINIMAP actual=%s expected=%s result=%d"), *ActualAim.ToCompactString(), *MinimapAim.ToCompactString(), static_cast<int32>(Player->GetLastWeaponResult()));
-   Finish(); return;
+   Next(7); return;
+  }
+  else
+  {
+   Order.Kind = ELSOrderKind::Disarm; Order.Target = WorkMine.Get();
+   Check(Source->Orders->SubmitOrder(Order), TEXT("outcome seam real active Disarm accepted before component termination"));
   }
   return;
  }
@@ -332,8 +337,29 @@ void ALSObstacleReviewRuntimeProbe::Tick(float DeltaSeconds)
    Next(6); return;
   }
  }
+ else if (Phase == 7)
+ {
+  if (!Source.IsValid() || !WorkMine.IsValid()) { Check(false, TEXT("termination seam active worker and mine remain live")); Finish(); return; }
+  UStaticMeshComponent* Fill = Cast<UStaticMeshComponent>(WorkMine->GetDefaultSubobjectByName(TEXT("ProgressFill")));
+  UStaticMeshComponent* Background = Cast<UStaticMeshComponent>(WorkMine->GetDefaultSubobjectByName(TEXT("ProgressBackground")));
+  if (EventTime < 0 && Fill && Background && Fill->IsVisible() && Fill->GetRelativeScale3D().X > .02)
+  {
+   Check(Source->Orders->GetOrderKind() == ELSOrderKind::Disarm && WorkMine->HasDisarmWorker(),
+    TEXT("termination seam observes real timed Disarm progress and active claim"));
+   Source->Orders->EndBattleActions();
+   Check(!WorkMine->HasDisarmWorker() && !Fill->IsVisible() && !Background->IsVisible() && Source->Orders->GetOrderKind() == ELSOrderKind::Idle,
+    TEXT("real activeDisarm component termination releases claim clears progress and ends order"));
+   FLSOrder Move; Move.Kind = ELSOrderKind::Move; Move.Destination = FVector(-1200, -1800, 0);
+   FLSOrder Disarm; Disarm.Kind = ELSOrderKind::Disarm; Disarm.Target = WorkMine.Get();
+   Check(!Source->Orders->SubmitOrder(Move) && !Source->Orders->SubmitOrder(Disarm), TEXT("terminated Orders rejects new movement and Disarm"));
+   EventTime = PhaseTime;
+  }
+  if (EventTime >= 0 && PhaseTime - EventTime > .5)
+  {
+   Check(WorkMine->IsArmed() && !WorkMine->HasDisarmWorker() && Fill && !Fill->IsVisible(),
+    TEXT("component termination leaves mine armed with no resumed claim or progress"));
+   Finish(); return;
+  }
+ }
  if (PhaseTime > 18) { Check(false, TEXT("bounded review phase required behavior timeout")); Finish(); }
 }
-
-
-

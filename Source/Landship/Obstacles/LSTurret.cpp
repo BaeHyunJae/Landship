@@ -5,6 +5,7 @@
 #include "Castle/LSCastle.h"
 #include "Castle/LSMobileCastle.h"
 #include "Troops/LSUnit.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Components/BoxComponent.h"
@@ -50,7 +51,7 @@ void ALSTurret::BeginPlay()
 	const bool bConfigured =
 		BasicAttack->ConfigureAttack(AttackSettings) && BasicAttack->ConfigureProjectile(ProjectileSettings);
 	Super::BeginPlay();
-	if (!bConfigured || !IsObstacleActive())
+	if (!bConfigured || !IsObstacleActive() || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		StopObstacleActions();
 }
 AActor* ALSTurret::ResolveTarget()
@@ -94,7 +95,7 @@ AActor* ALSTurret::ResolveTarget()
 void ALSTurret::StopObstacleActions()
 {
 	bActionsStopped = true;
-	BasicAttack->StopAttack();
+	BasicAttack->EndBattleActions();
 	BasicAttack->Deactivate();
 }
 void ALSTurret::PrepareForDeath()

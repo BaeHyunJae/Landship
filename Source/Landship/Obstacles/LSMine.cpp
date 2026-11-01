@@ -1,4 +1,5 @@
 #include "Obstacles/LSMine.h"
+#include "Match/LSBattleOutcomePolicy.h"
 #include "Obstacles/LSMineHazardSubsystem.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -136,7 +137,7 @@ bool ALSMine::HasDisarmWorker() const
 bool ALSMine::TryClaimDisarm(AActor* Worker)
 {
 	const ALSUnit* Unit = Cast<ALSUnit>(Worker);
-	if (!IsArmed() || HasDisarmWorker() || !Unit || Unit->Selection->Kind != ELSSelectionKind::Unit ||
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !IsArmed() || HasDisarmWorker() || !Unit || Unit->Selection->Kind != ELSSelectionKind::Unit ||
 		Unit->GetFaction() != ELSFaction::Ally || !ULSCombatTargetLibrary::IsCombatAlive(Unit))
 		return false;
 	DisarmWorker = Worker;
@@ -155,7 +156,7 @@ void ALSMine::ReleaseDisarm(AActor* Worker)
 }
 bool ALSMine::TryCompleteDisarm(AActor* Worker)
 {
-	if (!IsArmed() || !IsValid(Worker) || DisarmWorker.Get() != Worker ||
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !IsArmed() || !IsValid(Worker) || DisarmWorker.Get() != Worker ||
 		!ULSCombatTargetLibrary::IsCombatAlive(Worker))
 		return false;
 	FinishMine(ELSMineState::Disarmed);
@@ -163,7 +164,7 @@ bool ALSMine::TryCompleteDisarm(AActor* Worker)
 }
 void ALSMine::SetDisarmProgress(AActor* Worker, float Progress)
 {
-	if (!IsArmed() || !IsValid(Worker) || DisarmWorker.Get() != Worker || !FMath::IsFinite(Progress))
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !IsArmed() || !IsValid(Worker) || DisarmWorker.Get() != Worker || !FMath::IsFinite(Progress))
 		return;
 	ProgressBackground->SetVisibility(true);
 	ProgressFill->SetVisibility(true);
