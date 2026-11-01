@@ -92,12 +92,14 @@ bool FLSCannonAimTest::RunTest(const FString& Parameters)
 	          0.0f);
 	TestTrue(TEXT("유효 지면 시전"), Controller->ConfirmCastleWeapon(FVector(800, 0, 0)) == ELSWeaponCastResult::Ready);
 	TestTrue(TEXT("시전 뒤 조준 해제"), Controller->GetPendingInput() == ELSCommandInput::None);
+	TestEqual(TEXT("발사 직후 피해 없음"), Health(Enemy), 100.0f);
+	AdvanceWeapons(World, 0.5f);
 	TestEqual(TEXT("원 안의 적 피해"), Health(Enemy), 40.0f);
 	TestEqual(TEXT("원 안의 적 성 피해"), Health(EnemyCastle), 940.0f);
 	TestEqual(TEXT("원 밖 적 제외"), Health(Outside), 100.0f);
 	TestEqual(TEXT("아군 피해 없음"), Health(Ally), 100.0f);
 	TestTrue(TEXT("대포 쿨타임 8초"),
-	         FMath::IsNearlyEqual(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon), 8));
+	         FMath::IsNearlyEqual(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon), 7.5f, 0.02f));
 	TestFalse(TEXT("쿨타임 중 재조준 차단"), Controller->ArmCastleWeapon(ELSCastleWeapon::Cannon));
 	TestTrue(TEXT("다른 무장 조준은 독립"), Controller->ArmCastleWeapon(ELSCastleWeapon::Shotgun));
 	Controller->ApplySelection({EnemyCastle});
@@ -148,13 +150,15 @@ bool FLSShotgunTest::RunTest(const FString& Parameters)
 	             ELSWeaponCastResult::InvalidAim);
 	TestTrue(TEXT("전방 부채꼴 시전"),
 	         Castle->Weapons->CastWeapon(ELSCastleWeapon::Shotgun, FVector(1000, 0, 0)) == ELSWeaponCastResult::Ready);
-	TestEqual(TEXT("부채꼴 안 병력 피해"), Health(Units[0]), 85.0f);
+	TestEqual(TEXT("산탄 발사 직후 피해 없음"), Health(Units[0]), 120.0f);
+	AdvanceWeapons(World, 0.3f);
+	TestTrue(TEXT("탄환이 맞은 병력 피해"), Health(Units[0]) < 120.0f && Health(Units[0]) >= 85.0f);
 	TestEqual(TEXT("각도 밖 병력 제외"), Health(Units[1]), 120.0f);
 	TestEqual(TEXT("거리 밖 병력 제외"), Health(Units[2]), 120.0f);
 	TestEqual(TEXT("아군 피해 제외"), Health(Units[3]), 120.0f);
-	TestEqual(TEXT("구조물은 피해만 적용"), Health(Structure), 965.0f);
+	TestTrue(TEXT("구조물은 명중한 탄환 피해만 적용"), Health(Structure) < 1000.0f && Health(Structure) >= 965.0f);
 	TestTrue(TEXT("산탄 쿨타임 6초"),
-	         FMath::IsNearlyEqual(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun), 6));
+	         FMath::IsNearlyEqual(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun), 5.7f, 0.02f));
 	AdvanceWeapons(World, 0.25f);
 	TestTrue(TEXT("적 일반 병력이 실제로 밀려남"), Units[0]->GetActorLocation().X > 460);
 	TestTrue(TEXT("적 성은 밀려나지 않음"), FVector::Dist2D(Structure->GetActorLocation(), FVector(500, 200, 144)) < 1);

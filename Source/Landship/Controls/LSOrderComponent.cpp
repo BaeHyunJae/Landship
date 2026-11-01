@@ -132,8 +132,7 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 	{
 		FVector TargetDestination;
 		return CanAttack() && IsHostile(Order.Target.Get()) &&
-		       (IsInAttackRange(Order.Target.Get()) ||
-		        ResolveDestination(Order.Target->GetActorLocation(), TargetDestination));
+		       (IsInAttackRange(Order.Target.Get()) || ResolveAttackDestination(Order.Target.Get(), TargetDestination));
 	}
 	default:
 		return false;
@@ -142,15 +141,23 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 
 bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 {
+	LastFailure = ELSOrderFailure::None;
 	FLSOrder PreparedOrder;
 	if (!HasBegunPlay() || !PrepareOrder(Order, PreparedOrder))
 	{
+		const ULSSelectableComponent* Selection = GetOwner()->FindComponentByClass<ULSSelectableComponent>();
+		LastFailure = !HasBegunPlay() || !Selection || !Selection->CanPlayerControl()
+		                  ? ELSOrderFailure::Unavailable
+		                  : (Order.Kind == ELSOrderKind::AttackTarget && !IsHostile(Order.Target.Get())
+		                         ? ELSOrderFailure::InvalidTarget
+		                         : ELSOrderFailure::Unreachable);
 		return false;
 	}
 	if (bQueue && ActiveOrder.Kind != ELSOrderKind::Idle && ActiveOrder.Kind != ELSOrderKind::Hold)
 	{
 		if (PendingOrders.Num() >= MaxQueuedOrders)
 		{
+			LastFailure = ELSOrderFailure::QueueFull;
 			return false;
 		}
 		PendingOrders.Add(PreparedOrder);
@@ -204,18 +211,17 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	}
 }
 
-bool ULSOrderComponent::MoveTo(const FVector& Goal)
+bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 {
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(
-		    !bHasEngagement &&
-		    (ActiveOrder.Kind == ELSOrderKind::Move || ActiveOrder.Kind == ELSOrderKind::AttackMove));
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 	}
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
 	if (!Controller || !Controller->GetPathFollowingComponent())
 	{
+		LastFailure = ELSOrderFailure::Unreachable;
 		return false;
 	}
 	UPathFollowingComponent* PathFollowing = Controller->GetPathFollowingComponent();
@@ -226,7 +232,11 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementCompleted = false;
 	FAIMoveRequest Request(Goal);
-	Request.SetAcceptanceRadius(ArrivalTolerance);
+	Request.SetAcceptanceRadius(bAttackApproach && Attack
+	                                ? FMath::Min(ArrivalTolerance, Attack->GetAttackSettings().Range * 0.1f)
+	                                : ArrivalTolerance);
+	if (bAttackApproach)
+		Request.SetReachTestIncludesAgentRadius(false);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(false);
 	Request.SetProjectGoalLocation(true);
@@ -237,6 +247,8 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 		bMovementCompleted = true;
 		bLastMovementSucceeded = Result.Code == EPathFollowingRequestResult::AlreadyAtGoal;
 	}
+	if (Result.Code == EPathFollowingRequestResult::Failed)
+		LastFailure = ELSOrderFailure::Unreachable;
 	return Result.Code != EPathFollowingRequestResult::Failed;
 }
 
@@ -268,6 +280,8 @@ void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFo
 	}
 	bMovementCompleted = true;
 	bLastMovementSucceeded = Result.IsSuccess();
+	if (!Result.IsSuccess())
+		LastFailure = ELSOrderFailure::Unreachable;
 	MovementRequestId = FAIRequestID::InvalidRequest;
 }
 
@@ -303,15 +317,67 @@ bool ULSOrderComponent::IsMoving() const
 bool ULSOrderComponent::IsHostile(AActor* Target) const
 {
 	return ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Target) &&
-		   ULSVisionSubsystem::PassesFriendlySight(GetOwner(), Target);
+	       ULSVisionSubsystem::PassesFriendlySight(GetOwner(), Target);
 }
 
 bool ULSOrderComponent::IsInAttackRange(AActor* Target) const
 {
 	const ULSBasicAttackComponent* Component = GetOwner()->FindComponentByClass<ULSBasicAttackComponent>();
 	return Target && Component &&
-	       FVector::DistSquared(GetOwner()->GetActorLocation(), Target->GetActorLocation()) <=
-	           FMath::Square(static_cast<double>(Component->GetAttackSettings().Range));
+	       ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Component->GetAttackSettings().Range;
+}
+
+bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDestination) const
+{
+	if (!IsHostile(Target) || !Attack || !CanMove())
+		return false;
+	float Radius, Height, TargetRadius, TargetHeight;
+	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
+	Target->GetSimpleCollisionCylinder(TargetRadius, TargetHeight);
+	const APawn* Pawn = CastChecked<APawn>(GetOwner());
+	const FVector CenterOffset = GetOwner()->GetActorLocation() - Pawn->GetNavAgentLocation();
+	FVector Direction = (GetOwner()->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+		Direction = FVector::ForwardVector;
+	const float Distance = Radius + TargetRadius + Attack->GetAttackSettings().Range * 0.8f;
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSAttackApproach), false, GetOwner());
+	Query.AddIgnoredActor(Target);
+	FVector OccupiedFallback;
+	bool bHasFallback = false;
+	// 가까운 측면부터 검사해 대상 중심이 장애물 안에 있어도 접근 지점을 선택한다.
+	for (float Angle : {0.0f, 45.0f, -45.0f, 90.0f, -90.0f, 135.0f, -135.0f, 180.0f})
+	{
+		FVector Goal = Target->GetActorLocation() + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Distance;
+		Goal.Z = Pawn->GetNavAgentLocation().Z;
+		FVector Projected;
+		if (ResolveDestination(Goal, Projected) &&
+		    ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), Target, Projected + CenterOffset) <=
+		        Attack->GetAttackSettings().Range)
+		{
+			if (!bHasFallback)
+			{
+				OccupiedFallback = Projected;
+				bHasFallback = true;
+			}
+			// 앞줄 병력이 차지한 지점 대신 옆의 빈 공격 위치부터 선택한다.
+			if (GetWorld()->OverlapAnyTestByObjectType(
+			        Projected + CenterOffset, FQuat::Identity, Objects,
+			        FCollisionShape::MakeCapsule(Radius + 4, FMath::Max(Height, Radius + 4)), Query))
+				continue;
+			OutDestination = Projected;
+			return true;
+		}
+	}
+	// 포위가 꽉 차도 유효한 공격 명령을 버리지 않고 회피·재탐색으로 빈자리를 기다린다.
+	if (bHasFallback)
+	{
+		OutDestination = OccupiedFallback;
+		return true;
+	}
+	return false;
 }
 
 float ULSOrderComponent::GetDetectionRange() const
@@ -330,11 +396,14 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	TArray<FOverlapResult> Hits;
-	GetWorld()->OverlapMultiByObjectType(Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
-	                                     FCollisionShape::MakeSphere(FMath::Max(0.01f, Range)),
-	                                     FCollisionQueryParams(SCENE_QUERY_STAT(LSOrders), false, GetOwner()));
+	float SourceRadius, SourceHeight;
+	GetOwner()->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
+	GetWorld()->OverlapMultiByObjectType(
+	    Hits, GetOwner()->GetActorLocation(), FQuat::Identity, Objects,
+	    FCollisionShape::MakeBox(FVector(Range + SourceRadius + 1, Range + SourceRadius + 1, Range + SourceHeight + 1)),
+	    FCollisionQueryParams(SCENE_QUERY_STAT(LSOrders), false, GetOwner()));
 	AActor* Best = nullptr;
-	double BestDistance = FMath::Square(static_cast<double>(Range));
+	double BestDistance = Range;
 	for (const FOverlapResult& Hit : Hits)
 	{
 		AActor* Candidate = Hit.GetActor();
@@ -342,7 +411,7 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 		{
 			continue;
 		}
-		const double Distance = FVector::DistSquared(GetOwner()->GetActorLocation(), Candidate->GetActorLocation());
+		const double Distance = ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Candidate);
 		if (Distance < BestDistance ||
 		    (Distance == BestDistance && (!Best || Candidate->GetUniqueID() < Best->GetUniqueID())))
 		{
@@ -355,10 +424,10 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 
 void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 {
-	// 공격 대상을 회피 장애물로 취급해 사거리 밖에서 멈추지 않게 한다.
+	// 공격 가능한 외곽까지 접근하면서 아군 사이의 회피는 유지한다.
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(false);
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 	}
 	if (EngagedTarget.Get() != Target)
 	{
@@ -383,8 +452,10 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 		if (GetWorld()->GetTimeSeconds() >= NextRepathTime)
 		{
 			NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
-			if (!MoveTo(Target->GetActorLocation()))
+			FVector Destination;
+			if (!ResolveAttackDestination(Target, Destination) || !MoveTo(Destination, true))
 			{
+				LastFailure = ELSOrderFailure::Unreachable;
 				EngagedTarget.Reset();
 				FinishOrder();
 			}
@@ -462,8 +533,7 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	const bool bHold = ActiveOrder.Kind == ELSOrderKind::Hold;
 	const float Detection = bHold ? (Attack ? Attack->GetAttackSettings().Range : 0.0f) : GetDetectionRange();
 	AActor* Enemy = EngagedTarget.Get();
-	if (!IsHostile(Enemy) || FVector::DistSquared(GetOwner()->GetActorLocation(), Enemy->GetActorLocation()) >
-	                             FMath::Square(static_cast<double>(Detection)))
+	if (!IsHostile(Enemy) || ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Enemy) > Detection)
 	{
 		Enemy = CanAttack() ? FindEnemy(Detection) : nullptr;
 	}

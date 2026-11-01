@@ -1,13 +1,10 @@
 #include "Castle/LSCastleWeaponComponent.h"
 
 #include "Combat/LSBasicProjectile.h"
+#include "Castle/LSCastleProjectile.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
-#include "Controls/LSSelectableComponent.h"
-#include "Controls/LSOrderComponent.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
-#include "Troops/LSUnit.h"
 
 ULSCastleWeaponComponent::ULSCastleWeaponComponent()
 {
@@ -234,58 +231,33 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 		if (!IsValid(Projectile) || Projectile->IsActorBeingDestroyed())
 			return ELSWeaponCastResult::Unavailable;
 	}
+	else
+	{
+		const FVector Start = GetOwner()->GetActorLocation() +
+		                      (Weapon == ELSCastleWeapon::Cannon ? FVector(0, 0, 150) : FVector::ZeroVector);
+		const FTransform Transform(FRotator::ZeroRotator, Start);
+		ALSCastleProjectile* Projectile = GetWorld()->SpawnActorDeferred<ALSCastleProjectile>(
+		    ALSCastleProjectile::StaticClass(), Transform, nullptr, nullptr,
+		    ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!IsValid(Projectile))
+			return ELSWeaponCastResult::Unavailable;
+		const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+		if (!Projectile->Launch(Weapon, Settings, Request, Aim))
+		{
+			Projectile->Destroy();
+			return ELSWeaponCastResult::Unavailable;
+		}
+		Projectile->FinishSpawning(Transform);
+		if (!IsValid(Projectile) || Projectile->IsActorBeingDestroyed())
+			return ELSWeaponCastResult::Unavailable;
+	}
 	// 피해 알림에서 재진입하더라도 중복 시전하지 않게 먼저 쿨타임을 확정한다.
 	States.FindChecked(Weapon).ReadyTime = GetWorld()->GetTimeSeconds() + Settings.Cooldown;
 	LastCastSettings = Settings;
 	LastWeapon = Weapon;
 	LastAim = Aim;
 	LastCastTime = GetWorld()->GetTimeSeconds();
-	if (Weapon != ELSCastleWeapon::Ballista)
-		ApplyAreaDamage(Weapon, Aim, Settings);
 	return ELSWeaponCastResult::Ready;
-}
-
-void ULSCastleWeaponComponent::ApplyAreaDamage(ELSCastleWeapon Weapon, const FVector& Aim,
-                                               const FLSCastleWeaponSettings& Settings)
-{
-	const FVector Origin = GetOwner()->GetActorLocation();
-	const FVector Direction = (Aim - Origin).GetSafeNormal2D();
-	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), GetOwner());
-	TArray<TWeakObjectPtr<AActor>> Targets;
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
-	{
-		if (ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), *It))
-			Targets.Add(*It);
-	}
-	for (const TWeakObjectPtr<AActor>& TargetPtr : Targets)
-	{
-		if (!IsValid(this) || !IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed() || !GetWorld() ||
-		    GetWorld()->bIsTearingDown || !ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
-			return;
-		AActor* Target = TargetPtr.Get();
-		if (!ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Target))
-			continue;
-		const FVector Offset = Target->GetActorLocation() - Origin;
-		const bool bInside =
-		    Weapon == ELSCastleWeapon::Cannon
-		        ? FVector::Dist2D(Target->GetActorLocation(), Aim) <= Settings.Radius
-		        : Offset.Size2D() <= Settings.Range && FVector::DotProduct(Offset.GetSafeNormal2D(), Direction) >=
-		                                                   FMath::Cos(FMath::DegreesToRadians(Settings.ConeAngle / 2));
-		if (!bInside)
-			continue;
-		ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
-		const FLSApplyDamageResult Result = Health->ApplyDamage(Request);
-		if (Weapon == ELSCastleWeapon::Shotgun && Result.AppliedDamage > 0 && IsValid(Target) &&
-		    !Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target))
-		{
-			ALSUnit* Unit = Cast<ALSUnit>(Target);
-			if (Unit && Unit->Selection->Kind == ELSSelectionKind::Unit)
-			{
-				Unit->Orders->ApplyKnockback(Offset.GetSafeNormal2D() * Settings.KnockbackSpeed +
-				                             FVector(0, 0, Settings.KnockbackLift));
-			}
-		}
-	}
 }
 
 bool ULSCastleWeaponComponent::GetRecentCast(ELSCastleWeapon& Weapon, FVector& Aim,

@@ -149,26 +149,27 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		      TEXT("Q는 더 이상 병력을 생산하지 않음"));
 		Check(Controller->ConfirmCastleWeapon(FVector(0, 100, 0)) == ELSWeaponCastResult::Ready,
 		      TEXT("원형 대포 확인 시전"));
-		Check(CurrentHealth(Enemies[0]) == 60 && CurrentHealth(Enemies[1]) == 60 && CurrentHealth(Enemies[2]) == 120,
-		      TEXT("원형 구역의 적들만 피해"));
+		Check(CurrentHealth(Enemies[0]) == 120 && CurrentHealth(Enemies[1]) == 120, TEXT("포탄 발사 직후 피해 없음"));
 		Capture();
 		Stage = 1;
 		StageTime = 0;
 	}
 	else if (Stage == 1 && StageTime > 0.5f)
 	{
+		Check(CurrentHealth(Enemies[0]) == 60 && CurrentHealth(Enemies[1]) == 60 && CurrentHealth(Enemies[2]) == 120,
+		      TEXT("착탄 후 원형 구역 적들만 피해"));
 		Enemies[0]->SetActorLocation(FVector(-400, 100, 96));
 		Enemies[1]->SetActorLocation(FVector(-400, 500, 96));
 		EnemyCastle->SetActorLocation(FVector(-350, 300, 144));
 		Ally->SetActorLocation(FVector(-400, -100, 96));
 		PushStartX = Enemies[0]->GetActorLocation().X;
-		// 실제 추적 AI가 켜져 있어도 넉백이 취소되지 않는지 확인한다.
+		// 기본 근접 사거리로 넉백 후 재추적과 예약 보존을 확인한다.
 		Enemies[0]->Orders->SetComponentTickEnabled(true);
 		Enemies[0]->Selection->SetPlayerControlled(true);
 		FLSOrder Attack;
 		Attack.Kind = ELSOrderKind::AttackTarget;
 		Attack.Target = Castle;
-		Enemies[0]->Orders->SubmitOrder(Attack);
+		Check(Enemies[0]->Orders->SubmitOrder(Attack), TEXT("넉백 전 지정 공격 준비"));
 		FLSOrder Queued;
 		Queued.Kind = ELSOrderKind::Move;
 		Queued.Destination = FVector(-300, 900, 0);
@@ -177,21 +178,32 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Controller->ArmCastleWeapon(ELSCastleWeapon::Shotgun);
 		Check(Controller->ConfirmCastleWeapon(FVector(200, 100, 0)) == ELSWeaponCastResult::Ready,
 		      TEXT("부채꼴 산탄 시전"));
+		Check(CurrentHealth(Enemies[0]) == 60, TEXT("산탄 발사 직후 피해 없음"));
+		Stage = 6;
+		StageTime = 0;
+	}
+	else if (Stage == 6 && StageTime > 0.25f)
+	{
+		Check(Enemies[0]->GetCharacterMovement()->Velocity.X > 100, TEXT("실제 바닥에서 적 병력이 밀려남"));
 		Check(Enemies[0]->Orders->IsKnockedBack() && Enemies[0]->Orders->GetQueuedCount() == 1,
 		      TEXT("넉백 중 기존 명령·예약 보존"));
-		Check(CurrentHealth(Enemies[0]) == 25 && CurrentHealth(Enemies[1]) == 60, TEXT("부채꼴 안·밖 판정"));
-		Check(CurrentHealth(EnemyCastle) == 965 && CurrentHealth(Ally) == 120, TEXT("적 성은 피해 적용·아군 제외"));
+		Check(CurrentHealth(Enemies[0]) < 60 && CurrentHealth(Enemies[0]) >= 25 && CurrentHealth(Enemies[1]) == 60,
+		      TEXT("부채꼴 안·밖 판정"));
+		Check(CurrentHealth(EnemyCastle) < 1000 && CurrentHealth(EnemyCastle) >= 965 && CurrentHealth(Ally) == 120,
+		      TEXT("적 성은 피해 적용·아군 제외"));
 		Capture();
 		Stage = 2;
 		StageTime = 0;
 	}
-	else if (Stage == 2 && StageTime > 0.55f)
+	else if (Stage == 2 && StageTime > 0.35f && !Enemies[0]->Orders->IsKnockedBack())
 	{
-		Check(Enemies[0]->GetActorLocation().X > PushStartX + 60, TEXT("실제 바닥에서 적 병력이 밀려남"));
 		Check(!Enemies[0]->Orders->IsKnockedBack() &&
 		          Enemies[0]->Orders->GetOrderKind() == ELSOrderKind::AttackTarget &&
 		          Enemies[0]->Orders->GetQueuedCount() == 1,
-		      TEXT("착지 후 추적 재개·예약 유지"));
+		      TEXT("착지 후 지정 공격 재개·예약 유지"));
+		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_ORDER kind=%s queue=%d location=%s"),
+		       *UEnum::GetValueAsString(Enemies[0]->Orders->GetOrderKind()), Enemies[0]->Orders->GetQueuedCount(),
+		       *Enemies[0]->GetActorLocation().ToString());
 		Enemies[0]->Orders->SetComponentTickEnabled(false);
 		Enemies[0]->BasicAttack->StopAttack();
 		Check(FVector::Dist2D(EnemyCastle->GetActorLocation(), FVector(-350, 300, 144)) < 5,
@@ -213,24 +225,50 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 	{
 		Check(CurrentHealth(Enemies[0]) == 0 && CurrentHealth(Enemies[1]) == 60, TEXT("발리스타는 첫 적만 명중"));
 		Check(CurrentHealth(Ally) == 120, TEXT("발리스타는 앞의 아군을 통과"));
+		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_DIAG ally_hp=%.2f castle_hp=%.2f selected=%d"),
+		       CurrentHealth(Ally), CurrentHealth(Castle), Controller->GetSelectedActors().Num());
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) > 0 &&
 		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun) > 0 &&
 		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Ballista) > 0,
 		      TEXT("세 무장 독립 쿨타임 진행"));
 		Stage = 4;
+		Castle->SetActorLocation(FVector(-800, -1100, 144));
+		Castle->Orders->SetComponentTickEnabled(true);
+		Check(Controller->GetPendingInput() == ELSCommandInput::None, TEXT("산탄 이후 조준 입력 해제"));
+		Check(Controller->IssueSelectionOrder(ELSOrderKind::Move, FVector(-400, -800, 0), nullptr, false),
+		      TEXT("재현 순서의 첫 성 이동 명령 접수"));
 	}
 	else if (Stage == 4 && Elapsed > 10)
 	{
+		Check(Castle->GetActorLocation().X > -700, TEXT("재현 순서의 첫 성 실제 이동"));
+		PostShotMoveStart = Castle->GetActorLocation();
+		Check(Controller->ArmCastleWeapon(ELSCastleWeapon::Shotgun) &&
+		          Controller->ConfirmCastleWeapon(FVector(1000, -800, 0)) == ELSWeaponCastResult::Ready,
+		      TEXT("이동한 위치에서 산탄 발사"));
+		Check(Controller->IssueSelectionOrder(ELSOrderKind::Move, FVector(-1000, -1200, 0), nullptr, false),
+		      TEXT("이동·산탄 이후 새 경로 접수"));
+		Stage = 7;
+		StageTime = 0;
+	}
+	else if (Stage == 7 && StageTime > 1)
+	{
+		Check(FVector::Dist2D(PostShotMoveStart, Castle->GetActorLocation()) > 50,
+		      TEXT("이동·산탄 이후 성 재이동"));
+		// 생산 검사는 원래 지도에서 이동 가능하게 배치한 성 위치에서 별도로 수행한다.
+		Castle->SetActorLocation(FVector(-800, -1100, 144));
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) == 0 &&
-		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun) == 0 &&
+		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun) > 0 &&
 		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Ballista) > 0,
-		      TEXT("8·6·10초의 독립 쿨타임 해제"));
+		      TEXT("재발사한 산탄과 다른 무장의 독립 쿨타임"));
 		int32 Width, Height;
 		Controller->GetViewportSize(Width, Height);
 		const int32 Before = GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation();
 		Cast<ALSRTSHUD>(Controller->GetHUD())->HandleClick(FVector2D(Width - 360 + 64, Height - 180 + 95));
 		Check(GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation() == Before + 1,
 		      TEXT("F1 생산 버튼은 기존 생산 기능 유지"));
+		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_PRODUCTION result=%s before=%d after=%d"),
+		       *UEnum::GetValueAsString(Controller->GetLastProductionResult()), Before,
+		       GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation());
 		Check(Castle->Weapons->UpgradeWeapon(ELSCastleWeapon::Cannon) == ELSWeaponChangeResult::Success,
 		      TEXT("실제 성의 무장 2레벨 강화"));
 		Check(Castle->Weapons->SetWeaponEnabled(ELSCastleWeapon::Shotgun, false) == ELSWeaponChangeResult::Success &&

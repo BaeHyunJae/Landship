@@ -18,6 +18,16 @@ enum class ELSOrderKind : uint8
 	Hold
 };
 
+UENUM(BlueprintType)
+enum class ELSOrderFailure : uint8
+{
+	None,
+	Unavailable,
+	InvalidTarget,
+	Unreachable,
+	QueueFull
+};
+
 USTRUCT(BlueprintType)
 struct LANDSHIP_API FLSOrder
 {
@@ -71,6 +81,10 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	{
 		return bLastMovementSucceeded;
 	}
+	ELSOrderFailure GetLastFailure() const
+	{
+		return LastFailure;
+	}
 	static TArray<FVector> MakeFormation(const FVector& Center, int32 Count, float Spacing);
 
   protected:
@@ -87,9 +101,10 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 
   private:
 	bool ResolveDestination(const FVector& Goal, FVector& OutDestination) const;
+	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination) const;
 	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const;
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
-	bool MoveTo(const FVector& Goal);
+	bool MoveTo(const FVector& Goal, bool bAttackApproach = false);
 	void StopMovement();
 	bool IsMoving() const;
 	bool IsHostile(AActor* Target) const;
@@ -114,4 +129,5 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	bool bLastMovementSucceeded = false;
 	bool bKnockbackActive = false;
 	double KnockbackResumeAfter = 0;
+	ELSOrderFailure LastFailure = ELSOrderFailure::None;
 };

@@ -221,6 +221,7 @@ bool FLSWeaponUpgradedAreaTest::RunTest(const FString& Parameters)
 	          300.0f);
 	TestTrue(TEXT("2레벨 사거리 적용"),
 	         Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, FVector(1300, 0, 0)) == ELSWeaponCastResult::Ready);
+	AdvanceProgression(World, 0.8f);
 	TestEqual(TEXT("강화된 범위와 피해 적용"), ProgressionHealth(Inside), 20.0f);
 	TestEqual(TEXT("강화 범위 밖 대상 제외"), ProgressionHealth(Outside), 100.0f);
 	TestWorld.ForwardErrorMessages(this);

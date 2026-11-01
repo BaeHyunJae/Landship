@@ -52,6 +52,11 @@ bool FLSMobileCastleTest::RunTest(const FString& Parameters)
 	                                     ELSWeaponCastResult::Ready);
 	FLSHealthSnapshot Snapshot;
 	ULSHealthComponent* EnemyHealth = Enemy->FindComponentByClass<ULSHealthComponent>();
+	for (int32 Index = 0; Index < 30; ++Index)
+	{
+		++GFrameCounter;
+		World->Tick(LEVELTICK_All, 0.01f);
+	}
 	EnemyHealth->TryGetHealth(Snapshot);
 	TestEqual(TEXT("수동 대포 피해"), Snapshot.CurrentHealth,
 	          1000.0f - Castle->Weapons->FindSettings(ELSCastleWeapon::Cannon)->Damage);

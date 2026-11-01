@@ -33,6 +33,7 @@ class ALSHMHCastleWeaponsProbe : public AActor
 	float Elapsed = 0;
 	float StageTime = 0;
 	float PushStartX = 0;
+	FVector PostShotMoveStart = FVector::ZeroVector;
 	int32 Stage = 0;
 	int32 Failures = 0;
 };

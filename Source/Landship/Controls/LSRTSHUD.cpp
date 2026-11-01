@@ -241,6 +241,18 @@ void ALSRTSHUD::DrawHUD()
 			DrawPanelText(FString::Printf(TEXT("Order: %s | Queued: %d"),
 			                              *UEnum::GetValueAsString(Orders->GetOrderKind()), Orders->GetQueuedCount()),
 			              FLinearColor::White, Info.X, Info.Y + 66 * PanelScale);
+			if (Orders->GetLastFailure() != ELSOrderFailure::None)
+			{
+				const TCHAR* Failure =
+				    Orders->GetLastFailure() == ELSOrderFailure::QueueFull
+				        ? TEXT("Queue full")
+				        : (Orders->GetLastFailure() == ELSOrderFailure::InvalidTarget
+				               ? TEXT("Invalid target")
+				               : (Orders->GetLastFailure() == ELSOrderFailure::Unreachable ? TEXT("No reachable path")
+				                                                                           : TEXT("Unavailable")));
+				DrawPanelText(FString(TEXT("Last command: ")) + Failure, FLinearColor::Yellow, Info.X,
+				              Info.Y + 88 * PanelScale);
+			}
 		}
 	}
 	const FVector2D Panel = ProductionPanel().Min + FVector2D(12, 10) * PanelScale;

@@ -46,6 +46,14 @@ struct LANDSHIP_API FLSCastleWeaponSettings
 	float KnockbackLift = 180;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "1", Units = "cm/s"))
 	float ProjectileSpeed = 1800;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0", Units = "cm"))
+	float ArcHeight = 350;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "1", Units = "cm"))
+	float ShellRadius = 18;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "1", ClampMax = "64"))
+	int32 PelletCount = 13;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "1", Units = "cm"))
+	float PelletRadius = 6;
 };
 
 USTRUCT(BlueprintType)
@@ -89,6 +97,5 @@ class LANDSHIP_API ULSCastleWeaponData : public UDataAsset
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
-  private:
-	bool IsLevelValid(const FLSCastleWeaponSettings& Settings) const;
+	static bool AreSettingsValid(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings);
 };

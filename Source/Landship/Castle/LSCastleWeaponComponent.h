@@ -49,7 +49,6 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
   private:
 	ELSWeaponChangeResult ValidateChange(ELSCastleWeapon Weapon) const;
 	void NotifyStateChanged(ELSCastleWeapon Weapon);
-	void ApplyAreaDamage(ELSCastleWeapon Weapon, const FVector& Aim, const FLSCastleWeaponSettings& Settings);
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Weapons",
 	          meta = (AllowPrivateAccess = "true"))
 	TMap<ELSCastleWeapon, FLSCastleWeaponState> States;
