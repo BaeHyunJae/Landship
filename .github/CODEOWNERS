@@ -29,3 +29,6 @@
 /Source/Landship/Match/             @BaeHyunJae @samang22
 /Content/Landship/HUD/              @BaeHyunJae @samang22
 /Source/Landship/HUD/               @BaeHyunJae @samang22
+
+# 공용 테스트 맵(두 사람 공동)
+/Content/Landship/SharedTestLevel/  @BaeHyunJae @samang22

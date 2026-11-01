@@ -26,6 +26,7 @@
 - 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를 열어 범위와 완료 기준을 확인한다. 범위·완료 기준·상태는 Task가 원본이다.
 - PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task를 여러 PR로 나눌 수 있고, 한 PR이 여러 Task에 걸치면 제목에 걸친 Task ID를 모두 붙인다.
 - PR 주소는 Task에 따로 넣지 않는다. Task의 ‘PR’ 속성이 제목의 Task ID로 PR을 찾는다. 제목에 Task ID가 빠지면 Task에서 PR이 보이지 않는다.
+- 게임이 아니라 작업하는 방식(협업 규칙, 문서 체계, 저장소 설정, 도구)을 바꾸는 PR은 Task 대신 Notion의 [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)로 관리하고, 제목에 Task ID 대신 `(WORKFLOW)`를 붙인다.
 - PR을 병합한 뒤 Task를 Done으로 바꿀지는 [D-3. Done 조건](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
 
 ## 커밋과 PR 제목
@@ -33,6 +34,7 @@
 - PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식으로 쓰고, 범위(scope)에 주로 고친 기능 폴더 이름을 적는다. 기능 폴더 밖만 고쳤으면 범위를 생략한다.
   - 형식: `타입(기능): 요약 (TASK-번호)`. 예: `docs: 코딩 규칙 추가 (TASK-38)`
   - Task가 여러 개면 괄호를 한 칸씩 띄어 이어 붙인다. 예: `feat(troops): 병종과 생산 UI (TASK-41) (TASK-42)`
+  - 작업 방식을 바꾸는 PR은 Task ID 자리에 `(WORKFLOW)`를 쓴다. 예: `docs: 문서 위치 규칙 추가 (WORKFLOW)`
   - 타입: `feat`(기능), `fix`(버그 수정), `refactor`(동작 변화 없는 구조 변경), `docs`(문서), `chore`(설정·빌드), `test`(테스트)
 - 스쿼시 병합하면 PR 제목이 커밋 제목으로 자동으로 채워지고, 이 커밋이 통합 브랜치에 남는다. 병합하기 전에 PR 제목이 위 형식에 맞는지 확인한다.
 - 작업 브랜치 안의 중간 커밋은 형식을 강제하지 않는다.
@@ -41,7 +43,8 @@
 
 언리얼 에셋(`.uasset`, `.umap`)은 병합할 수 없다. 같은 파일을 여러 사람이 동시에 고치지 않도록 폴더마다 담당을 정한다.
 
-- 폴더는 Notion의 Feature 단위로 나눈다. 여러 Feature가 함께 쓰는 전투 규칙만 `Combat/`에 둔다. 콘텐츠와 소스에 같은 이름의 폴더를 둔다.
+- 폴더는 Notion의 Feature 단위로 나눈다. 여러 기능이 함께 쓰는 코드와 에셋은 그 역할 이름의 공용 폴더(`Combat/`, `Navigation/`, `SharedTestLevel/`)에 둔다.
+- 콘텐츠와 소스에는 같은 이름의 폴더를 둔다. 소스 폴더는 그 폴더의 CONTRACT.md를 두는 곳이므로 코드가 없는 기능에도 둔다. 콘텐츠 폴더는 에셋이 있을 때만 둔다. `Content/` 아래 파일은 모두 LFS로 저장되므로 문서를 두지 않는다.
 - 폴더별 담당은 폴더 이름이 아니라 [`.github/CODEOWNERS`](.github/CODEOWNERS)에 적는다. 업무 분장이 바뀌면 이 파일만 고친다. 담당 폴더를 건드린 PR에는 담당자가 리뷰어로 자동 지정된다.
 
 ```
@@ -56,14 +59,15 @@ Content/Landship/          Source/Landship/
 ├── Obstacles/  경로 장애물: 터렛, 지뢰, 바리케이드
 ├── Maps/       전장 맵, 적 배치안
 ├── Match/      승패 판정
-└── HUD/        HUD, 전투 알림
+├── HUD/        HUD, 전투 알림
+└── SharedTestLevel/   공용 테스트 맵(콘텐츠만). 여러 사람이 확인에 쓰는 맵
 
 Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 ```
 
 - 담당이 아닌 폴더의 파일을 바꿔야 하면 직접 고치지 않고 담당자에게 요청한다. 담당자가 고쳐서 PR을 올린다.
 - 담당이 여러 명인 폴더(`Combat/` 등)와 여러 기능이 함께 기대는 파일(`Config/*.ini`, `*.uproject`, `Source/**/*.Build.cs`, `Source/*.Target.cs`)은 고치기 전에 팀원에게 알려 동시에 같은 파일을 열지 않게 한다.
-- 새 기능이 생겨 폴더를 추가할 때는 `CODEOWNERS`에 담당을 함께 적는다.
+- 폴더를 추가하는 PR에서 함께 한다: `CODEOWNERS`에 담당 추가, 위 트리에 폴더와 역할 추가, 소스 폴더의 CONTRACT.md 작성('문서' 절), `Build.cs` include 경로 추가([코딩 규칙](docs/coding-conventions.md)).
 - 템플릿이 만든 폴더와 코드(`TopDown/`, `Variant_*/`, `Characters/`, `LevelPrototyping/`, `Landship*` 클래스 등)는 참고용으로 두고 고치지 않는다. 쓰려면 담당 기능 폴더로 복사한다.
 
 ## 코딩 규칙
@@ -79,11 +83,12 @@ C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전에 [`docs/codi
 | `docs/*.md` | 기능과 상관없이 지킬 규칙 | 없음 |
 | `docs/development/` | 기능과 상관없이 따라 할 절차(빌드, 패키징, 테스트 실행, 환경 준비). 절차 하나에 문서 하나 | `development.md` |
 | `docs/adr/` | 되돌리기 어려운 기술 선택과 그 이유 | `adr.md` |
-| `Source/Landship/<기능>/CONTRACT.md` | 다른 기능의 코드·에셋이나 다른 사람이 이 기능에 기대는 것 | `contract.md` |
+| `Source/Landship/<폴더>/CONTRACT.md` | 다른 폴더의 코드·에셋이나 다른 사람이 이 폴더에 기대는 것. 공용 폴더를 포함한 모든 소스 폴더에 하나씩 둔다 | `contract.md` |
+| `docs/templates/` | 위 문서들의 템플릿 | |
 
-- 기능 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다. 기능 폴더를 새로 만드는 PR에서 그 폴더의 CONTRACT.md도 만든다.
+- 기능 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다.
 - 다음은 원본이 다른 곳에 있으므로 저장소 문서에 쓰지 않는다: 검증 결과와 실행 기록(Task 5절, PR), 작업 경위(Task, PR), 수치(데이터 에셋, GDD), 내부 구현 설명(코드 주석).
-- ADR은 바꾸려면 여러 기능 폴더의 코드나 에셋을 다시 만들어야 하는 선택을 대안과 비교해 정했을 때 쓴다. 한 기능 안에서만 의미 있는 판단 근거는 그 기능의 CONTRACT.md나 코드 주석에 짧게 둔다.
+- ADR은 그 선택을 담은 PR 하나를 되돌리는 것으로는 원래대로 돌아가지 않는 선택을 대안과 비교해 정했을 때 쓴다. 예: 여러 폴더의 코드·에셋이 기대게 되는 구조, 저장 데이터 형식, 엔진·플러그인 선택. 되돌리기 쉬운 선택의 판단 근거는 그 폴더의 CONTRACT.md나 코드 주석에 짧게 둔다.
 - ADR은 기록 문서다. 결정이 난 뒤에 쓰고, 병합한 뒤에는 사실 오류 정정과 링크 복구 외에는 고치지 않는다. 결정이 바뀌면 새 ADR을 쓰고, 이전 ADR은 상태 줄만 바꾼다.
 
 ## PR 리뷰
