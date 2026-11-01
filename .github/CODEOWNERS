@@ -1,31 +1,32 @@
 # 폴더별 담당. 업무 분장이 바뀌면 이 파일을 고친다(CONTRIBUTING.md의 '폴더와 담당').
 # 아래쪽 줄이 위쪽 줄보다 우선한다.
-# 첫 전투 프로토타입의 기능별 담당은 영역 담당을 정한 뒤 채운다. 그 전까지는 두 사람 모두로 둔다.
+# 기능 폴더는 영역 담당(아군·조작 @samang22, 전장·판정 @BaeHyunJae)을 따른다. 공용 폴더는 두 사람 공동이다.
 
 # 기본값과 공용 파일
 *                                   @BaeHyunJae @samang22
 
-# 전투 공통 규칙(두 사람 공동)
+# 공용 폴더(두 사람 공동)
+/Source/Landship/Navigation/        @BaeHyunJae @samang22
 /Content/Landship/Combat/           @BaeHyunJae @samang22
 /Source/Landship/Combat/            @BaeHyunJae @samang22
+/Content/Landship/SharedTestLevel/  @BaeHyunJae @samang22
 
 # 기능 폴더
-/Content/Landship/Castle/           @BaeHyunJae @samang22
-/Source/Landship/Castle/            @BaeHyunJae @samang22
-/Content/Landship/Troops/           @BaeHyunJae @samang22
-/Source/Landship/Troops/            @BaeHyunJae @samang22
-/Content/Landship/Controls/         @BaeHyunJae @samang22
-/Source/Landship/Controls/          @BaeHyunJae @samang22
-/Source/Landship/Navigation/        @BaeHyunJae @samang22
-/Content/Landship/Vision/           @BaeHyunJae @samang22
-/Source/Landship/Vision/            @BaeHyunJae @samang22
-/Content/Landship/Enemies/          @BaeHyunJae @samang22
-/Source/Landship/Enemies/           @BaeHyunJae @samang22
-/Content/Landship/Obstacles/        @BaeHyunJae @samang22
-/Source/Landship/Obstacles/         @BaeHyunJae @samang22
-/Content/Landship/Maps/             @BaeHyunJae @samang22
-/Source/Landship/Maps/              @BaeHyunJae @samang22
-/Content/Landship/Match/            @BaeHyunJae @samang22
-/Source/Landship/Match/             @BaeHyunJae @samang22
-/Content/Landship/HUD/              @BaeHyunJae @samang22
-/Source/Landship/HUD/               @BaeHyunJae @samang22
+/Content/Landship/Castle/           @samang22
+/Source/Landship/Castle/            @samang22
+/Content/Landship/Troops/           @samang22
+/Source/Landship/Troops/            @samang22
+/Content/Landship/Controls/         @samang22
+/Source/Landship/Controls/          @samang22
+/Content/Landship/Vision/           @BaeHyunJae
+/Source/Landship/Vision/            @BaeHyunJae
+/Content/Landship/Enemies/          @BaeHyunJae
+/Source/Landship/Enemies/           @BaeHyunJae
+/Content/Landship/Obstacles/        @BaeHyunJae
+/Source/Landship/Obstacles/         @BaeHyunJae
+/Content/Landship/Maps/             @BaeHyunJae
+/Source/Landship/Maps/              @BaeHyunJae
+/Content/Landship/Match/            @BaeHyunJae
+/Source/Landship/Match/             @BaeHyunJae
+/Content/Landship/HUD/              @BaeHyunJae
+/Source/Landship/HUD/               @BaeHyunJae

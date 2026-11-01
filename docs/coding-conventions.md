@@ -1,19 +1,20 @@
 # Landship 코딩 규칙
 
-[Epic C++ 코딩 표준](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine)을 기본으로 따른다. 이 문서에는 표준이 정해 주지 않아 팀이 따로 정한 것만 적는다. 폴더 구조와 담당은 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)를 따른다.
+[Epic C++ 코딩 표준](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine)을 기본으로 따른다. 이 문서에는 표준이 정해 주지 않아 팀이 따로 정한 것만 적는다. 폴더 구조와 담당은 [`CONTRIBUTING.md`](../CONTRIBUTING.md)를 따른다.
 
-## 타입 이름
+## 이름
 
 - 이 프로젝트에서 만드는 모든 C++ 타입에 `LS` 접두사를 붙인다. 언리얼 타입 접두사(`A`, `U`, `F`, `E`, `I`, `T`) 바로 뒤에 밑줄 없이 이어 쓴다.
   - 예: `ALSCastle`, `ULSHealthComponent`, `FLSDamageInfo`, `ELSFaction`, `ILSDamageable`
 - 파일 이름은 언리얼 타입 접두사를 뺀 이름으로 한다. 예: `LSCastle.h`, `LSHealthComponent.cpp`
 - `LS`는 C++ 타입에만 붙인다. 에셋은 종류 접두사만 쓴다. 예: `ALSCastle`을 부모로 한 블루프린트는 `BP_Castle`
+- 에셋 종류 접두사는 언리얼 커뮤니티 표준을 따른다. 예: `BP_`, `WBP_`, `M_`, `IA_`
 - 템플릿이 만든 클래스(`Landship*`, `Strategy*`, `TwinStick*`)는 이름을 바꾸지 않는다.
 
 ## 소스 폴더와 include
 
-- 코드는 담당 기능 폴더(`Source/Landship/<기능>/`)에 둔다.
-- 새 폴더를 만들면 `Landship.Build.cs`의 `PublicIncludePaths`에 경로를 추가한다. `Build.cs`는 여러 기능이 함께 기대는 파일이므로 고치기 전에 상대에게 알린다.
+- 코드는 담당 폴더(`Source/Landship/<폴더>/`)에 둔다.
+- 새 폴더를 만들면 `Landship.Build.cs`의 `PublicIncludePaths`에 경로를 추가한다.
 
 ## C++과 블루프린트의 경계
 

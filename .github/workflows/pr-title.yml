@@ -1,0 +1,33 @@
+# PR 제목이 CONTRIBUTING.md의 '커밋과 PR 제목' 형식에 맞는지 검사한다.
+# 스쿼시 병합하면 PR 제목이 통합 브랜치의 커밋 제목으로 남으므로, 병합 전에 형식을 기계적으로 확인한다.
+name: PR 제목 검사
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 제목 형식 확인
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          types='(feat|fix|refactor|docs|chore|test)'
+          # 타입(폴더): 요약 (TASK-번호 또는 WORKFLOW-번호) ...
+          pattern="^${types}(\([a-z0-9-]+\))?: .+( \((TASK|WORKFLOW)-[0-9]+\))+$"
+          if [ "$BASE" = "main" ]; then
+            # main으로 가는 PR은 통합 브랜치의 단계 병합도 허용한다.
+            # 단계 사이에는 기본 브랜치가 main이라 일반 작업 PR도 main으로 간다.
+            pattern="${pattern}|^chore: .+ 단계 병합$"
+          fi
+          if printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "제목 형식이 맞습니다: $TITLE"
+          else
+            echo "::error::PR 제목이 CONTRIBUTING.md의 '커밋과 PR 제목' 형식에 맞지 않습니다: $TITLE"
+            exit 1
+          fi
