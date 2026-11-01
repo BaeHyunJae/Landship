@@ -23,26 +23,25 @@
 
 ## Task와 PR
 
-- 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를 열어 범위와 완료 기준을 확인한다. 범위·완료 기준·상태는 Task가 원본이다.
-- PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task를 여러 PR로 나눌 수 있고, 한 PR이 여러 Task에 걸치면 제목에 걸친 Task ID를 모두 붙인다.
-- Task로 만들지 않는 작업 방식 변경([가이드 B-1](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 기준)은 Notion [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)로 관리하고, 제목에 Task ID 대신 그 이슈의 ID를 붙인다. Task 작업과 작업 방식 변경은 한 PR에 섞지 않는다.
+- 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를(작업 방식 변경이면 워크플로우 이슈를) 열어 범위와 완료 기준을 확인한다. 범위·완료 기준·상태는 Notion이 원본이다.
+- Task로 만들지 않는 작업 방식 변경([가이드 B-1](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 기준)은 Notion [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)로 관리하고, 그 이슈의 ID를 Task ID처럼 쓴다.
+- PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task나 이슈를 여러 PR로 나눌 수 있고, 한 PR이 여러 Task나 이슈에 걸치면 제목에 걸친 ID를 모두 붙인다.
 - PR 주소는 Notion에 따로 넣지 않는다. Task와 워크플로우 이슈의 ‘PR’ 속성이 제목의 ID로 PR을 찾는다. 제목에 ID가 빠지면 Notion에서 PR이 보이지 않는다.
 - PR을 병합한 뒤 Task를 Done으로 바꿀지는 [D-3. Done 조건](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
 
 ## 커밋과 PR 제목
 
 - PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식으로 쓰고, 범위(scope)에 주로 고친 폴더 이름을 소문자로 적는다. 폴더 트리 밖만 고쳤으면 범위를 생략한다.
-  - 형식: `타입(기능): 요약 (TASK-번호)`. 예: `docs: 코딩 규칙 추가 (TASK-38)`
-  - Task가 여러 개면 괄호를 한 칸씩 띄어 이어 붙인다. 예: `feat(troops): 병종과 생산 UI (TASK-41) (TASK-42)`
-  - 워크플로우 이슈의 PR은 Task ID 자리에 이슈 ID를 쓴다. 예: `docs: 문서 위치 규칙 추가 (WORKFLOW-3)`
+  - 형식: `타입(폴더): 요약 (ID)`. ID는 `TASK-번호` 또는 워크플로우 이슈의 `WORKFLOW-번호`다. 예: `docs: 코딩 규칙 추가 (TASK-38)`, `docs: 문서 위치 규칙 추가 (WORKFLOW-4)`
+  - ID가 여러 개면 괄호를 한 칸씩 띄어 이어 붙인다. 예: `feat(troops): 병종과 생산 UI (TASK-41) (TASK-42)`
   - 통합 브랜치를 `main`에 병합하는 PR은 ID를 붙이지 않는다. 형식: `chore: <단계 이름> 단계 병합`
   - 타입: `feat`(기능), `fix`(버그 수정), `refactor`(동작 변화 없는 구조 변경), `docs`(문서), `chore`(설정·빌드), `test`(테스트)
-- 스쿼시 병합하면 PR 제목이 커밋 제목으로 자동으로 채워지고, 이 커밋이 통합 브랜치에 남는다. 제목 형식은 PR마다 자동으로 검사된다([`pr-title.yml`](.github/workflows/pr-title.yml)). 검사가 실패한 PR은 병합하지 않는다.
+- 스쿼시 병합하면 PR 제목이 커밋 제목으로 자동으로 채워지고, 이 커밋이 통합 브랜치에 남는다. 제목 형식은 PR마다 자동으로 검사된다([`pr-title.yml`](.github/workflows/pr-title.yml)). 검사가 실패한 PR은 병합하지 않고, 병합 화면에서 커밋 제목을 고치지 않는다.
 - 작업 브랜치 안의 중간 커밋은 형식을 강제하지 않는다.
 
 ## 폴더와 담당
 
-폴더마다 담당을 정해 누가 고치고 리뷰할지 정한다. 폴더는 두 종류다.
+폴더마다 담당을 정한다. 담당은 그 폴더의 변경을 리뷰할 책임이다. 폴더는 두 종류다.
 
 - **기능 폴더**: Notion의 Feature 하나에 대응한다.
 - **공용 폴더**: 여러 기능이 함께 쓰는 코드와 에셋을 둔다. 이름은 그 역할로 짓는다(`Combat/`, `Navigation/`, `SharedTestLevel/`).
@@ -68,8 +67,8 @@ Content/Landship/          Source/Landship/
 Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 ```
 
-- 담당이 아닌 폴더의 파일을 바꿔야 하면 직접 고치지 않고 담당자에게 요청한다. 담당자가 고쳐서 PR을 올린다.
-- `Content/` 아래 파일(`.uasset`, `.umap` 등)은 병합할 수 없다. 공용 폴더의 `Content/` 파일은 고치기 전에 팀원에게 알려 두 사람이 같은 파일을 동시에 고치지 않게 한다. 기능 폴더는 담당자만 고치므로 알리지 않아도 된다. 코드와 설정 같은 텍스트 파일은 병합할 수 있다.
+- 코드·설정·문서 같은 텍스트 파일은 병합할 수 있으므로, 담당이 아닌 폴더라도 직접 고친다. 담당자는 PR에서 리뷰한다.
+- `Content/` 아래 파일(`.uasset`, `.umap` 등)은 병합할 수 없으므로 담당자만 고친다. 담당이 아닌 폴더의 `Content/` 파일을 바꿔야 하면 담당자에게 요청한다. 공용 폴더의 `Content/` 파일은 고치기 전에 팀원에게 알려 두 사람이 같은 파일을 동시에 고치지 않게 한다.
 - 폴더를 추가하는 PR에서 함께 한다: `CODEOWNERS`에 담당 추가, 위 트리에 폴더와 역할 추가, 소스 폴더의 CONTRACT.md 작성('문서' 절), `Build.cs` include 경로 추가([코딩 규칙](docs/coding-conventions.md)).
 - 템플릿이 만든 폴더와 코드(`TopDown/`, `Variant_*/`, `Characters/`, `LevelPrototyping/`, `Landship*` 클래스 등)는 참고용으로 두고 고치지 않는다. 쓰려면 담당 폴더로 복사한다.
 
@@ -89,7 +88,6 @@ C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전에 [`docs/codi
 | `Source/Landship/<폴더>/CONTRACT.md` | 폴더 계약: 다른 폴더의 코드·에셋이나 다른 사람이 이 폴더에 기대는 것. 기능 폴더와 공용 폴더의 소스 폴더마다 하나씩 둔다 | `contract.md` |
 | `docs/templates/` | 위 문서들의 템플릿 | |
 
-- 과도기: `docs/development/`의 기존 문서와 스크립트를 위 위치로 옮기는 이관 PR이 병합될 때까지, `docs/development/`에 새 문서를 만들지 않고 기존 문서만 고친다. 이관 PR에서 이 항목을 지운다.
 - 폴더 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다.
 - 다음은 원본이 다른 곳에 있으므로 저장소 문서에 쓰지 않는다: 검증 결과와 실행 기록(Task 5절, PR), 작업 경위(Task, PR), 수치(데이터 에셋, GDD), 내부 구현 설명(코드 주석).
 - ADR은 대안과 비교해 정한 선택 가운데, 나중에 바꾸려면 그 선택에 기댄 다른 폴더의 코드·에셋이나 저장 데이터까지 고쳐야 하는 선택에 쓴다. 예: 여러 폴더가 기대는 구조, 저장 데이터 형식, 엔진·플러그인 선택. 그렇지 않은 선택의 판단 근거는 그 폴더의 CONTRACT.md나 코드 주석에 짧게 둔다.
