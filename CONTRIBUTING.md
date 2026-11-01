@@ -23,16 +23,16 @@
 
 ## Task와 PR
 
-- 개발 Task 하나에 PR 하나를 연다.
-- PR 제목 끝에 Notion Task ID를 괄호로 붙인다. 예: `feat(castle): 성 클릭 이동 (TASK-40)`
-- PR 주소는 Notion Task에 따로 넣지 않는다. Task의 ‘PR’ 속성이 제목의 Task ID로 PR을 찾아 링크를 만든다. 제목에 Task ID가 빠지면 Task에서 PR이 보이지 않는다.
-- PR 병합은 Task 완료와 같지 않다. Task 담당자가 Notion Task의 완료 기준을 확인한 뒤 직접 Done으로 바꾼다. 상태 변경은 자동화에 맡기지 않는다. Done 조건은 Notion의 프로젝트 사용 및 운영 가이드를 따른다.
-- 구현 범위와 완료 기준은 Notion의 해당 Task가 원본이다.
+- 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를 열어 범위와 완료 기준을 확인한다. 범위·완료 기준·상태는 Task가 원본이다.
+- PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task를 여러 PR로 나눌 수 있고, 한 PR이 여러 Task에 걸치면 제목에 걸친 Task ID를 모두 붙인다.
+- PR 주소는 Task에 따로 넣지 않는다. Task의 ‘PR’ 속성이 제목의 Task ID로 PR을 찾는다. 제목에 Task ID가 빠지면 Task에서 PR이 보이지 않는다.
+- PR을 병합한 뒤 Task를 Done으로 바꿀지는 [D-3. Done 조건](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
 
 ## 커밋과 PR 제목
 
 - PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식으로 쓰고, 범위(scope)에 주로 고친 기능 폴더 이름을 적는다. 기능 폴더 밖만 고쳤으면 범위를 생략한다.
   - 형식: `타입(기능): 요약 (TASK-번호)`. 예: `docs: 코딩 규칙 추가 (TASK-38)`
+  - Task가 여러 개면 괄호를 한 칸씩 띄어 이어 붙인다. 예: `feat(troops): 병종과 생산 UI (TASK-41) (TASK-42)`
   - 타입: `feat`(기능), `fix`(버그 수정), `refactor`(동작 변화 없는 구조 변경), `docs`(문서), `chore`(설정·빌드), `test`(테스트)
 - 스쿼시 병합하면 PR 제목이 커밋 제목으로 자동으로 채워지고, 이 커밋이 통합 브랜치에 남는다. 병합하기 전에 PR 제목이 위 형식에 맞는지 확인한다.
 - 작업 브랜치 안의 중간 커밋은 형식을 강제하지 않는다.
@@ -50,6 +50,7 @@ Content/Landship/          Source/Landship/
 ├── Castle/     성 이동, 무장 조준·발사
 ├── Troops/     병력 투입, 병종, 교전 반응
 ├── Controls/   카메라, 선택·명령
+├── Navigation/ 경로 탐색 설정
 ├── Vision/     전장의 안개, 미니맵
 ├── Enemies/    적 거점, 적 분대
 ├── Obstacles/  경로 장애물: 터렛, 지뢰, 바리케이드
