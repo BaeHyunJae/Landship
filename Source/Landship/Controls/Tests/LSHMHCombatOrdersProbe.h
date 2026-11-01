@@ -20,6 +20,9 @@ class ALSHMHCombatOrdersProbe : public AActor
   private:
 	void Check(bool bOK, const TCHAR* Message);
 	void Finish();
+	void TickMeleeAvoidanceProbe();
+	UPROPERTY() TArray<TObjectPtr<class ALSTroopUnit>> MeleeUnits;
+	float NextMeleeLog = 0;
 	UFUNCTION() void OnSpear(AActor* Target, float Damage);
 	UFUNCTION() void OnArcher(AActor* Target, float Damage);
 	UFUNCTION() void OnCavalry(AActor* Target, float Damage);

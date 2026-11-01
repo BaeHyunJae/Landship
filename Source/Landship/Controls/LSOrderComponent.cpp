@@ -295,7 +295,9 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 		return false;
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
+		// RVO의 예측 반경이 공격 진입을 막지 않도록 교전 접근에서는 사용하지 않는다.
+		// 실제 충돌과 NavMesh 경로·공격 위치의 점유 검사는 그대로 유지한다.
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(!bAttackApproach);
 	}
 	SetMineAvoidance(UsesMineAvoidance());
 	APawn* Pawn = Cast<APawn>(GetOwner());
@@ -587,10 +589,10 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
-	// 공격 가능한 외곽까지 접근하면서 아군 사이의 회피는 유지한다.
+	// 정지한 앞줄까지 예측 회피하면 뒤의 근접 병력이 사거리 밖에서 옆으로 떠밀린다.
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(false);
 	}
 	if (EngagedTarget.Get() != Target)
 	{
@@ -637,6 +639,8 @@ void ULSOrderComponent::FinishOrder()
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 	ActiveOrder = FLSOrder();
 	bHasEngagement = false;
 	EngagedTarget.Reset();
@@ -783,6 +787,8 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	if (bHasEngagement)
 	{
 		StopMovement();
+		if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+			Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 		if (Attack)
 		{
 			Attack->StopAttack();

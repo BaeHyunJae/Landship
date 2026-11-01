@@ -13,6 +13,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "HAL/PlatformMisc.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "AI/Navigation/AvoidanceManager.h"
 
 namespace
 {
@@ -38,7 +40,8 @@ void ALSHMHCombatOrdersProbe::BeginPlay()
 {
 	Super::BeginPlay();
 #if !UE_BUILD_SHIPPING
-	if (FParse::Param(FCommandLine::Get(), TEXT("HMHCombatOrdersTestExit")))
+	if (FParse::Param(FCommandLine::Get(), TEXT("HMHCombatOrdersTestExit")) ||
+	    FParse::Param(FCommandLine::Get(), TEXT("HMHMeleeAvoidanceTestExit")))
 		return;
 #endif
 	SetActorTickEnabled(false);
@@ -75,6 +78,11 @@ void ALSHMHCombatOrdersProbe::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	Elapsed += DeltaSeconds;
 	StageTime += DeltaSeconds;
+	if (FParse::Param(FCommandLine::Get(), TEXT("HMHMeleeAvoidanceTestExit")))
+	{
+		TickMeleeAvoidanceProbe();
+		return;
+	}
 	auto* Controller = Cast<ALSPlayerController>(GetWorld()->GetFirstPlayerController());
 	if (Elapsed > 35)
 	{
@@ -147,7 +155,8 @@ void ALSHMHCombatOrdersProbe::Tick(float DeltaSeconds)
 		      TEXT("교전 중 이동 예약"));
 		for (ALSTroopUnit* Unit : Army)
 			Check(Unit->Orders->GetQueuedCount() == 1, TEXT("각 병력 예약 보관"));
-		TargetCastle->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(ULSHealthComponent::MakeDamageRequest(10000, Army[0], Army[0]));
+		TargetCastle->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(
+		    ULSHealthComponent::MakeDamageRequest(10000, Army[0], Army[0]));
 		Stage = 3;
 		StageTime = 0;
 	}
@@ -194,6 +203,96 @@ void ALSHMHCombatOrdersProbe::Tick(float DeltaSeconds)
 		Controller->IssueSelectionOrder(ELSOrderKind::Idle, FVector::ZeroVector, nullptr, false);
 		Check(Army[0]->Orders->GetOrderKind() == ELSOrderKind::Idle && Army[0]->Orders->GetQueuedCount() == 0,
 		      TEXT("정지로 명령·예약 취소"));
+		Finish();
+	}
+}
+
+void ALSHMHCombatOrdersProbe::TickMeleeAvoidanceProbe()
+{
+	if (Elapsed > 20)
+	{
+		Check(false, TEXT("근접 회피 검사 시간 제한"));
+		Finish();
+		return;
+	}
+	if (Stage == 0 && Elapsed > 1.5f)
+	{
+		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
+		{
+			HaltProbeUnit(*It);
+			It->GetCharacterMovement()->DisableMovement();
+			It->SetActorLocation(FVector(2200, 2200, 500));
+			It->SetActorEnableCollision(false);
+		}
+		const bool bDisableRVO = FParse::Param(FCommandLine::Get(), TEXT("MeleeProbeNoRVO"));
+		int32 Count = 5;
+		FParse::Value(FCommandLine::Get(), TEXT("MeleeProbeCount="), Count);
+		Count = FMath::Clamp(Count, 1, 5);
+		float Range = 250;
+		FParse::Value(FCommandLine::Get(), TEXT("MeleeProbeRange="), Range);
+		for (int32 Side = 0; Side < 2; ++Side)
+			for (int32 Index = 0; Index < Count; ++Index)
+			{
+				const FTransform Spawn(FRotator::ZeroRotator, FVector(Side ? 550 : -550, -1300 + Index * 110, 100));
+				auto* Unit =
+				    GetWorld()->SpawnActorDeferred<ALSTroopUnit>(ALSTroopUnit::StaticClass(), Spawn, nullptr, nullptr,
+				                                                 ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+				if (!Unit)
+				{
+					Check(false, TEXT("근접 검사 병력 생성"));
+					Finish();
+					return;
+				}
+				Unit->SetInitialTroopType(Index % 2 ? ELSTroopType::Cavalry : ELSTroopType::Spearman);
+				Unit->SetInitialFaction(Side ? ELSFaction::Enemy : ELSFaction::Ally);
+				Unit->FinishSpawning(Spawn);
+				auto Settings = Unit->BasicAttack->GetAttackSettings();
+				Settings.Damage = 1;
+				Settings.Interval = 0.2f;
+				Settings.Range = Range;
+				Unit->BasicAttack->ConfigureAttack(Settings);
+				if (bDisableRVO)
+					Unit->GetCharacterMovement()->AvoidanceConsiderationRadius = 0;
+				if (Side && FParse::Param(FCommandLine::Get(), TEXT("MeleeProbeStaticTargets")))
+					Unit->Orders->SetComponentTickEnabled(false);
+				MeleeUnits.Add(Unit);
+			}
+		auto* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>();
+		Vision->RequestRefresh();
+		Vision->Tick(0.11f);
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			FLSOrder Order;
+			Order.Kind = ELSOrderKind::AttackTarget;
+			Order.Target = MeleeUnits[Index + Count];
+			Check(MeleeUnits[Index]->Orders->SubmitOrder(Order), TEXT("근접 집단 공격 요청 접수"));
+		}
+		Stage = 1;
+		StageTime = 0;
+		UE_LOG(LogTemp, Display, TEXT("MELEE_PROBE start range=%.1f expansion=%.2f noRVO=%d"), Range,
+		       GetWorld()->GetAvoidanceManager()->ArtificialRadiusExpansion, bDisableRVO);
+	}
+	if (Stage != 1)
+		return;
+	const int32 Count = MeleeUnits.Num() / 2;
+	if (FParse::Param(FCommandLine::Get(), TEXT("MeleeProbeNoRVO")))
+		for (ALSTroopUnit* Unit : MeleeUnits)
+			Unit->GetCharacterMovement()->AvoidanceConsiderationRadius = 0;
+	if (StageTime >= NextMeleeLog)
+	{
+		NextMeleeLog = StageTime + 1;
+		for (int32 Index = 0; Index < Count; ++Index)
+			UE_LOG(LogTemp, Display, TEXT("MELEE_PROBE t=%.2f unit=%d pos=%s vel=%s gap=%.2f targetHP=%.1f failure=%d"),
+			       StageTime, Index, *MeleeUnits[Index]->GetActorLocation().ToCompactString(),
+			       *MeleeUnits[Index]->GetVelocity().ToCompactString(),
+			       ULSCombatTargetLibrary::GetAttackDistance(MeleeUnits[Index], MeleeUnits[Index + Count]),
+			       ReadProbeHP(MeleeUnits[Index + Count]),
+			       static_cast<int32>(MeleeUnits[Index]->Orders->GetLastFailure()));
+	}
+	if (StageTime > 9)
+	{
+		for (int32 Index = Count; Index < Count * 2; ++Index)
+			Check(ReadProbeHP(MeleeUnits[Index]) < 115, TEXT("각 근접 표적에 지속적인 실제 피해 적용"));
 		Finish();
 	}
 }

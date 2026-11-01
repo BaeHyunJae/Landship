@@ -7,6 +7,7 @@
 #include "Castle/LSMobileCastle.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Controls/LSSelectableComponent.h"
 #include "Tests/AutomationCommon.h"
 #include "Misc/AutomationTest.h"
 
@@ -54,6 +55,47 @@ bool FLSCombatSurfaceRangeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("수직으로 먼 대상을 근접 판정하지 않음"),
 	         ULSCombatTargetLibrary::GetAttackDistance(Source, Target) > 150);
 	Fixture.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCombatAvoidanceStateTest, "Landship.Controls.CombatAvoidanceState",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLSCombatAvoidanceStateTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game))
+		return false;
+	UWorld* World = Fixture.GetTestWorld();
+	auto* Source = World->SpawnActor<ALSTroopUnit>(FVector(0, 0, 100), FRotator::ZeroRotator);
+	auto* Target = World->SpawnActor<ALSTroopUnit>(FVector(200, 0, 100), FRotator::ZeroRotator);
+	if (!Source || !Target)
+		return false;
+	Target->SetInitialFaction(ELSFaction::Enemy);
+	if (!Fixture.BeginPlayInTestWorld())
+		return false;
+	Target->Orders->SetComponentTickEnabled(false);
+	Source->GetCharacterMovement()->DisableMovement();
+	Target->GetCharacterMovement()->DisableMovement();
+	FLSOrder Hold;
+	Hold.Kind = ELSOrderKind::Hold;
+	TestTrue(TEXT("위치 사수 요청 접수"), Source->Orders->SubmitOrder(Hold));
+	for (int32 Index = 0; Index < 20; ++Index)
+	{
+		++GFrameCounter;
+		World->Tick(LEVELTICK_All, 0.01f);
+	}
+	TestFalse(TEXT("교전 중 RVO가 공격 진입을 방해하지 않음"), Source->GetCharacterMovement()->bUseRVOAvoidance != 0);
+	Target->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(
+	    ULSHealthComponent::MakeDamageRequest(10000, Source, Source));
+	for (int32 Index = 0; Index < 20; ++Index)
+	{
+		++GFrameCounter;
+		World->Tick(LEVELTICK_All, 0.01f);
+	}
+	TestTrue(TEXT("자동 교전 종료 후 일반 회피 복원"), Source->GetCharacterMovement()->bUseRVOAvoidance != 0);
+	FLSOrder Stop;
+	TestTrue(TEXT("정지 명령 접수"), Source->Orders->SubmitOrder(Stop));
+	TestTrue(TEXT("명령 교체 후 일반 회피 유지"), Source->GetCharacterMovement()->bUseRVOAvoidance != 0);
 	return true;
 }
 #endif
