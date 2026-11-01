@@ -13,7 +13,7 @@
 
 ## 소스 폴더와 include
 
-- 코드는 담당 기능 폴더(`Source/Landship/<기능>/`)에 둔다.
+- 코드는 담당 폴더(`Source/Landship/<폴더>/`)에 둔다.
 - 새 폴더를 만들면 `Landship.Build.cs`의 `PublicIncludePaths`에 경로를 추가한다. `Build.cs`는 여러 기능이 함께 기대는 파일이므로 고치기 전에 상대에게 알린다.
 
 ## C++과 블루프린트의 경계
