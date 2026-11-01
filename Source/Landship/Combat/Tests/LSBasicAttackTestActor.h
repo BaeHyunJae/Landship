@@ -3,6 +3,7 @@
 #include "GameFramework/Actor.h"
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthTypes.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "LSBasicAttackTestActor.generated.h"
 
 class ULSBasicAttackComponent;
@@ -27,6 +28,13 @@ class ALSBasicAttackTestActor : public AActor, public ILSFactionInterface
 	void ObserveAttack(AActor* Target, float AppliedDamage);
 	UFUNCTION()
 	void ObserveDamage(const FLSDamageResult& Damage);
+	UFUNCTION()
+	void ObserveExecution(const FLSAttackExecution& Execution);
+	TArray<FLSAttackExecution> Executions;
+	float HealthAtExecution = -1.0f;
+	bool bReenterOnExecution = false;
+	bool bDestroyTargetOnExecution = false;
+	bool bDestroySourceOnExecution = false;
 	UPROPERTY()
 	TObjectPtr<ULSBasicAttackComponent> Attack;
 	UPROPERTY()

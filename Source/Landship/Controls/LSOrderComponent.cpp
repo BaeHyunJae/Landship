@@ -90,6 +90,71 @@ bool ULSOrderComponent::ResolveDestination(const FVector& Goal, FVector& OutDest
 	return true;
 }
 
+bool ULSOrderComponent::GetNavigationOriginHeight(double& OutHeight) const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	FNavLocation ProjectedHere;
+	if (!Pawn || !Nav || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), ProjectedHere,
+	                                                 FVector(150, 150, 300)))
+	{
+		return false;
+	}
+	// 현재 내비게이션 표면과 발바닥 사이의 높이 차이까지 목적지 원점 예측에 반영한다.
+	OutHeight = Pawn->GetActorLocation().Z - ProjectedHere.Location.Z;
+	return true;
+}
+
+bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDestination) const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const ULSBasicAttackComponent* Component = GetOwner()->FindComponentByClass<ULSBasicAttackComponent>();
+	if (!IsValid(Target) || !Pawn || !Component || !CanMove())
+	{
+		return false;
+	}
+	const float Range = Component->GetAttackSettings().Range;
+	const FVector TargetLocation = Target->GetActorLocation();
+	double OriginHeight;
+	if (!GetNavigationOriginHeight(OriginHeight))
+	{
+		return false;
+	}
+	const auto TryGoal = [&](const FVector& Desired)
+	{
+		FVector Goal;
+		if (!ResolveDestination(Desired, Goal))
+		{
+			return false;
+		}
+		// 경로는 발 위치를 반환하지만 사거리는 액터 원점 사이에서 판정한다.
+		const FVector StandingLocation = Goal + FVector(0, 0, OriginHeight);
+		const double Distance = FVector::Dist(StandingLocation, TargetLocation);
+		if (Distance >= Range - 1.0)
+		{
+			return false;
+		}
+		OutDestination = Goal;
+		return true;
+	};
+	if (TryGoal(TargetLocation))
+	{
+		return true;
+	}
+	// 건물 중심의 내비게이션 구멍 대신 사거리 안에서 도달 가능한 위치를 찾는다.
+	const FVector TowardOwner = (Pawn->GetActorLocation() - TargetLocation).GetSafeNormal2D();
+	const FVector Direction = TowardOwner.IsNearlyZero() ? FVector::ForwardVector : TowardOwner;
+	for (int32 Index = 0; Index < 17; ++Index)
+	{
+		const float Angle = Index == 0 ? 0.0f : (Index % 2 ? 1.0f : -1.0f) * ((Index + 1) / 2) * 22.5f;
+		if (TryGoal(TargetLocation + Direction.RotateAngleAxis(Angle, FVector::UpVector) * (Range * 0.9f)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 {
 	switch (Kind)
@@ -130,7 +195,7 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 		FVector TargetDestination;
 		return CanAttack() && IsHostile(Order.Target.Get()) &&
 		       (IsInAttackRange(Order.Target.Get()) ||
-		        ResolveDestination(Order.Target->GetActorLocation(), TargetDestination));
+		        ResolveAttackDestination(Order.Target.Get(), TargetDestination));
 	}
 	default:
 		return false;
@@ -204,6 +269,29 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 	{
 		return false;
 	}
+	float AcceptanceRadius = ArrivalTolerance;
+	const bool bAttackApproach = bHasEngagement && EngagedTarget.IsValid();
+	if (bAttackApproach)
+	{
+		if (!Attack)
+		{
+			return false;
+		}
+		double OriginHeight;
+		if (!GetNavigationOriginHeight(OriginHeight))
+		{
+			return false;
+		}
+		const FVector TargetLocation = EngagedTarget->GetActorLocation();
+		const FVector StandingLocation = Goal + FVector(0, 0, OriginHeight);
+		const double StandingDistance = FVector::Dist(StandingLocation, TargetLocation);
+		const double RemainingRange = Attack->GetAttackSettings().Range - StandingDistance - 1.0;
+		if (RemainingRange <= 0.0)
+		{
+			return false;
+		}
+		AcceptanceRadius = FMath::Min(ArrivalTolerance, static_cast<float>(RemainingRange));
+	}
 	UPathFollowingComponent* PathFollowing = Controller->GetPathFollowingComponent();
 	PathFollowing->OnRequestFinished.RemoveAll(this);
 	PathFollowing->OnRequestFinished.AddUObject(this, &ULSOrderComponent::OnMovementFinished);
@@ -212,10 +300,16 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal)
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementCompleted = false;
 	FAIMoveRequest Request(Goal);
-	Request.SetAcceptanceRadius(ArrivalTolerance);
+	Request.SetAcceptanceRadius(AcceptanceRadius);
+	if (bAttackApproach)
+	{
+		// 에이전트 반경을 더하면 도착 판정이 실제 공격 사거리 밖으로 늘어난다.
+		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetReachTestIncludesGoalRadius(false);
+	}
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(false);
-	Request.SetProjectGoalLocation(true);
+	Request.SetProjectGoalLocation(!bAttackApproach);
 	const FPathFollowingRequestResult Result = Controller->MoveTo(Request);
 	MovementRequestId = Result.MoveId;
 	if (Result.Code != EPathFollowingRequestResult::RequestSuccessful)
@@ -348,7 +442,8 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 		if (GetWorld()->GetTimeSeconds() >= NextRepathTime)
 		{
 			NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
-			if (!MoveTo(Target->GetActorLocation()))
+			FVector AttackDestination;
+			if (!ResolveAttackDestination(Target, AttackDestination) || !MoveTo(AttackDestination))
 			{
 				EngagedTarget.Reset();
 				FinishOrder();
