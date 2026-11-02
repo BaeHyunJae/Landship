@@ -19,6 +19,8 @@
 
 ALSTroopUnit::ALSTroopUnit()
 {
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
 	MeleeIdleAnimation = TSoftObjectPtr<UAnimSequence>(
 	    FSoftObjectPath(TEXT("/Game/ReflectionLab/Gameplay/Player/Animations/A_2HandIdle.A_2HandIdle")));
@@ -124,12 +126,12 @@ void ALSTroopUnit::RefreshDefinition()
 	TroopMarker->SetRelativeLocation(FVector(0, 0, 145));
 	GetCapsuleComponent()->SetCapsuleSize(TroopType == ELSTroopType::Cavalry ? 65.0f : 42.0f, 88.0f);
 	const bool bAlly = GetFaction() == ELSFaction::Ally;
-	const FLinearColor TeamColor = bAlly ? FLinearColor(0.08f, 0.55f, 1.0f) : FLinearColor(0.95f, 0.12f, 0.05f);
+	MarkerColor = bAlly ? FLinearColor(0.08f, 0.55f, 1.0f) : FLinearColor(0.95f, 0.12f, 0.05f);
 	if (UMaterialInterface* Material = PrototypeMaterial.LoadSynchronous())
 	{
-		UMaterialInstanceDynamic* Instance = UMaterialInstanceDynamic::Create(Material, this);
-		Instance->SetVectorParameterValue(TEXT("TeamColor"), TeamColor);
-		TroopMarker->SetMaterial(0, Instance);
+		MarkerMaterial = UMaterialInstanceDynamic::Create(Material, this);
+		MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), MarkerColor);
+		TroopMarker->SetMaterial(0, MarkerMaterial);
 	}
 	FLSProjectileAttackSettings Shot = TroopType == ELSTroopType::Archer ? RangedAttack : FLSProjectileAttackSettings();
 	if (Shot.ProjectileClass && !Shot.Material)
@@ -148,6 +150,7 @@ void ALSTroopUnit::BeginPlay()
 	RefreshDefinition();
 	Super::BeginPlay();
 	Health->OnDiedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDied);
+	Health->OnDamagedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDamaged);
 	InitializeAnimations();
 }
 
@@ -178,11 +181,38 @@ void ALSTroopUnit::InitializeAnimations()
 
 void ALSTroopUnit::PlayIdleAnimation()
 {
+	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	VisualAttackTarget.Reset();
+	SetActorTickEnabled(false);
 	if (ActiveIdleAnimation && ULSCombatTargetLibrary::IsCombatAlive(this) && !GetMesh()->IsSimulatingPhysics())
 	{
 		GetMesh()->PlayAnimation(ActiveIdleAnimation, true);
 		GetMesh()->SetPlayRate(1.0f);
 	}
+}
+
+void ALSTroopUnit::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	// 명령 실행부를 구독하지 않아도 직접 StopAttack·표적 교체를 같은 표현 규칙으로 처리한다.
+	if (!VisualAttackTarget.IsValid() || BasicAttack->GetAttackTarget() != VisualAttackTarget.Get() ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(VisualAttackTarget.Get()))
+		PlayIdleAnimation();
+}
+
+void ALSTroopUnit::OnTroopDamaged(const FLSDamageResult& Damage)
+{
+	if (!MarkerMaterial || !ULSCombatTargetLibrary::IsCombatAlive(this) || !FMath::IsFinite(HitFlashDuration) ||
+	    HitFlashDuration <= 0)
+		return;
+	MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), HitFlashColor);
+	GetWorldTimerManager().SetTimer(HitFlashTimer, this, &ALSTroopUnit::RestoreMarkerColor, HitFlashDuration, false);
+}
+
+void ALSTroopUnit::RestoreMarkerColor()
+{
+	if (MarkerMaterial)
+		MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), MarkerColor);
 }
 
 void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
@@ -198,6 +228,12 @@ void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
 	const float PlayRate = FMath::Max(1.0f, Length / Interval);
 	if (!FMath::IsFinite(PlayRate))
 		return;
+	FVector Direction = Execution.TargetLocation - GetActorLocation();
+	Direction.Z = 0;
+	if (!Direction.IsNearlyZero())
+		SetActorRotation(Direction.Rotation());
+	VisualAttackTarget = Execution.Target;
+	SetActorTickEnabled(true);
 	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
 	GetMesh()->PlayAnimation(ActiveAttackAnimation, false);
 	GetMesh()->SetPlayRate(PlayRate);
@@ -208,6 +244,8 @@ void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
 void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	GetWorldTimerManager().ClearTimer(HitFlashTimer);
+	Health->OnDamagedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopDamaged);
 	BasicAttack->OnAttackExecutedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
 	Health->OnDiedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopDied);
 	Super::EndPlay(EndPlayReason);
@@ -215,6 +253,9 @@ void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ALSTroopUnit::OnTroopDied(const FLSDamageResult& Damage)
 {
+	SetActorTickEnabled(false);
+	VisualAttackTarget.Reset();
+	GetWorldTimerManager().ClearTimer(HitFlashTimer);
 	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
 	BasicAttack->OnAttackExecutedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
 	TroopMarker->SetVisibility(false);

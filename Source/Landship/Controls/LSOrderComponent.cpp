@@ -19,6 +19,7 @@
 #include "NavigationPath.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -38,6 +39,8 @@ void ULSOrderComponent::BeginPlay()
 		Health->OnDamagedEvent.AddDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
 		Health->OnDiedEvent.AddDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
 	}
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+		Character->OnCharacterMovementUpdated.AddDynamic(this, &ULSOrderComponent::OnOwnerMovementUpdated);
 	Attack = GetOwner()->FindComponentByClass<ULSBasicAttackComponent>();
 	if (Attack)
 	{
@@ -52,12 +55,13 @@ void ULSOrderComponent::EndBattleActions()
 	bKnockbackActive = false;
 	if (bBattleActionsEnded) return;
 	bBattleActionsEnded = true;
+	GetWorld()->GetTimerManager().ClearTimer(OrderUpdateTimer);
 	CancelDisarm();
 	bMineBlocked = false;
 	SetMineAvoidance(false);
 	PendingOrders.Reset();
 	ActiveOrder = FLSOrder();
-	EngagedTarget.Reset();
+	SetEngagementTarget(nullptr);
 	bHasEngagement = false;
 	NextRepathTime = 0;
 	StopMovement();
@@ -251,7 +255,7 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	{
 		// 공중에서 새 명령을 받아도 강제 이동 자체는 취소하지 않는다.
 		ActiveOrder = Order;
-		EngagedTarget.Reset();
+		SetEngagementTarget(nullptr);
 		bHasEngagement = false;
 		if (Attack)
 			Attack->StopAttack();
@@ -265,13 +269,22 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	{
 		Attack->StopAttack();
 	}
-	EngagedTarget.Reset();
+	SetEngagementTarget(nullptr);
 	ActiveOrder = Order;
 	bHasEngagement = false;
+	bAttackApproaching = false;
 	SetMineAvoidance(UsesMineAvoidance());
 	NextRepathTime = 0;
 	if (Order.Kind == ELSOrderKind::Move || Order.Kind == ELSOrderKind::AttackMove)
 	{
+		if (Order.Kind == ELSOrderKind::AttackMove)
+		{
+			if (AActor* Enemy = CanAttack() ? FindEnemy(GetDetectionRange()) : nullptr)
+			{
+				Engage(Enemy, true);
+				return;
+			}
+		}
 		if (!MoveTo(Order.Destination))
 		{
 			StopMovement();
@@ -299,6 +312,7 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 		// 실제 충돌과 NavMesh 경로·공격 위치의 점유 검사는 그대로 유지한다.
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(!bAttackApproach);
 	}
+	bAttackApproaching = bAttackApproach;
 	SetMineAvoidance(UsesMineAvoidance());
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	AAIController* Controller = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
@@ -326,7 +340,7 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 		                                                     Goal + FVector(0, 0, OriginHeight)) - 1.0;
 		if (RemainingRange <= 0)
 			return false;
-		AcceptanceRadius = FMath::Min(ArrivalTolerance, static_cast<float>(RemainingRange));
+		AcceptanceRadius = FMath::Min(ArrivalTolerance, static_cast<float>(FMath::Max(0.0, RemainingRange - GetAttackApproachPadding())));
 		Request.SetReachTestIncludesAgentRadius(false);
 		Request.SetReachTestIncludesGoalRadius(false);
 	}
@@ -382,7 +396,7 @@ bool ULSOrderComponent::ApplyKnockback(const FVector& Velocity)
 	StopMovement();
 	if (Attack)
 		Attack->StopAttack();
-	EngagedTarget.Reset();
+	SetEngagementTarget(nullptr);
 	bHasEngagement = false;
 	NextRepathTime = 0;
 	bKnockbackActive = true;
@@ -420,10 +434,12 @@ void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFo
 	if (!Result.IsSuccess())
 		LastFailure = ELSOrderFailure::Unreachable;
 	MovementRequestId = FAIRequestID::InvalidRequest;
+	RequestOrderUpdate();
 }
 
 void ULSOrderComponent::StopMovement()
 {
+	bAttackApproaching = false;
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementCompleted = false;
 	if (ALSCastle* Castle = Cast<ALSCastle>(GetOwner()))
@@ -598,10 +614,12 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 	{
 		NextRepathTime = 0;
 	}
-	EngagedTarget = Target;
+	SetEngagementTarget(Target);
 	bHasEngagement = true;
 	SetMineAvoidance(UsesMineAvoidance());
-	if (IsInAttackRange(Target))
+	const float Padding = bAttackApproaching && IsMoving() ? GetAttackApproachPadding() : 0.0f;
+	if (IsInAttackRange(Target) &&
+	    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Attack->GetAttackSettings().Range - Padding)
 	{
 		StopMovement();
 		if (Attack && Attack->GetAttackTarget() != Target)
@@ -615,9 +633,14 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 		{
 			Attack->StopAttack();
 		}
-		if (GetWorld()->GetTimeSeconds() >= NextRepathTime)
+		const double Now = GetWorld()->GetTimeSeconds();
+		const bool bTargetMoved = Now - LastAttackRepathTime >= MinAttackRepathInterval &&
+		    FVector::DistSquared(Target->GetActorLocation(), LastAttackTargetLocation) >= FMath::Square(TargetRepathDistance);
+		if (Now >= NextRepathTime || bTargetMoved)
 		{
-			NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
+			LastAttackRepathTime = Now;
+			LastAttackTargetLocation = Target->GetActorLocation();
+			NextRepathTime = Now + RepathInterval;
 			FVector Destination;
 			bool bAttackPathMineBlocked = false;
 			if (!ResolveAttackDestination(Target, Destination, UsesMineAvoidance(), &bAttackPathMineBlocked) || !MoveTo(Destination, true))
@@ -628,7 +651,7 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 					return;
 				}
 				LastFailure = ELSOrderFailure::Unreachable;
-				EngagedTarget.Reset();
+				SetEngagementTarget(nullptr);
 				FinishOrder();
 			}
 		}
@@ -643,7 +666,7 @@ void ULSOrderComponent::FinishOrder()
 		Character->GetCharacterMovement()->SetAvoidanceEnabled(true);
 	ActiveOrder = FLSOrder();
 	bHasEngagement = false;
-	EngagedTarget.Reset();
+	SetEngagementTarget(nullptr);
 	if (Attack)
 	{
 		Attack->StopAttack();
@@ -664,6 +687,13 @@ void ULSOrderComponent::FinishOrder()
 void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* Function)
 {
 	Super::TickComponent(DeltaTime, TickType, Function);
+	UpdateOrders(DeltaTime);
+}
+
+void ULSOrderComponent::UpdateOrders(float DeltaTime)
+{
+	if (bUpdatingOrders) return;
+	TGuardValue<bool> UpdatingGuard(bUpdatingOrders, true);
 	if (bBattleActionsEnded) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 	{
@@ -712,7 +742,7 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		{
 			bMineBlocked = false;
 			StopMovement();
-			EngagedTarget.Reset();
+			SetEngagementTarget(nullptr);
 			bHasEngagement = false;
 			if (Attack) Attack->StopAttack();
 		}
@@ -793,7 +823,7 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		{
 			Attack->StopAttack();
 		}
-		EngagedTarget.Reset();
+		SetEngagementTarget(nullptr);
 		bHasEngagement = false;
 	}
 	if (ActiveOrder.Kind == ELSOrderKind::AttackMove && !IsMoving())
@@ -811,6 +841,10 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 
 void ULSOrderComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+	GetWorld()->GetTimerManager().ClearTimer(OrderUpdateTimer);
+	SetEngagementTarget(nullptr);
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+		Character->OnCharacterMovementUpdated.RemoveDynamic(this, &ULSOrderComponent::OnOwnerMovementUpdated);
 	CancelDisarm();
 	if (ULSHealthComponent* Health = GetOwner()->FindComponentByClass<ULSHealthComponent>())
 	{
@@ -978,4 +1012,46 @@ void ULSOrderComponent::StopForMine()
 	bMineBlocked = true;
 	NextRepathTime = GetWorld()->GetTimeSeconds() + RepathInterval;
 	StopMovement();
+}
+
+float ULSOrderComponent::GetAttackApproachPadding() const
+{
+	return Attack ? FMath::Clamp(AttackApproachPadding, 0.0f, Attack->GetAttackSettings().Range * 0.1f) : 0.0f;
+}
+
+void ULSOrderComponent::RequestOrderUpdate()
+{
+	if (bBattleActionsEnded || !IsComponentTickEnabled() || GetWorld()->GetTimerManager().TimerExists(OrderUpdateTimer))
+		return;
+	// 경로·사망 콜백 안에서 새 이동 요청을 만들지 않고 다음 틱에 한 번만 판단한다.
+	OrderUpdateTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			OrderUpdateTimer.Invalidate();
+			if (IsComponentTickEnabled()) UpdateOrders(0);
+		}));
+}
+
+void ULSOrderComponent::SetEngagementTarget(AActor* Target)
+{
+	if (EngagedTarget.Get() == Target) return;
+	if (AActor* Previous = EngagedTarget.Get())
+		if (ULSHealthComponent* Health = Previous->FindComponentByClass<ULSHealthComponent>())
+			Health->OnDiedEvent.RemoveDynamic(this, &ULSOrderComponent::OnEngagedTargetDied);
+	EngagedTarget = Target;
+	if (Target)
+		if (ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>())
+			Health->OnDiedEvent.AddUniqueDynamic(this, &ULSOrderComponent::OnEngagedTargetDied);
+}
+
+void ULSOrderComponent::OnEngagedTargetDied(const FLSDamageResult& Damage)
+{
+	RequestOrderUpdate();
+}
+
+void ULSOrderComponent::OnOwnerMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
+{
+	if (IsComponentTickEnabled() && bAttackApproaching && !bKnockbackActive && !bMineBlocked &&
+	    IsHostile(EngagedTarget.Get()) && IsInAttackRange(EngagedTarget.Get()))
+		UpdateOrders(0);
 }

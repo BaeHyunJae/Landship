@@ -5,6 +5,8 @@
 #include "Animation/AnimSequence.h"
 #include "Combat/LSHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Controls/LSOrderComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -52,12 +54,37 @@ bool FLSTroopAnimationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("병종별 대기 클립 연결"), Instance->GetCurrentAsset()->GetFName(),
 		          FName(Index == 1 ? TEXT("A_Enemy_Idle") : TEXT("A_2HandIdle")));
 		TestTrue(TEXT("대기 반복 재생"), Instance->IsLooping());
+		Unit->SetActorRotation(FRotator(0, 180, 0));
 		TestTrue(TEXT("실제 공격 요청 접수"), Unit->BasicAttack->StartAttack(Enemies[Index]));
 		Unit->BasicAttack->StopAttack();
 		TestEqual(TEXT("피해 명중 대신 공격 실행에 맞춰 동작 재생"), Instance->GetCurrentAsset()->GetFName(),
 		          FName(Index == 1 ? TEXT("A_Enemy_Shoot") : TEXT("A_Parry_BaseballHit")));
 		TestFalse(TEXT("공격은 한 번만 재생"), Instance->IsLooping());
+		const FVector Direction = (Enemies[Index]->GetActorLocation() - Unit->GetActorLocation()).GetSafeNormal2D();
+		TestTrue(TEXT("공격 실행 시 표적을 즉시 바라봄"),
+		         FVector::DotProduct(Unit->GetActorForwardVector(), Direction) > 0.99f);
 	}
+	++GFrameCounter;
+	World->Tick(LEVELTICK_All, 0.01f);
+	for (int32 Index = 0; Index < Units.Num(); ++Index)
+		TestEqual(TEXT("공격 취소 다음 프레임에 남은 모션을 정리"),
+		          Units[Index]->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset()->GetFName(),
+		          FName(Index == 1 ? TEXT("A_Enemy_Idle") : TEXT("A_2HandIdle")));
+	FLSHealthSnapshot Before;
+	Enemies[0]->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Before);
+	Units[0]->BasicAttack->StartAttack(Enemies[0]);
+	FLSHealthSnapshot After;
+	Enemies[0]->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(After);
+	TestEqual(TEXT("공격 취소·재요청이 기존 쿨타임을 초기화하지 않음"), After.CurrentHealth, Before.CurrentHealth);
+	Units[0]->BasicAttack->StopAttack();
+	auto* Marker = Cast<UMaterialInstanceDynamic>(Units[0]->GetTroopMarker()->GetMaterial(0));
+	if (!TestNotNull(TEXT("피격 표식 머티리얼"), Marker))
+		return false;
+	const FLinearColor NormalColor = Marker->K2_GetVectorParameterValue(TEXT("TeamColor"));
+	Units[0]->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(
+	    ULSHealthComponent::MakeDamageRequest(1, Enemies[0], Enemies[0]));
+	TestFalse(TEXT("비치명 피해 직후 표식 강조"),
+	          Marker->K2_GetVectorParameterValue(TEXT("TeamColor")).Equals(NormalColor));
 	for (int32 Step = 0; Step < 110; ++Step)
 	{
 		++GFrameCounter;
@@ -67,6 +94,8 @@ bool FLSTroopAnimationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("공격 완료 후 원래 대기 동작 복귀"),
 		          Units[Index]->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset()->GetFName(),
 		          FName(Index == 1 ? TEXT("A_Enemy_Idle") : TEXT("A_2HandIdle")));
+	TestTrue(TEXT("강조 종료 후 진영 색 복원"),
+	         Marker->K2_GetVectorParameterValue(TEXT("TeamColor")).Equals(NormalColor));
 	Units[0]->BasicAttack->StartAttack(Enemies[0]);
 	Units[0]->BasicAttack->StopAttack();
 	TestEqual(TEXT("사망 검사 전에 새 공격 동작 재생 확인"),

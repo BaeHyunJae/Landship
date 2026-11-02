@@ -141,6 +141,7 @@ private:
 	float RecoveryProgress = 0;
 	float DetectionRadius = 0;
 	double NextDecision = 0;
+	FVector LastDecisionTargetLocation = FVector::ZeroVector;
 	double MovementStart = 0;
 	uint32 MovementConditions = 0;
 	FIntVector MovementConditionKey = FIntVector::ZeroValue;

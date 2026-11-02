@@ -106,8 +106,22 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	float RepathInterval = 0.3f;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0"))
 	float ArrivalTolerance = 30.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0"))
+	float AttackApproachPadding = 10.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "1"))
+	float TargetRepathDistance = 50.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0.01", Units = "s"))
+	float MinAttackRepathInterval = 0.05f;
 
   private:
+	void UpdateOrders(float DeltaTime);
+	void RequestOrderUpdate();
+	void SetEngagementTarget(AActor* Target);
+	UFUNCTION()
+	void OnEngagedTargetDied(const FLSDamageResult& Damage);
+	UFUNCTION()
+	void OnOwnerMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+	float GetAttackApproachPadding() const;
 	UFUNCTION()
 	void OnOwnerDamaged(const FLSDamageResult& Damage);
 	void TickDisarm(float DeltaTime);
@@ -146,6 +160,11 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	FVector MineBlockedGoal = FVector::ZeroVector;
 	bool bMineBlockedAttackApproach = false;
 	double NextRepathTime = 0;
+	double LastAttackRepathTime = -1;
+	FVector LastAttackTargetLocation = FVector::ZeroVector;
+	FTimerHandle OrderUpdateTimer;
+	bool bUpdatingOrders = false;
+	bool bAttackApproaching = false;
 	bool bHasEngagement = false;
 	bool bBattleActionsEnded = false;
 	FAIRequestID MovementRequestId = FAIRequestID::InvalidRequest;

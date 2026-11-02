@@ -143,7 +143,11 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 	{
 		Check(FVector::Dist2D(Ally->GetActorLocation(), FinalGoal) < 130, TEXT("장애물 우회와 예약 경유지 도착"));
 		Check(ReadHealth(Enemy) == PreviousHealth, TEXT("일반 이동 중 공격하지 않음"));
-		Enemy->SetActorLocation(Ally->GetActorLocation() + FVector(600, 0, 0));
+		float AllyRadius, AllyHeight, EnemyRadius, EnemyHeight;
+		Ally->GetSimpleCollisionCylinder(AllyRadius, AllyHeight);
+		Enemy->GetSimpleCollisionCylinder(EnemyRadius, EnemyHeight);
+		const float AttackDistance = Ally->BasicAttack->GetAttackSettings().Range + AllyRadius + EnemyRadius + 300;
+		Enemy->SetActorLocation(Ally->GetActorLocation() + FVector(AttackDistance, 0, 0));
 		FLSOrder Attack;
 		Attack.Kind = ELSOrderKind::AttackTarget;
 		Attack.Target = Enemy;
@@ -195,6 +199,8 @@ void ALSHMHRTSProbe::Tick(float DeltaSeconds)
 		Move.Kind = ELSOrderKind::AttackMove;
 		Move.Destination = Position + FVector(900, 0, 0);
 		Check(Ally->Orders->SubmitOrder(Move), TEXT("공격 이동 요청"));
+		Check(!ULSCombatTargetLibrary::IsCombatAlive(SecondEnemy) || Ally->BasicAttack->GetAttackTarget() == SecondEnemy,
+		      TEXT("공격 이동 요청 즉시 사거리 안 적과 교전"));
 		Move.Kind = ELSOrderKind::Move;
 		Move.Destination = FinalGoal;
 		Check(Ally->Orders->SubmitOrder(Move, true), TEXT("교전 뒤 이동 예약"));
