@@ -28,10 +28,10 @@
    & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -unattended -nop4 -nosound -NullRHI -HMHProductionTestExit '-abslog=<로그 파일 경로>'
    ```
 
-3. 성 무장 검사를 실행한다. 실제 지면에서 세 무장과 무장·생산 버튼을 검사한다.
+3. 성 무장 검사를 실행한다. 실제 지면에서 세 무장과 무장·생산 버튼을 검사한다. 명령 카드 좌표와 발견 알림의 실제 그리기도 확인하므로 `-NullRHI` 대신 화면 밖 렌더링을 사용한다.
 
    ```powershell
-   & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -unattended -nop4 -nosound -NullRHI -HMHCastleWeaponsTestExit '-abslog=<로그 파일 경로>'
+   & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -RenderOffscreen -windowed -ResX=1280 -ResY=720 -ForceRes -unattended -nop4 -nosound -HMHCastleWeaponsTestExit '-abslog=<로그 파일 경로>'
    ```
 
 4. 교전 명령 검사를 실행한다. 세 병종의 동일 성 공격, 이동한 표적 재추적, 표적 사망 후 예약 이동, 위치 사수와 일반 이동의 공격 중단을 검사한다.
