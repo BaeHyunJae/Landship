@@ -10,12 +10,20 @@
 /Content/Landship/Combat/           @BaeHyunJae @samang22
 /Source/Landship/Combat/            @BaeHyunJae @samang22
 /Content/Landship/SharedTestLevel/  @BaeHyunJae @samang22
+/Data/Combat/                       @BaeHyunJae @samang22
+
+# 개인 테스트 맵에서 실행하는 개인 절차와 그 스크립트(Content/Developers/의 이니셜 폴더와 같다)
+/docs/procedures/Developers/BHJ/      @BaeHyunJae
+/Scripts/Developers/BHJ/              @BaeHyunJae
+/docs/procedures/Developers/HMH/      @samang22
+/Scripts/Developers/HMH/              @samang22
 
 # 기능 폴더
 /Content/Landship/Castle/           @samang22
 /Source/Landship/Castle/            @samang22
 /Content/Landship/Troops/           @samang22
 /Source/Landship/Troops/            @samang22
+/Data/Troops/                       @samang22
 /Content/Landship/Controls/         @samang22
 /Source/Landship/Controls/          @samang22
 /Content/Landship/Vision/           @BaeHyunJae
