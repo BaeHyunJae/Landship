@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import unreal
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 project = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
 if os.path.normcase(os.path.normpath(project)) != os.path.normcase(os.path.normpath(ROOT)):
     raise RuntimeError('Refusing to modify a different project: ' + project)

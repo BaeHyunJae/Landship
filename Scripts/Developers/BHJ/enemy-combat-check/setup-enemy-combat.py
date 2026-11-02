@@ -1,7 +1,7 @@
 """공용 에셋을 변경하지 않고 적 전용 NavMesh 검증 맵 복사본만 저작한다."""
 import unreal
 
-source = '/Game/Developers/Minhyeok/HMH_TroopTypes'
+source = '/Game/Developers/HMH/HMH_TroopTypes'
 target = '/Game/Developers/BHJ/EnemyCombat/L_EnemyCombat'
 assets = unreal.EditorAssetLibrary
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)

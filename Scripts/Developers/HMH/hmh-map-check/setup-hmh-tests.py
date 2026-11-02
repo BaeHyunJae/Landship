@@ -1,7 +1,7 @@
 """언리얼 Python commandlet에서 실행한다. HMH만 수정하고 템플릿 맵은 유지한다."""
 import unreal
 
-LEVEL = "/Game/Developers/Minhyeok/HMH"
+LEVEL = "/Game/Developers/HMH/HMH"
 level_system = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 actor_system = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 if not level_system.load_level(LEVEL):

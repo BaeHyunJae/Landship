@@ -4,7 +4,7 @@ import unreal
 
 project = Path(unreal.Paths.project_dir())
 import runpy
-runpy.run_path(str(project / 'docs/development/setup-castle-weapon-data.py'))
+runpy.run_path(str(project / 'Scripts/Developers/HMH/hmh-troop-types-map-check/setup-castle-weapon-data.py'))
 assets = unreal.AssetToolsHelpers.get_asset_tools()
 editor_assets = unreal.EditorAssetLibrary
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -35,8 +35,8 @@ else:
 if not material:
     raise RuntimeError('Prototype material missing')
 
-source_map = '/Game/Developers/Minhyeok/HMH'
-target_map = '/Game/Developers/Minhyeok/HMH_TroopTypes'
+source_map = '/Game/Developers/HMH/HMH'
+target_map = '/Game/Developers/HMH/HMH_TroopTypes'
 if not editor_assets.does_asset_exist(target_map):
     if not editor_assets.duplicate_asset(source_map, target_map):
         raise RuntimeError('Troop map duplication failed')

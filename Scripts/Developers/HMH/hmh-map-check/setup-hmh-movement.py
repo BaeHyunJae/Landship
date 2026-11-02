@@ -3,7 +3,7 @@ import unreal
 
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-if not levels.load_level('/Game/Developers/Minhyeok/HMH'):
+if not levels.load_level('/Game/Developers/HMH/HMH'):
     raise RuntimeError('HMH load failed')
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 
