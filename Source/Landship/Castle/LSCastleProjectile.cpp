@@ -177,7 +177,13 @@ void ALSCastleProjectile::Detonate()
 {
 	bResolved = true;
 	SetActorTickEnabled(false);
-	TArray<TWeakObjectPtr<AActor>> Targets;
+	struct FLSCannonBlastTarget
+	{
+		TWeakObjectPtr<AActor> Actor;
+		FVector KnockbackDirection;
+	};
+	TArray<FLSCannonBlastTarget> Targets;
+	const FVector IncomingDirection = (TargetLocation - LaunchLocation).GetSafeNormal2D();
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		if (!IsLivingCombatant(*It))
@@ -188,13 +194,24 @@ void ALSCastleProjectile::Detonate()
 			Distance = LSObstacleGeometry::GetPlanarBodyDistance(Obstacle->GetObstacleBody(), TargetLocation);
 		}
 		if (Distance <= ShotSettings.Radius)
-			Targets.Add(*It);
+		{
+			FVector Direction = (It->GetActorLocation() - TargetLocation).GetSafeNormal2D();
+			if (Direction.IsNearlyZero())
+				Direction = IncomingDirection;
+			// 앞 대상의 피해 알림이 다른 대상을 옮겨도 범위 판정 때의 방향을 유지한다.
+			Targets.Add({*It, Direction});
+		}
 	}
-	for (const TWeakObjectPtr<AActor>& Target : Targets)
+	for (const FLSCannonBlastTarget& Target : Targets)
 	{
 		if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 			return;
-		ApplyHit(Target.Get(), ShotSettings.Damage, FVector::ZeroVector, false);
+		AActor* Actor = Target.Actor.Get();
+		if (!IsLivingCombatant(Actor))
+			continue;
+		const FVector KnockbackVelocity = Target.KnockbackDirection * ShotSettings.KnockbackSpeed +
+		                                 FVector(0, 0, ShotSettings.KnockbackLift);
+		ApplyHit(Actor, ShotSettings.Damage, Target.KnockbackDirection, !KnockbackVelocity.IsNearlyZero());
 	}
 	if (IsValid(this) && !IsActorBeingDestroyed())
 		Destroy();

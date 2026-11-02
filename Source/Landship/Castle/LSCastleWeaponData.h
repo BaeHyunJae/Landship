@@ -40,8 +40,10 @@ struct LANDSHIP_API FLSCastleWeaponSettings
 	/** 산탄의 전체 부채꼴 각도다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "1", ClampMax = "180"))
 	float ConeAngle = 70;
+	/** 대포 착탄과 산탄의 수평 밀림 속도다. 대포는 중심에서 바깥쪽으로 밀고 중심 명중은 발사 방향을 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0", Units = "cm/s"))
 	float KnockbackSpeed = 650;
+	/** 대포·산탄의 수직 상승 속도다. 대포는 최종 넉백 속도가 0이면 넉백에 의한 명령 중단도 생략한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0", Units = "cm/s"))
 	float KnockbackLift = 180;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "1", Units = "cm/s"))

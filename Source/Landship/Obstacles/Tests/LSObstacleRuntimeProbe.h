@@ -52,4 +52,5 @@ class LANDSHIP_API ALSObstacleRuntimeProbe : public AActor
 	bool bInitialized = false;
 	bool bFinished = false;
 	bool bStoppedInWorkRing = false;
+	bool bCannonDamageChecked = false;
 };
