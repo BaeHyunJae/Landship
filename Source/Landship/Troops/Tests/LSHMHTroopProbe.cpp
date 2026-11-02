@@ -5,6 +5,7 @@
 #include "Castle/LSCastleWeaponComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Controls/LSSelectableComponent.h"
@@ -27,12 +28,30 @@ void ALSHMHTroopProbe::BeginPlay()
 #if !UE_BUILD_SHIPPING
 	if (FParse::Param(FCommandLine::Get(), TEXT("HMHTroopTypesTestExit")))
 	{
+		auto* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+		bOriginalFriendlyFire = Settings->bAllowFriendlyFire;
+		bOriginalSelfDamage = Settings->bAllowSelfDamage;
+		bOverridesDamagePolicy = true;
+		Settings->bAllowFriendlyFire = false;
+		Settings->bAllowSelfDamage = true;
 		return;
 	}
 #endif
 	// 일반 플레이에서는 검증 액터를 남기지 않는다.
 	SetActorTickEnabled(false);
 	Destroy();
+}
+
+void ALSHMHTroopProbe::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (bOverridesDamagePolicy)
+	{
+		auto* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+		Settings->bAllowFriendlyFire = bOriginalFriendlyFire;
+		Settings->bAllowSelfDamage = bOriginalSelfDamage;
+		bOverridesDamagePolicy = false;
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ALSHMHTroopProbe::Check(bool bPassed, const TCHAR* Message)

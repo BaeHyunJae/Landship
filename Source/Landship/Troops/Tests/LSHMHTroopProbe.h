@@ -22,6 +22,7 @@ class ALSHMHTroopProbe : public AActor
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
   private:
 	void Check(bool bPassed, const TCHAR* Message);
@@ -54,4 +55,7 @@ class ALSHMHTroopProbe : public AActor
 	int32 SpearHits = 0;
 	int32 ArcherHits = 0;
 	int32 CavalryHits = 0;
+	bool bOverridesDamagePolicy = false;
+	bool bOriginalFriendlyFire = false;
+	bool bOriginalSelfDamage = false;
 };

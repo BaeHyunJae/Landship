@@ -17,6 +17,7 @@ class ALSHMHCastleWeaponsProbe : public AActor
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
   private:
 	void Check(bool bPassed, const TCHAR* Message);
@@ -36,4 +37,7 @@ class ALSHMHCastleWeaponsProbe : public AActor
 	FVector PostShotMoveStart = FVector::ZeroVector;
 	int32 Stage = 0;
 	int32 Failures = 0;
+	bool bOverridesDamagePolicy = false;
+	bool bOriginalFriendlyFire = false;
+	bool bOriginalSelfDamage = false;
 };
