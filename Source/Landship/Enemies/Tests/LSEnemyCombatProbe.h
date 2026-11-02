@@ -11,6 +11,7 @@ class ALSEnemyOutpost;
 class ALSEnemyTroop;
 class ALSBasicAttackTestActor;
 class ALSTroopUnit;
+class ULSCastleWeaponData;
 struct FLSOutpostCaptureSnapshot;
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FLSBeforePublicAttackOrder, AActor*, AActor*);
@@ -24,6 +25,7 @@ public:
 	ALSEnemyCombatProbe();
 	FLSBeforePublicAttackOrder OnBeforePublicAttackOrderEvent;
 protected:
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 private:
@@ -88,6 +90,9 @@ private:
 	float MaximumGuardDistance = 0;
 	int32 WeaponCoreCaptures = 0;
 	int32 WeaponOutpostCaptures = 0;
+	/** 무장 함락 검사에서 성에 설치한 대포 정의 사본. 공유 DA_Cannon 대신 이 사본의 피해를 바꾼다. */
+	UPROPERTY(Transient)
+	TObjectPtr<ULSCastleWeaponData> WeaponCaptureCannon;
 	bool bWeaponLethalSourceObserved = false;
 	bool bWeaponCaptureCleanupObserved = true;
 	bool bPublicDamageSourceObserved = false;
