@@ -265,10 +265,17 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 			bMovementFailed = bMovementFailedBeforeReentry;
 		}
 	}
-	if (GetWorld()->GetTimeSeconds() >= NextDecision)
+	const AActor* CurrentTarget = Target.Get();
+	const bool bTargetLost = CurrentTarget && !ULSCombatTargetLibrary::IsCombatAlive(CurrentTarget);
+	const bool bEnteredRange = CurrentTarget && Attack.IsValid() && !Attack->GetAttackTarget() &&
+		FVector::Dist(GetOwner()->GetActorLocation(), CurrentTarget->GetActorLocation()) <= Attack->GetAttackSettings().Range;
+	const bool bTargetMoved = CurrentTarget &&
+		FVector::DistSquared(CurrentTarget->GetActorLocation(), LastDecisionTargetLocation) >= FMath::Square(RepathDistance);
+	if (GetWorld()->GetTimeSeconds() >= NextDecision || bTargetLost || bEnteredRange || bTargetMoved)
 	{
 		NextDecision = GetWorld()->GetTimeSeconds() + FMath::Max(0.01f, DecisionInterval);
 		Decide();
+		if (Target.IsValid()) LastDecisionTargetLocation = Target->GetActorLocation();
 	}
 }
 
@@ -579,6 +586,7 @@ void ULSEnemyBehaviorComponent::OnMovementFinished(FAIRequestID Id, const FPathF
 	if (MovementRequestId == FAIRequestID::InvalidRequest || Id != MovementRequestId) { return; }
 	MovementRequestId = FAIRequestID::InvalidRequest;
 	bMovementFailed = !Result.IsSuccess();
+	NextDecision = 0;
 	if (bMovementFailed)
 	{
 		RecordMovementFailure();

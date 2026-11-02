@@ -8,6 +8,7 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class UAnimSequence;
 struct FLSDamageResult;
 
@@ -49,11 +50,15 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
   protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 
   private:
 	void RefreshDefinition();
 	void InitializeAnimations();
 	void PlayIdleAnimation();
+	void RestoreMarkerColor();
+	UFUNCTION()
+	void OnTroopDamaged(const FLSDamageResult& Damage);
 	UFUNCTION()
 	void OnTroopAttackExecuted(const FLSAttackExecution& Execution);
 	UFUNCTION()
@@ -90,6 +95,15 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	TObjectPtr<UAnimSequence> ActiveIdleAnimation;
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimSequence> ActiveAttackAnimation;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> MarkerMaterial;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback", meta = (ClampMin = "0.01", Units = "s"))
+	float HitFlashDuration = 0.12f;
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback")
+	FLinearColor HitFlashColor = FLinearColor(1.0f, 0.9f, 0.25f);
+	FLinearColor MarkerColor = FLinearColor::White;
+	TWeakObjectPtr<AActor> VisualAttackTarget;
 	FTimerHandle AttackAnimationTimer;
+	FTimerHandle HitFlashTimer;
 	bool bTroopTypeLocked = false;
 };

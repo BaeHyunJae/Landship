@@ -163,6 +163,8 @@ bool FLSRTSCombatOrdersTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("공격 명령 예약"), Orders->SubmitOrder(Attack, true));
 	TestEqual(TEXT("예약 수"), Orders->GetQueuedCount(), 1);
 	Enemy->ApplyTestDamage(100, Source);
+	AdvanceRTS(World, 0.01f);
+	TestEqual(TEXT("표적 사망 다음 틱에 예약 명령 실행"), Orders->GetQueuedCount(), 0);
 	AdvanceRTS(World, 0.3f);
 	TestEqual(TEXT("대상 사망 뒤 예약 실행"), Orders->GetQueuedCount(), 0);
 	TestTrue(TEXT("예약 대상 공격"), Other->GetCurrentHealth() < 100);
