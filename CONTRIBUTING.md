@@ -26,7 +26,7 @@
 - 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를(작업 방식 변경이면 워크플로우 이슈를) 열어 범위와 완료 기준을 확인한다. 범위·완료 기준·상태는 Notion이 원본이다.
 - Task로 만들지 않는 작업 방식 변경([가이드 B-1](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 기준)은 Notion [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)로 관리하고, 그 이슈의 ID를 Task ID처럼 쓴다.
 - PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task나 이슈를 여러 PR로 나눌 수 있고, 한 PR이 여러 Task나 이슈에 걸치면 제목에 걸친 ID를 모두 붙인다.
-- PR 주소는 Notion에 따로 넣지 않는다. Task와 워크플로우 이슈의 ‘PR’ 속성이 제목의 ID로 PR을 찾는다. 제목에 ID가 빠지면 Notion에서 PR이 보이지 않는다.
+- Task와 워크플로우 이슈의 ‘PR’ 속성은 제목의 ID로 PR을 찾으므로, 제목에 ID가 빠지면 Notion에서 PR이 보이지 않는다. Notion에서 PR을 연결하는 방법은 [Notion 가이드](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae)의 'C-5. Task ID와 GitHub PR 연결'을 따른다.
 - PR을 병합한 뒤 Task를 Done으로 바꿀지는 [D-3. Done 조건](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
 
 ## 커밋과 PR 제목
@@ -116,6 +116,7 @@ C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전에 [`docs/codi
 ## PR 리뷰와 병합
 
 - PR을 열면 팀원을 리뷰어로 지정한다. `CODEOWNERS`로 자동 지정됐으면 따로 지정하지 않아도 된다.
+- 리뷰를 요청받은 사람은 그 PR을 우선 확인한다.
 - 병합할지는 리뷰로 판단한다. 리뷰를 어느 정도로 거칠지는 상황에 따라 팀원끼리 합의한다.
 - 병합은 사람이 누른다. 에이전트에게 병합을 맡기지 않는다.
 - 코드 리뷰 의견은 PR에 남긴다.
