@@ -25,6 +25,6 @@
 ## 공용 테스트 맵
 
 <!-- 이 폴더의 기능을 확인하는 공용 테스트 맵(Content/Landship/SharedTestLevel/)의 경로와, 열어서 확인할 것.
-     개인 테스트 맵(Content/Developers/)은 쓰지 않는다. -->
+     개인 테스트 맵(Content/Developers/)은 쓰지 않는다. 확인에 스크립트가 필요하면 그 확인은 절차 문서로 쓰고 여기서 그 절차를 가리킨다. -->
 
 -

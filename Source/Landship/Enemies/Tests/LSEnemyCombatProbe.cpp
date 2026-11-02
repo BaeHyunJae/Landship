@@ -1,6 +1,7 @@
 #include "Enemies/Tests/LSEnemyCombatProbe.h"
 
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -32,6 +33,30 @@ ALSEnemyCombatProbe::ALSEnemyCombatProbe()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickInterval = 0.05f;
+}
+
+void ALSEnemyCombatProbe::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	if (!FParse::Param(FCommandLine::Get(), TEXT("LSEnemyCombatTestExit")) ||
+		!FParse::Param(FCommandLine::Get(), TEXT("LSEnemyCoreWeaponCapture"))) { return; }
+	// 무장 정의는 성이 BeginPlay하기 전에만 바꿀 수 있다. 맵을 불러올 때는 모든 액터의
+	// PostInitializeComponents가 월드의 BeginPlay보다 먼저 끝나므로 여기서 사본을 설치한다.
+	const auto Load = [](const TCHAR* Name)
+	{
+		return LoadObject<ULSCastleWeaponData>(nullptr, *FString::Printf(TEXT("/Game/Landship/Castle/Data/%s.%s"), Name, Name));
+	};
+	ULSCastleWeaponData* Cannon = Load(TEXT("DA_Cannon"));
+	ULSCastleWeaponData* Shotgun = Load(TEXT("DA_Shotgun"));
+	ULSCastleWeaponData* Ballista = Load(TEXT("DA_Ballista"));
+	WeaponCaptureCannon = Cannon ? DuplicateObject<ULSCastleWeaponData>(Cannon, this) : nullptr;
+	bool bInstalled = false;
+	for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It)
+	{
+		bInstalled = WeaponCaptureCannon && Shotgun && Ballista &&
+			It->Weapons->SetWeaponDefinitions({WeaponCaptureCannon.Get(), Shotgun, Ballista});
+	}
+	Check(bInstalled, TEXT("weapon capture cannon copy installed before castle play"));
 }
 
 void ALSEnemyCombatProbe::BeginPlay()
@@ -270,13 +295,29 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 				Core->BasicAttack->StopAttack();
 				FLSHealthSnapshot Health;
 				Core->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health);
-				FLSBasicAttackSettings Settings = Castle->BasicAttack->GetAttackSettings();
+				FLSCastleWeaponState CannonState;
+				const int32 LevelIndex = Castle->Weapons->GetWeaponState(ELSCastleWeapon::Cannon, CannonState) ? CannonState.Level - 1 : INDEX_NONE;
+				FLSCastleWeaponSettings* Cannon = WeaponCaptureCannon && WeaponCaptureCannon->Levels.IsValidIndex(LevelIndex)
+					? &WeaponCaptureCannon->Levels[LevelIndex] : nullptr;
+				if (!Cannon || Castle->Weapons->FindSettings(ELSCastleWeapon::Cannon) != Cannon)
+				{
+					Check(false, TEXT("castle cannon resolves the probe copy"));
+					Finish(); return;
+				}
 				// 실제 무기 타격에서 치명 피해부터 함락 통지까지 한 경로로 관찰한다.
-				Settings.Damage = Health.CurrentHealth + 1;
-				Castle->BasicAttack->ConfigureAttack(Settings);
+				// 성은 시전할 때 현재 레벨 수치를 읽으므로 사본의 피해만 바꾸면 된다.
+				Cannon->Damage = Health.CurrentHealth + 1;
 				Core->OnOutpostCapturedEvent.AddDynamic(this, &ThisClass::OnWeaponOutpostCaptured);
 				Core->FindComponentByClass<ULSHealthComponent>()->OnDiedEvent.AddDynamic(this, &ThisClass::OnWeaponCoreDied);
 				GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>()->OnCoreOutpostCapturedEvent.AddDynamic(this, &ThisClass::OnWeaponCoreCaptured);
+				const ELSWeaponCastResult CastResult = Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, Core->GetActorLocation());
+				UE_LOGFMT(LogTemp, Display, "[{Function}] ENEMY_WEAPON_CAPTURE_CAST result={Result} distance={Distance} range={Range}",
+					("Function", __FUNCTION__), ("Result", static_cast<int32>(CastResult)),
+					("Distance", FVector::Dist2D(Castle->GetActorLocation(), Core->GetActorLocation())), ("Range", Cannon->Range));
+				Check(CastResult == ELSWeaponCastResult::Ready, TEXT("castle cannon cast at core accepted"));
+				if (CastResult != ELSWeaponCastResult::Ready) { Finish(); return; }
+				Stage = 90; StageTime = 0;
+				return;
 			}
 			Order.Kind = FParse::Param(FCommandLine::Get(), TEXT("LSEnemyOrderAttackMove"))
 				? ELSOrderKind::AttackMove : ELSOrderKind::AttackTarget;
@@ -335,7 +376,7 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 		{
 			if (Core->HasBeenCaptured())
 			{
-				Check(Snapshot.CurrentHealth == 0 && bWeaponLethalSourceObserved, TEXT("public weapon strike causes lethal core damage with actual source"));
+				Check(Snapshot.CurrentHealth == 0 && bWeaponLethalSourceObserved, TEXT("castle cannon strike causes lethal core damage with actual source"));
 				for (const auto& Unit : Units) { Unit->Behavior->SetComponentTickEnabled(true); }
 				Stage = 91; StageTime = 0;
 			}
