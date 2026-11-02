@@ -105,9 +105,15 @@
    & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' --% "<프로젝트 경로>/Landship.uproject" /Game/Developers/BHJ/EnemyCombat/L_EnemyCombat -game -unattended -nop4 -nosound -NullRHI -LSEnemyCombatTestExit -LSEnemyCoreOrderRunExit -LSEnemyOrderMelee -LSEnemyOrderAttackMove -LSEnemyOrderCorner -LSEnemyRequireVision -abslog="<로그 파일 경로>"
    ```
 
-4. 임시 배치를 되돌리려고 '맵을 다시 만들 때'의 명령을 실행한다. 이 스크립트가 성을 원래 위치 `(-1800, -1200, 142)`에 다시 놓는다.
+4. 성의 대포로 핵심 거점을 함락시켜, 실제 무장 타격의 치명 피해부터 함락 통지(월드·거점 각 한 번), 거점 정리, 적 행동 종료까지 한 경로로 관찰한다. 프로브가 `DA_Cannon`의 사본을 성에 설치하고 사본의 피해만 거점의 현재 체력보다 1 크게 바꾸므로 공유 Data Asset은 바뀌지 않는다. 원래 수치로 거점을 파괴하는 데 걸리는 시간을 검사하는 단계는 아니다.
 
-5. `git status`로 `Content/Developers/BHJ/EnemyCombat/L_EnemyCombat.umap`의 변경을 확인한다. 의도한 변경이 아니면 되돌린다.
+   ```powershell
+   & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' --% "<프로젝트 경로>/Landship.uproject" /Game/Developers/BHJ/EnemyCombat/L_EnemyCombat -game -unattended -nop4 -nosound -NullRHI -LSEnemyCombatTestExit -LSEnemyCoreOrderRunExit -LSEnemyCoreWeaponCapture -abslog="<로그 파일 경로>"
+   ```
+
+5. 임시 배치를 되돌리려고 '맵을 다시 만들 때'의 명령을 실행한다. 이 스크립트가 성을 원래 위치 `(-1800, -1200, 142)`에 다시 놓는다.
+
+6. `git status`로 `Content/Developers/BHJ/EnemyCombat/L_EnemyCombat.umap`의 변경을 확인한다. 의도한 변경이 아니면 되돌린다.
 
 ### 맵을 다시 만들 때
 
@@ -129,7 +135,7 @@
 
   | 단계 | 로그 표식 |
   | --- | --- |
-  | 1, 2, '시야를 켠 공개 공격 명령 검사'의 2, 3 | `ENEMY_COMBAT_FINISHED failures=0` |
+  | 1, 2, '시야를 켠 공개 공격 명령 검사'의 2, 3, 4 | `ENEMY_COMBAT_FINISHED failures=0` |
   | 3, 10 | `ENEMY_BOUNDARY_FINISHED failures=0` |
   | 4 | `ENEMY_DENSE_FINISHED failures=0` |
   | 5 | `ENEMY_MOVING_FINISHED failures=0` |
@@ -138,4 +144,5 @@
 
 - 로그에서 표식 줄은 `Select-String -Path '<로그 파일 경로>' -Pattern 'FINISHED'`로 찾는다. 실패한 항목은 같은 로그의 `FAIL` 줄에 나온다.
 - 시야 검사에서는 `ENEMY_VISION_SUBMIT` 줄이 명령 제출 때마다 나오고 `enabled`, `targetVisible`, `passes`가 모두 참이다. 하나라도 거짓이면 프로브가 종료 코드 1로 끝나므로 `ENEMY_COMBAT_FINISHED` 줄이 없다.
+- 무장 함락 검사('시야를 켠 공개 공격 명령 검사'의 4)에서는 `ENEMY_WEAPON_CAPTURE_CAST result=0` 줄이 한 번 나온다. `result`가 0이 아니면 성이 대포 시전을 거부한 것이다(값은 `ELSWeaponCastResult` 순서).
 - 스크립트 명령은 로그에 `ENEMY_COMBAT_SETUP_OK`(맵 다시 만들기), `ENEMY_VISION_COMBAT_MAP_SAVED`(시야 검사 준비)가 있고 Python 오류 메시지가 없다.
