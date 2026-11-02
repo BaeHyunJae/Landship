@@ -152,68 +152,73 @@ bool FLSProjectileObstacleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSProjectileFactionTest, "Landship.Combat.Projectile.PassesOtherCombatants",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSProjectileFactionTest, "Landship.Combat.Projectile.FirstAllowedCombatant",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FLSProjectileFactionTest::RunTest(const FString& Parameters)
 {
 	ULSCombatDeveloperSettings* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
 	const bool bOriginal = Settings->bAllowFriendlyFire;
+	const bool bOriginalSelfDamage = Settings->bAllowSelfDamage;
 	ON_SCOPE_EXIT
 	{
 		Settings->bAllowFriendlyFire = bOriginal;
+		Settings->bAllowSelfDamage = bOriginalSelfDamage;
 	};
-	Settings->bAllowFriendlyFire = false;
-	FTestWorldWrapper TestWorld;
-	if (!TestWorld.CreateTestWorld(EWorldType::Game))
-		return false;
-	UWorld* World = TestWorld.GetTestWorld();
-	ALSBasicAttackTestActor* Source = World->SpawnActor<ALSBasicAttackTestActor>();
-	ALSBasicAttackTestActor* Ally = World->SpawnActor<ALSBasicAttackTestActor>();
-	ALSBasicAttackTestActor* OtherEnemy = World->SpawnActor<ALSBasicAttackTestActor>();
-	ALSBasicAttackTestActor* Building = World->SpawnActor<ALSBasicAttackTestActor>();
-	ALSBasicAttackTestActor* Enemy = World->SpawnActor<ALSBasicAttackTestActor>();
-	OtherEnemy->SetInitialFaction(ELSFaction::Enemy);
-	Building->SetInitialFaction(ELSFaction::Enemy);
-	Enemy->SetInitialFaction(ELSFaction::Enemy);
-	Building->FindComponentByClass<UPrimitiveComponent>()->SetCollisionObjectType(LSCollisionChannels::Building);
-	Source->SetActorLocation(FVector(0, 0, 100));
-	Ally->SetActorLocation(FVector(200, 0, 100));
-	OtherEnemy->SetActorLocation(FVector(300, 0, 100));
-	Building->SetActorLocation(FVector(400, 0, 100));
-	Enemy->SetActorLocation(FVector(500, 0, 100));
-	if (!TestWorld.BeginPlayInTestWorld())
-		return false;
-	ConfigureShot(Source);
-	Source->Attack->StartAttack(Enemy);
-	Source->Destroy();
-	AdvanceProjectileWorld(World, 0.6f);
-	TestEqual(TEXT("아군 병력 통과"), Ally->GetCurrentHealth(), 100.0f);
-	TestEqual(TEXT("목표 외 적 병력 통과"), OtherEnemy->GetCurrentHealth(), 100.0f);
-	TestEqual(TEXT("목표 외 전투 건물 통과"), Building->GetCurrentHealth(), 100.0f);
-	TestEqual(TEXT("공격자 제거 뒤에도 지정 목표에만 피해"), Enemy->GetCurrentHealth(), 90.0f);
-	TestNull(TEXT("지정 목표 명중 후 화살 제거"), FindShot(World));
-	ALSBasicAttackTestActor* NextSource = World->SpawnActor<ALSBasicAttackTestActor>();
-	NextSource->SetActorLocation(FVector(0, 0, 100));
-	ConfigureShot(NextSource);
-	NextSource->Attack->StartAttack(Enemy);
-	NextSource->Attack->StopAttack();
-	Settings->bAllowFriendlyFire = true;
-	AdvanceProjectileWorld(World, 0.6f);
-	TestEqual(TEXT("오폭 허용 상태도 목표 외 아군에 피해 없음"), Ally->GetCurrentHealth(), 100.0f);
-	TestEqual(TEXT("다른 적과 건물을 통과해 목표에 재명중"), Enemy->GetCurrentHealth(), 80.0f);
-	TestEqual(TEXT("목표 외 적은 반복 사격에도 피해 없음"), OtherEnemy->GetCurrentHealth(), 100.0f);
-	TestEqual(TEXT("목표 외 건물은 반복 사격에도 피해 없음"), Building->GetCurrentHealth(), 100.0f);
-	AdvanceProjectileWorld(World, 0.45f);
-	NextSource->Attack->StartAttack(Enemy);
-	NextSource->Attack->StopAttack();
-	Enemy->Destroy();
-	AdvanceProjectileWorld(World, 0.7f);
-	TestNotNull(TEXT("목표 제거 시 다른 대상으로 바꾸지 않고 직진"), FindShot(World));
-	TestEqual(TEXT("목표 제거 후에도 다른 적에 피해 없음"), OtherEnemy->GetCurrentHealth(), 100.0f);
-	AdvanceProjectileWorld(World, 0.4f);
-	TestNull(TEXT("목표 없는 투사체도 수명 종료 시 제거"), FindShot(World));
-	TestWorld.ForwardErrorMessages(this);
+	Settings->bAllowSelfDamage = true;
+	for (ELSFaction SourceFaction : {ELSFaction::Ally, ELSFaction::Enemy})
+	{
+		for (bool bFriendlyFire : {false, true})
+		{
+			for (ECollisionChannel BodyType : {LSCollisionChannels::Unit, LSCollisionChannels::Building})
+			{
+				Settings->bAllowFriendlyFire = bFriendlyFire;
+				FTestWorldWrapper TestWorld;
+				if (!TestWorld.CreateTestWorld(EWorldType::Game))
+					return false;
+				UWorld* World = TestWorld.GetTestWorld();
+				const ELSFaction EnemyFaction = SourceFaction == ELSFaction::Ally ? ELSFaction::Enemy : ELSFaction::Ally;
+				auto SpawnBody = [World](ELSFaction Faction, float X)
+				{
+					auto* Body = World->SpawnActor<ALSBasicAttackTestActor>();
+					Body->SetInitialFaction(Faction);
+					Body->SetActorLocation(FVector(X, 0, 100));
+					Body->Attack->SetAutoAttackOnBeginPlay(false);
+					return Body;
+				};
+				auto* Source = SpawnBody(SourceFaction, 0);
+				auto* Intended = SpawnBody(EnemyFaction, 600);
+				auto* FarEnemy = SpawnBody(EnemyFaction, 450);
+				auto* OtherEnemy = SpawnBody(EnemyFaction, 300);
+				auto* Ally = SpawnBody(SourceFaction, 200);
+				for (auto* Body : {Ally, OtherEnemy})
+					Body->FindComponentByClass<UPrimitiveComponent>()->SetCollisionObjectType(BodyType);
+				if (!TestWorld.BeginPlayInTestWorld())
+					return false;
+				ConfigureShot(Source);
+				Source->Attack->OnAttackPerformed.AddDynamic(Source, &ALSBasicAttackTestActor::ObserveAttack);
+				TestTrue(TEXT("Explicit enemy target launches"), Source->Attack->StartAttack(Intended));
+				Source->Attack->StopAttack();
+				auto* Shot = FindShot(World);
+				if (!TestNotNull(TEXT("Projectile exists"), Shot))
+					return false;
+				Shot->Tick(0.8f);
+				ALSBasicAttackTestActor* Expected = bFriendlyFire ? Ally : OtherEnemy;
+				TestEqual(TEXT("Nearest allowed combatant takes one hit in a large segment"), Expected->HitsReceived, 1);
+				TestEqual(TEXT("Friendly interception follows current flag"), Ally->GetCurrentHealth(), bFriendlyFire ? 90.f : 100.f);
+				TestEqual(TEXT("Other enemy intercepts when ally is passed"), OtherEnemy->GetCurrentHealth(), bFriendlyFire ? 100.f : 90.f);
+				TestEqual(TEXT("Farther enemy is untouched"), FarEnemy->HitsReceived, 0);
+				TestEqual(TEXT("Original target is untouched"), Intended->HitsReceived, 0);
+				TestEqual(TEXT("Source initial overlap is ignored"), Source->HitsReceived, 0);
+				TestTrue(TEXT("First accepted hit ends projectile"), Shot->IsActorBeingDestroyed());
+				Shot->Tick(0.1f);
+				TestEqual(TEXT("Resolved projectile cannot hit twice"), Expected->HitsReceived, 1);
+				TestEqual(TEXT("Attack component forwards one actual damage notification"), Source->Notifications, 1);
+				TestEqual(TEXT("Notification identifies intercepted actor"), Source->LastNotifiedTarget.Get(), static_cast<AActor*>(Expected));
+				TestWorld.ForwardErrorMessages(this);
+			}
+		}
+	}
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSProjectileMissTest, "Landship.Combat.Projectile.MissAndLifetime",
@@ -246,6 +251,14 @@ bool FLSProjectileMissTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("빗나간 화살은 계속 비행"), Shot.IsValid());
 	AdvanceProjectileWorld(World, 0.5f);
 	TestFalse(TEXT("수명 종료 시 투사체 제거"), Shot.IsValid());
+	TestTrue(TEXT("Another shot launches after cooldown"), Source->Attack->StartAttack(Enemy));
+	Source->Attack->StopAttack();
+	Shot = FindShot(World);
+	Enemy->Destroy();
+	AdvanceProjectileWorld(World, 0.7f);
+	TestTrue(TEXT("Removing original target leaves an unobstructed shot in flight"), Shot.IsValid());
+	AdvanceProjectileWorld(World, 0.4f);
+	TestFalse(TEXT("Targetless unobstructed shot expires at its original lifetime"), Shot.IsValid());
 	TestWorld.ForwardErrorMessages(this);
 	return true;
 }

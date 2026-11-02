@@ -280,7 +280,7 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon
 		const bool bLaunched = bFirstBlocking
 		    ? Projectile->LaunchFirstBlocking(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
 		                                      Settings.Range / Settings.ProjectileSpeed)
-		    : Projectile->LaunchFirstEnemy(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
+		    : Projectile->LaunchInDirection(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
 		                                   Settings.Range / Settings.ProjectileSpeed);
 		if (!bLaunched)
 		{

@@ -41,6 +41,7 @@ class ALSBasicAttackTestActor : public AActor, public ILSFactionInterface
 	TObjectPtr<ULSHealthComponent> HealthComponent;
 	int32 HitsReceived = 0;
 	int32 Notifications = 0;
+	TWeakObjectPtr<AActor> LastNotifiedTarget;
 	bool bReenterOnNotification = false;
 	bool bReentrantAccepted = false;
 

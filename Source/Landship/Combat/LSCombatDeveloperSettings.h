@@ -20,7 +20,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Combat Testing")
 	uint8 bAllowSelfDamage : 1 = true;
 
-	/** 같은 진영의 다른 대상에게서 받은 오폭을 양 진영 모두 허용한다. 자기 피해는 별도 설정이며 진영 없는 환경 피해에는 적용하지 않는다. */
+	/** 양 진영의 같은 편 피해를 허용한다. 일반 직선탄은 금지 시 같은 편을 통과하고 장애물 지정 탄은 막히되 피해를 주지 않는다. 판정 시 현재 값을 쓰며 자기 피해·환경 위험은 별도 정책이다. */
 	UPROPERTY(Config, EditAnywhere, Category = "Combat Testing")
 	uint8 bAllowFriendlyFire : 1 = true;
 

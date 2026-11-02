@@ -23,7 +23,8 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	virtual void BeginPlay() override;
 
   private:
-	bool IsEnemy(AActor* Target) const;
+	bool IsLivingCombatant(AActor* Target) const;
+	FLSDamageRequest MakeHitRequest() const;
 	bool FindPelletHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
 	void Detonate();
 	void ApplyHit(AActor* Target, float Damage, const FVector& Direction, bool bKnockback);

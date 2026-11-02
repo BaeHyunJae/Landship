@@ -5,6 +5,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/BoxComponent.h"
@@ -14,6 +15,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
 #include "Troops/LSTroopUnit.h"
 #include <limits>
@@ -64,6 +66,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCannonAimTest, "Landship.Castle.Weapons.Cann
 
 bool FLSCannonAimTest::RunTest(const FString& Parameters)
 {
+	auto* CombatSettings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bFriendlyFire = CombatSettings->bAllowFriendlyFire;
+	const bool bSelfDamage = CombatSettings->bAllowSelfDamage;
+	ON_SCOPE_EXIT
+	{
+		CombatSettings->bAllowFriendlyFire = bFriendlyFire;
+		CombatSettings->bAllowSelfDamage = bSelfDamage;
+	};
+	CombatSettings->bAllowFriendlyFire = false;
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
@@ -123,6 +134,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSShotgunTest, "Landship.Castle.Weapons.ConeAn
 
 bool FLSShotgunTest::RunTest(const FString& Parameters)
 {
+	auto* CombatSettings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bFriendlyFire = CombatSettings->bAllowFriendlyFire;
+	const bool bSelfDamage = CombatSettings->bAllowSelfDamage;
+	ON_SCOPE_EXIT
+	{
+		CombatSettings->bAllowFriendlyFire = bFriendlyFire;
+		CombatSettings->bAllowSelfDamage = bSelfDamage;
+	};
+	CombatSettings->bAllowFriendlyFire = false;
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
@@ -172,6 +192,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBallistaTest, "Landship.Castle.Weapons.Balli
 
 bool FLSBallistaTest::RunTest(const FString& Parameters)
 {
+	auto* CombatSettings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bFriendlyFire = CombatSettings->bAllowFriendlyFire;
+	const bool bSelfDamage = CombatSettings->bAllowSelfDamage;
+	ON_SCOPE_EXIT
+	{
+		CombatSettings->bAllowFriendlyFire = bFriendlyFire;
+		CombatSettings->bAllowSelfDamage = bSelfDamage;
+	};
+	CombatSettings->bAllowFriendlyFire = false;
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;

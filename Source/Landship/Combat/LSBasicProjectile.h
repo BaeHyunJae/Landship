@@ -23,15 +23,16 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	{
 		return FlightVelocity;
 	}
-	/** SpawnActorDeferred 이후 FinishSpawning 전에 한 번 호출한다. */
+	/** Deferred 생성 중 한 번 호출한다. 목표는 발사 때만 검사하며 경로의 첫 피해 허용 대상에 명중한다. */
 	bool Launch(const FLSDamageRequest& Request, AActor* Target, const FVector& Direction, float Speed, float Radius,
 	            float Lifetime, UMaterialInterface* Material = nullptr);
-	/** 발리스타: 지형·아군을 통과하고 진행 경로의 첫 적에게만 명중한다. */
-	bool LaunchFirstEnemy(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
+	/** 발리스타: 발사자·지형을 통과한다. 같은 진영은 오폭 금지 시 통과하며 경로의 첫 피해 허용 대상에 명중한다. */
+	bool LaunchInDirection(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                      float Lifetime, UMaterialInterface* Material = nullptr);
-	/** 지형과 아군을 포함한 첫 실제 몸체에서 멈춘다. 피해는 적에게만 적용한다. */
+	/** 발사자는 제외하고 지형과 같은 진영을 포함한 첫 실제 몸체에서 멈춘다. 피해 허용 여부는 공통 체력 정책을 따른다. */
 	bool LaunchFirstBlocking(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                         float Lifetime, UMaterialInterface* Material = nullptr);
+	/** 실제 감소량이 양수인 명중의 대상과 피해다. 같은 진영과 최초 목표 외의 적도 포함한다. */
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Projectile")
 	FLSProjectileDamageApplied OnDamageApplied;
 
@@ -42,7 +43,8 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	void ResolveHit(const FHitResult& Hit);
 	bool InitializeFlight(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                      float Lifetime, UMaterialInterface* Material);
-	bool FindFirstEnemyHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
+	bool FindFirstDamageableHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
+	FLSDamageRequest MakeHitRequest() const;
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Projectile")
 	TObjectPtr<USphereComponent> Collision;
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Projectile")
@@ -53,12 +55,9 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	FLSDamageRequest ShotRequest;
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> OriginalSource;
-	UPROPERTY(Transient)
-	TWeakObjectPtr<AActor> IntendedTarget;
 	FVector FlightVelocity = FVector::ZeroVector;
 	float RemainingFlightTime = 0;
 	bool bLaunched = false;
 	bool bResolved = false;
-	bool bHitsFirstEnemy = false;
 	bool bHitsFirstBlocking = false;
 };

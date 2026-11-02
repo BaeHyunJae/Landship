@@ -4,12 +4,14 @@
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Tests/AutomationCommon.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 
 namespace
 {
@@ -43,6 +45,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSArcSnapshotTest, "Landship.Castle.Projectile
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FLSArcSnapshotTest::RunTest(const FString& Parameters)
 {
+	auto* CombatSettings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bFriendlyFire = CombatSettings->bAllowFriendlyFire;
+	const bool bSelfDamage = CombatSettings->bAllowSelfDamage;
+	ON_SCOPE_EXIT
+	{
+		CombatSettings->bAllowFriendlyFire = bFriendlyFire;
+		CombatSettings->bAllowSelfDamage = bSelfDamage;
+	};
+	CombatSettings->bAllowFriendlyFire = false;
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game))
 		return false;
@@ -84,6 +95,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSShotgunSnapshotTest, "Landship.Castle.Projec
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FLSShotgunSnapshotTest::RunTest(const FString& Parameters)
 {
+	auto* CombatSettings = GetMutableDefault<ULSCombatDeveloperSettings>();
+	const bool bFriendlyFire = CombatSettings->bAllowFriendlyFire;
+	const bool bSelfDamage = CombatSettings->bAllowSelfDamage;
+	ON_SCOPE_EXIT
+	{
+		CombatSettings->bAllowFriendlyFire = bFriendlyFire;
+		CombatSettings->bAllowSelfDamage = bSelfDamage;
+	};
+	CombatSettings->bAllowFriendlyFire = false;
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game))
 		return false;
