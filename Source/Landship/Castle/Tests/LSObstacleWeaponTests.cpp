@@ -171,7 +171,7 @@ bool FLSMineContactNotProjectileBodyTest::RunTest(const FString& Parameters)
 			    nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 			const bool bLaunched = Mode < 2
 			    ? Shot->Launch(Request, Mine, FVector::ForwardVector, 1000, 2, 2)
-			    : Shot->LaunchFirstEnemy(Request, FVector::ForwardVector, 1000, 2, 2);
+			    : Shot->LaunchInDirection(Request, FVector::ForwardVector, 1000, 2, 2);
 			if (!TestTrue(TEXT("기존 투사체 발사"), bLaunched)) return false;
 			Shot->FinishSpawning(Transform);
 			Shot->Tick(.34f);

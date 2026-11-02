@@ -1,7 +1,6 @@
 #include "Combat/LSBasicProjectile.h"
 
 #include "Combat/LSCollisionChannels.h"
-#include "Obstacles/LSPathObstacle.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSFactionInterface.h"
@@ -49,17 +48,15 @@ bool ALSBasicProjectile::Launch(const FLSDamageRequest& Request, AActor* Target,
 	if (!IsValid(Target) || !ULSCombatTargetLibrary::IsCombatAlive(Target) ||
 	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
-	IntendedTarget = Target;
 	return true;
 }
 
-bool ALSBasicProjectile::LaunchFirstEnemy(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
+bool ALSBasicProjectile::LaunchInDirection(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
                                           float Radius, float Lifetime, UMaterialInterface* Material)
 {
 	if (!Request.bHasSourceFaction || !LSFaction::IsValid(Request.SourceFaction) ||
 	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
-	bHitsFirstEnemy = true;
 	Shaft->SetRelativeScale3D(FVector(0.9f, 0.09f, 0.09f));
 	Tip->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.25f));
 	return true;
@@ -68,9 +65,8 @@ bool ALSBasicProjectile::LaunchFirstEnemy(const FLSDamageRequest& Request, const
 bool ALSBasicProjectile::LaunchFirstBlocking(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
                                              float Radius, float Lifetime, UMaterialInterface* Material)
 {
-	if (!LaunchFirstEnemy(Request, Direction, Speed, Radius, Lifetime, Material))
+	if (!LaunchInDirection(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
-	bHitsFirstEnemy = false;
 	bHitsFirstBlocking = true;
 	return true;
 }
@@ -142,41 +138,12 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 			return;
 		}
 	}
-	// 다른 유닛·건물·지형의 차단 없이 발사 시 지정한 대상의 충돌 형상만 검사한다.
-	if (bHitsFirstEnemy)
+	else
 	{
 		FHitResult Hit;
-		if (FindFirstEnemyHit(Start, End, Hit))
+		if (FindFirstDamageableHit(Start, End, Hit))
 		{
 			ResolveHit(Hit);
-			return;
-		}
-	}
-	AActor* Target = IntendedTarget.Get();
-	if (IsValid(Target) && !Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target))
-	{
-		TInlineComponentArray<UPrimitiveComponent*> Components;
-		if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Target))
-			Components.Add(Obstacle->GetObstacleBody());
-		else
-			Target->GetComponents(Components);
-		FHitResult ClosestHit;
-		bool bHitTarget = false;
-		for (UPrimitiveComponent* Component : Components)
-		{
-			FHitResult Hit;
-			if (IsValid(Component) && Component->IsQueryCollisionEnabled() &&
-			    Component->SweepComponent(Hit, Start, End, FQuat::Identity,
-			                              FCollisionShape::MakeSphere(Collision->GetScaledSphereRadius())) &&
-			    (!bHitTarget || Hit.Time < ClosestHit.Time))
-			{
-				ClosestHit = Hit;
-				bHitTarget = true;
-			}
-		}
-		if (bHitTarget)
-		{
-			ResolveHit(ClosestHit);
 			return;
 		}
 	}
@@ -188,14 +155,23 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	}
 }
 
-bool ALSBasicProjectile::FindFirstEnemyHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
+FLSDamageRequest ALSBasicProjectile::MakeHitRequest() const
+{
+	FLSDamageRequest Request = ShotRequest;
+	AActor* Source = OriginalSource.Get();
+	Request.SourceActor = IsValid(Source) && !Source->IsActorBeingDestroyed() ? Source : nullptr;
+	return Request;
+}
+
+bool ALSBasicProjectile::FindFirstDamageableHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
 {
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
-	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBallista), false, this);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBasicProjectile), false, this);
 	if (OriginalSource.IsValid())
 		Query.AddIgnoredActor(OriginalSource.Get());
+	const FLSDamageRequest Request = MakeHitRequest();
 	bool bSkipped;
 	do
 	{
@@ -211,7 +187,8 @@ bool ALSBasicProjectile::FindFirstEnemyHit(const FVector& Start, const FVector& 
 				continue;
 			const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Target);
 			if (!Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) && Faction &&
-			    LSFaction::IsValid(Faction->GetFaction()) && Faction->GetFaction() != ShotRequest.SourceFaction)
+			    LSFaction::IsValid(Faction->GetFaction()) &&
+			    ULSHealthComponent::EvaluateDamagePolicy(Request, Target) == ELSApplyDamageStatus::Applied)
 			{
 				OutHit = Hit;
 				return true;
@@ -239,17 +216,11 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 	AActor* Target = Hit.GetActor();
 	ULSHealthComponent* Health = IsValid(Target) ? Target->FindComponentByClass<ULSHealthComponent>() : nullptr;
 	const ILSFactionInterface* Faction = IsValid(Target) ? Cast<ILSFactionInterface>(Target) : nullptr;
-	const bool bCanDamage = !bHitsFirstBlocking ||
-	    (Faction && LSFaction::IsValid(Faction->GetFaction()) &&
-	     Faction->GetFaction() != ShotRequest.SourceFaction && ULSCombatTargetLibrary::IsCombatAlive(Target));
+	const bool bCanDamage = Faction && LSFaction::IsValid(Faction->GetFaction()) &&
+	    ULSCombatTargetLibrary::IsCombatAlive(Target);
 	if (Health && bCanDamage)
 	{
-		FLSDamageRequest Request = ShotRequest;
-		Request.SourceActor = OriginalSource.Get();
-		if (!IsValid(Request.SourceActor) || Request.SourceActor->IsActorBeingDestroyed())
-		{
-			Request.SourceActor = nullptr;
-		}
+		FLSDamageRequest Request = MakeHitRequest();
 		Request.DamageCauser = this;
 		const FLSApplyDamageResult Result = Health->ApplyDamage(Request);
 		if (IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown &&

@@ -2,6 +2,7 @@
 
 #include "Castle/LSMobileCastle.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSRTSHUD.h"
@@ -38,10 +39,30 @@ void ALSHMHCastleWeaponsProbe::BeginPlay()
 	Super::BeginPlay();
 #if !UE_BUILD_SHIPPING
 	if (FParse::Param(FCommandLine::Get(), TEXT("HMHCastleWeaponsTestExit")))
+	{
+		auto* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+		bOriginalFriendlyFire = Settings->bAllowFriendlyFire;
+		bOriginalSelfDamage = Settings->bAllowSelfDamage;
+		bOverridesDamagePolicy = true;
+		Settings->bAllowFriendlyFire = false;
+		Settings->bAllowSelfDamage = true;
 		return;
+	}
 #endif
 	SetActorTickEnabled(false);
 	Destroy();
+}
+
+void ALSHMHCastleWeaponsProbe::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (bOverridesDamagePolicy)
+	{
+		auto* Settings = GetMutableDefault<ULSCombatDeveloperSettings>();
+		Settings->bAllowFriendlyFire = bOriginalFriendlyFire;
+		Settings->bAllowSelfDamage = bOriginalSelfDamage;
+		bOverridesDamagePolicy = false;
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ALSHMHCastleWeaponsProbe::Check(bool bPassed, const TCHAR* Message)
@@ -199,7 +220,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Check(CurrentHealth(Enemies[0]) < 60 && CurrentHealth(Enemies[0]) >= 25 && CurrentHealth(Enemies[1]) == 60,
 		      TEXT("부채꼴 안·밖 판정"));
 		Check(CurrentHealth(EnemyCastle) < 1000 && CurrentHealth(EnemyCastle) >= 965 && CurrentHealth(Ally) == 120,
-		      TEXT("적 성은 피해 적용·아군 제외"));
+		      TEXT("오폭 금지 시 적 성은 피해 적용·아군 제외"));
 		Capture();
 		Stage = 2;
 		StageTime = 0;
@@ -233,7 +254,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 	else if (Stage == 3 && StageTime > 0.7f)
 	{
 		Check(CurrentHealth(Enemies[0]) == 0 && CurrentHealth(Enemies[1]) == 60, TEXT("발리스타는 첫 적만 명중"));
-		Check(CurrentHealth(Ally) == 120, TEXT("발리스타는 앞의 아군을 통과"));
+		Check(CurrentHealth(Ally) == 120, TEXT("오폭 금지 시 발리스타는 앞의 아군을 통과"));
 		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_DIAG ally_hp=%.2f castle_hp=%.2f selected=%d"),
 		       CurrentHealth(Ally), CurrentHealth(Castle), Controller->GetSelectedActors().Num());
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) > 0 &&

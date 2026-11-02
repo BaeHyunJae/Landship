@@ -7,12 +7,15 @@ bool ULSCastleWeaponData::AreSettingsValid(ELSCastleWeapon Weapon, const FLSCast
 	    Settings.Cooldown <= 0 || !FMath::IsFinite(Settings.Range) || Settings.Range <= 0 ||
 	    !FMath::IsFinite(Settings.ProjectileSpeed) || Settings.ProjectileSpeed <= 0)
 		return false;
+	if ((Weapon == ELSCastleWeapon::Cannon || Weapon == ELSCastleWeapon::Shotgun) &&
+	    (!FMath::IsFinite(Settings.KnockbackSpeed) || Settings.KnockbackSpeed < 0 ||
+	     !FMath::IsFinite(Settings.KnockbackLift) || Settings.KnockbackLift < 0))
+		return false;
 	if (Weapon == ELSCastleWeapon::Shotgun)
 	{
 		return FMath::IsFinite(Settings.ConeAngle) && Settings.ConeAngle > 0 && Settings.ConeAngle <= 180 &&
 		       Settings.PelletCount >= 1 && Settings.PelletCount <= 64 && FMath::IsFinite(Settings.PelletRadius) &&
-		       Settings.PelletRadius > 0 && FMath::IsFinite(Settings.KnockbackSpeed) && Settings.KnockbackSpeed >= 0 &&
-		       FMath::IsFinite(Settings.KnockbackLift) && Settings.KnockbackLift >= 0;
+		       Settings.PelletRadius > 0;
 	}
 	return FMath::IsFinite(Settings.Radius) && Settings.Radius > 0 &&
 	       (Weapon != ELSCastleWeapon::Cannon || (FMath::IsFinite(Settings.ArcHeight) && Settings.ArcHeight >= 0 &&

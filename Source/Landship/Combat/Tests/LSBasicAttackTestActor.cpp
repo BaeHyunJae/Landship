@@ -61,6 +61,7 @@ void ALSBasicAttackTestActor::ObserveDamage(const FLSDamageResult& Damage)
 void ALSBasicAttackTestActor::ObserveAttack(AActor* Target, float AppliedDamage)
 {
 	++Notifications;
+	LastNotifiedTarget = Target;
 	if (bReenterOnNotification)
 	{
 		bReentrantAccepted |= Attack->StartAttack(Target);

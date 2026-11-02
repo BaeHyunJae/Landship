@@ -10,6 +10,7 @@
 - 로그를 저장할 파일 경로를 정해 아래 명령의 `<로그 파일 경로>`에 쓴다. Git이 추적하지 않는 위치로 한다. `<엔진 경로>`는 UE 5.8 설치 폴더, `<프로젝트 경로>`는 이 저장소의 클론 폴더다.
 - 맵 `/Game/Developers/HMH/HMH_TroopTypes`에 프로브 액터 `HMH_Troop_Probe`, `HMH_Production_Probe`, `HMH_Weapons_Probe`, `HMH_Orders_Probe`와 양 진영의 이동 성(`HMH_MobileCastle_Ally`, `HMH_MobileCastle_Enemy`), 병종별 병력(`HMH_Troop_<번호>_Ally`, `HMH_Troop_<번호>_Enemy`)이 있어야 한다. 프로브는 해당 실행 인수가 없으면 스스로 제거되므로 일반 플레이에는 영향이 없다. 없으면 아래 '맵을 다시 만들 때'를 먼저 한다.
 - 실행할 스크립트: `Scripts/Developers/HMH/hmh-troop-types-map-check/setup-hmh-troop-types.py` (이 스크립트가 같은 폴더의 `setup-castle-weapon-data.py`를 실행한다)
+- 단계 1·3의 프로브는 이동·무장 동작을 검증하는 동안 오폭 금지(`bAllowFriendlyFire=false`)·자기 피해 허용(`bAllowSelfDamage=true`)을 임시 지정하고 종료 시 원래 설정을 복원한다. 양쪽 오폭 설정의 피해·넉백 조합은 `Landship` 자동화 테스트에서 확인한다.
 
 ## 순서
 
@@ -27,10 +28,10 @@
    & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -unattended -nop4 -nosound -NullRHI -HMHProductionTestExit '-abslog=<로그 파일 경로>'
    ```
 
-3. 성 무장 검사를 실행한다. 실제 지면에서 세 무장과 무장·생산 버튼을 검사한다.
+3. 성 무장 검사를 실행한다. 실제 지면에서 세 무장과 무장·생산 버튼을 검사한다. 명령 카드 좌표와 발견 알림의 실제 그리기도 확인하므로 `-NullRHI` 대신 화면 밖 렌더링을 사용한다.
 
    ```powershell
-   & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -unattended -nop4 -nosound -NullRHI -HMHCastleWeaponsTestExit '-abslog=<로그 파일 경로>'
+   & '<엔진 경로>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' '<프로젝트 경로>/Landship.uproject' /Game/Developers/HMH/HMH_TroopTypes -game -RenderOffscreen -windowed -ResX=1280 -ResY=720 -ForceRes -unattended -nop4 -nosound -HMHCastleWeaponsTestExit '-abslog=<로그 파일 경로>'
    ```
 
 4. 교전 명령 검사를 실행한다. 세 병종의 동일 성 공격, 이동한 표적 재추적, 표적 사망 후 예약 이동, 위치 사수와 일반 이동의 공격 중단을 검사한다.

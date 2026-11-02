@@ -10,17 +10,22 @@
 - `StartAutoAttack()`은 사거리 안의 가장 가까운 상대 진영 대상을 자동으로 고른다.
 - `StopAttack()`은 타이머와 대상을 정리한다. 남은 쿨타임은 초기화하지 않는다.
 - 사거리는 양측 충돌 원통 외곽 사이의 거리다(`ULSCombatTargetLibrary::GetAttackDistance`). 첫 공격은 준비되면 즉시 적용하고 이후 실제 간격을 지킨다. 중단·대상 변경·설정 변경으로 쿨타임을 우회하지 않는다. 긴 프레임에서 밀린 공격을 몰아 적용하지 않으며, 프레임보다 빠른 공격 빈도는 보장하지 않는다.
-- `OnAttackPerformed(Target, AppliedDamage)`는 실제 감소량이 양수이고 공격자 수명이 유효할 때 공격자 측 연출용으로 발생한다. 투사체 공격에서는 발사가 아니라 명중 뒤에 발생한다. 공통 피격·사망 알림을 대신하지 않는다. `OnProjectileLaunched(Projectile)`는 투사체 발사 직후 발생한다.
+- `OnAttackPerformed(Target, AppliedDamage)`는 실제 감소량이 양수이고 공격자 수명이 유효할 때 공격자 측 연출용으로 발생한다. 투사체 공격에서는 발사가 아니라 명중 뒤에 발생하며 `Target`은 실제 피해를 받은 대상으로, 같은 진영이나 최초 지정 목표 외의 적도 포함한다. 공통 피격·사망 알림을 대신하지 않는다. `OnProjectileLaunched(Projectile)`는 투사체 발사 직후 발생한다.
 - `ULSBasicAttackTuningSubsystem::TryGetBasicAttackSpeedMultiplier(float&)`는 플레이 시작 때 확정한 배율을 반환한다. 배율의 원본은 프로젝트 설정 '기본 공격 속도 배율'(`ULSCombatDeveloperSettings`)이며 유한한 양수만 쓴다. 플레이 중에 바꾼 값은 다음 플레이부터 반영한다. 플레이 중에 생성한 병력·적·거점도 같은 월드의 배율을 쓴다.
-- `ALSBasicProjectile::Launch(...)`는 발사 시 지정한 목표만 맞히는 직선 비유도 투사체를 만든다. 이전 위치에서 다음 위치까지 구체를 목표의 질의 충돌 컴포넌트에 스윕하므로 아군·다른 적·다른 건물·지형·장식물에 막히지 않고, 목표의 충돌 형상에 닿아야 명중한다. 피해는 지정 목표에만 공통 체력 컴포넌트로 전달하며 오폭 허용 설정과 관계없이 다른 유닛에는 주지 않는다. 빗나가거나 목표가 이동·제거되면 계속 직진하고 수명이 끝나면 제거된다. 중력은 없다.
-- `ALSBasicProjectile::LaunchFirstEnemy(...)`는 목표를 고정하지 않고 이전 위치에서 새 위치까지 `Unit`·`Building`을 스윕해 처음 만난 살아 있는 상대 진영 한 곳에만 피해를 주고 사라진다. 아군·시체·장식물은 무시하고 뒤의 적을 계속 검사한다.
+- `ALSBasicProjectile::Launch(...)`는 발사 시 목표의 생존 여부를 검사하지만 비행 중에는 목표를 고정하지 않는다. 이전 위치에서 다음 위치까지 구체로 `Unit`·`Building`을 스윕해 처음 만난 살아 있고 진영이 유효한 전투 대상 한 곳에 명중한다. 최초 목표 외의 적도 사격을 가로막으며, 같은 진영은 오폭 허용 시 명중하고 금지 시 통과한다. 발사자·시체·지형·장식물은 통과하고 중력은 없다. 목표가 이동·제거되어도 계속 직진하며 명중하거나 수명이 끝나면 제거된다.
+- `ALSBasicProjectile::LaunchInDirection(...)`는 발리스타의 방향 사격이며 같은 경로 명중 규칙을 사용한다. `LaunchFirstBlocking(...)`는 발사자를 제외하고 지형·같은 진영을 포함해 `LSObstacleProjectile`을 막는 첫 실제 몸체에서 멈추며, 그 대상의 피해는 공통 체력 정책이 결정한다.
+- `ULSHealthComponent::EvaluateDamagePolicy(Request, Receiver)`는 현재 오폭·자기 피해 설정만 판정하는 부작용 없는 C++ 함수다. `Applied`는 정책상 허용이라는 뜻이며 실제 피해·체력 준비·입력 유효성을 보장하지 않는다. 거부 시 `RejectedSelfDamageDisabled` 또는 `RejectedFriendlyFireDisabled`를 반환한다. 투사체의 통과 판정과 `ApplyDamage`가 이 규칙을 공유한다.
+- `bAllowFriendlyFire`와 `bAllowSelfDamage`의 기본값은 모두 true이며, 질의·피해 시점의 현재 값을 사용한다. 자기 피해는 오폭 설정과 독립적이다. `EnvironmentalHazard`는 같은 진영의 오폭 차단만 우회하며 자기 피해 설정은 유지한다.
 - 발사 시 진영과 피해량을 복사하고 공격자는 약한 참조로 보관하므로, 발사 뒤 공격자가 사라져도 비행과 피해 판정은 계속된다.
-- `LSCollisionChannels`(`Combat/LSCollisionChannels.h`)와 `Config/DefaultEngine.ini`의 채널 번호는 함께 관리한다. 모두 Object 채널이다. 기본 응답은 `LSProjectile`만 Ignore이고 나머지는 Block이다.
+- `OnDamageApplied(Target, AppliedDamage)`는 실제 감소량이 양수일 때 실제 피격 대상을 전달한다. 같은 진영이나 최초 지정 목표 외의 적도 포함하며 발사자의 생존 여부와 별개다.
+- `LSCollisionChannels`(`Combat/LSCollisionChannels.h`)와 `Config/DefaultEngine.ini`의 채널 번호는 함께 관리한다. 1~5는 Object 채널이며 기본 응답은 `LSProjectile`만 Ignore이고 나머지는 Block이다. 6~7은 Trace 채널이다.
   - `Unit`: `LSUnit`, GameTraceChannel1
   - `Building`: `LSBuilding`, GameTraceChannel2
   - `PathObstacle`: `LSPathObstacle`, GameTraceChannel3
   - `Projectile`: `LSProjectile`, GameTraceChannel4
   - `Ground`: `LSGround`, GameTraceChannel5, 정적 오브젝트로 등록한다. 지면 선택에 Ground Object Query를 쓸 수 있다.
+  - `ExplosionOcclusion`: `LSExplosionOcclusion`, GameTraceChannel6, 기본 응답 Ignore. 지뢰 폭발을 막는 벽은 Block으로 설정한다.
+  - `ObstacleProjectile`: `LSObstacleProjectile`, GameTraceChannel7, 기본 응답 Block. 장애물 지정 탄을 막는 실제 몸체에 사용하며 보조 표시·접촉 구는 Ignore로 설정한다.
 - 아군·적 판정은 채널이 아니라 진영 규칙(`ILSFactionInterface`, `ULSCombatTargetLibrary::CanAutoAttackTarget`)으로 한다. 자동 표적은 오폭·자기 피해 설정과 관계없이 살아 있는 상대 진영만 고른다.
 - `ALSBasicProjectile::Launch()`는 `SpawnActorDeferred` 뒤 `FinishSpawning` 전에 한 번만 부른다. 공격 명령을 중단해도 이미 발사한 투사체는 유지된다.
 - `ULSBasicAttackComponent::OnAttackExecutedEvent`는 공격 확정 시점의 기록(`FLSAttackExecution`)을 한 번 전달한다. 근접은 피해 처리 직전(피해 0 포함), 투사체는 발사 성공 직후에 발생한다. 명중은 두 번째 실행이 아니다. 실제 피해를 보장하지 않으므로 소비자는 후속 작업만 큐에 넣고, 처리할 때 약한 참조와 전투 상태를 다시 검증한다.

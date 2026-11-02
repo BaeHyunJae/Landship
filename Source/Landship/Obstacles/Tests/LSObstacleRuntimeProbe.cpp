@@ -6,8 +6,10 @@
 #include "Navigation/LSMineAwareMovementComponent.h"
 #include "Troops/LSTroopUnit.h"
 #include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastleProjectile.h"
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Vision/LSVisionParticipantComponent.h"
@@ -22,9 +24,11 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Misc/ScopeExit.h"
 
 namespace
 {
@@ -206,6 +210,7 @@ void ALSObstacleRuntimeProbe::BeginPhase(int32 Next)
 	bInitialized = false;
 	WorkStarted = -1;
 	bStoppedInWorkRing = false;
+	bCannonDamageChecked = false;
 	LastMineState = -1;
 }
 void ALSObstacleRuntimeProbe::Tick(float DeltaSeconds)
@@ -434,9 +439,82 @@ void ALSObstacleRuntimeProbe::Tick(float DeltaSeconds)
 				WorkStarted = PhaseTime;
 			}
 		}
+		UStaticMeshComponent* Fill = Mine.IsValid()
+			? Cast<UStaticMeshComponent>(Mine->GetDefaultSubobjectByName(TEXT("ProgressFill"))) : nullptr;
+		if (!bCannonDamageChecked && Fill && Fill->IsVisible() && Fill->GetRelativeScale3D().X > .05 &&
+			Troop->Orders->GetOrderKind() == ELSOrderKind::Disarm && Mine->HasDisarmWorker())
+		{
+			Check(WorkStarted > 0, TEXT("zero-knockback cannon starts after actual Disarm work progressed"));
+			ALSMobileCastle* Source = SpawnCastle(FVector(-1000, -2400, 142));
+			if (!Source)
+			{
+				Check(false, TEXT("zero-knockback cannon friendly source spawned"));
+				Finish();
+				return;
+			}
+			const float HealthBefore = HealthOf(Troop.Get()).CurrentHealth;
+			const float MineHealthBefore = HealthOf(Mine.Get()).CurrentHealth;
+			const FVector Impact = Troop->GetActorLocation();
+			const FTransform Transform(FRotator::ZeroRotator, Impact - FVector(200, 0, 0));
+			ALSCastleProjectile* Shot = GetWorld()->SpawnActorDeferred<ALSCastleProjectile>(
+				ALSCastleProjectile::StaticClass(), Transform, nullptr, nullptr,
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+			FLSCastleWeaponSettings Settings;
+			Settings.Damage = 1;
+			Settings.Radius = 30;
+			Settings.KnockbackSpeed = 0;
+			Settings.KnockbackLift = 0;
+			ULSCombatDeveloperSettings* Policy = GetMutableDefault<ULSCombatDeveloperSettings>();
+			{
+				const bool bFriendlyFireBefore = Policy->bAllowFriendlyFire;
+				const bool bSelfDamageBefore = Policy->bAllowSelfDamage;
+				ON_SCOPE_EXIT
+				{
+					Policy->bAllowFriendlyFire = bFriendlyFireBefore;
+					Policy->bAllowSelfDamage = bSelfDamageBefore;
+				};
+				Policy->bAllowFriendlyFire = true;
+				Policy->bAllowSelfDamage = true;
+				const bool bLaunched = Shot && Shot->Launch(ELSCastleWeapon::Cannon, Settings,
+					ULSHealthComponent::MakeDamageRequest(1, Source, Source), Impact);
+				Check(bLaunched, TEXT("zero-knockback cannon launched at active Disarm worker"));
+				if (!bLaunched)
+				{
+					if (Shot) Shot->Destroy();
+					Finish();
+					return;
+				}
+				Shot->FinishSpawning(Transform);
+				Shot->Tick(1);
+			}
+			bCannonDamageChecked = true;
+			Source->Destroy();
+			Check(FMath::IsNearlyEqual(HealthBefore - HealthOf(Troop.Get()).CurrentHealth, 1.f),
+				TEXT("zero-knockback cannon applied one actual damage to worker"));
+			Check(Troop->Orders->GetOrderKind() == ELSOrderKind::Hold && !Mine->HasDisarmWorker() &&
+				!Fill->IsVisible(), TEXT("positive cannon damage cancels Disarm and releases progress and claim"));
+			Check(!Troop->Orders->IsKnockedBack() &&
+				Troop->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero(),
+				TEXT("zero-knockback cannon damage creates no knockback state or pending launch"));
+			Check(Mine->IsArmed() && FMath::IsNearlyEqual(HealthOf(Mine.Get()).CurrentHealth, MineHealthBefore),
+				TEXT("small cannon blast preserves the mine for a fresh Disarm approach"));
+			// 피해 반응과 해제 완료를 따로 검증하도록 원래 접근 출발점에서 새 명령을 시작한다.
+			Troop->GetCharacterMovement()->StopMovementImmediately();
+			Check(Troop->SetActorLocation(FVector(-550, -1800, 88), false, nullptr, ETeleportType::TeleportPhysics),
+				TEXT("fresh Disarm approach restores original phase-four start after damage"));
+			bStoppedInWorkRing = false;
+			FLSOrder Order;
+			Order.Kind = ELSOrderKind::Disarm;
+			Order.Target = Mine.Get();
+			const bool bAccepted = Troop->Orders->SubmitOrder(Order);
+			Check(bAccepted && Mine->HasDisarmWorker(),
+				TEXT("fresh Disarm approach accepted once after positive zero-knockback cannon damage"));
+			WorkStarted = 0;
+		}
 		if (LastMineState == static_cast<int32>(ELSMineState::Disarmed) ||
 			(Mine.IsValid() && Mine->GetMineState() == ELSMineState::Disarmed) || PhaseTime > 18)
 		{
+			Check(bCannonDamageChecked, TEXT("zero-knockback cannon damage was observed during actual Disarm work"));
 			Check((LastMineState == static_cast<int32>(ELSMineState::Disarmed) ||
 				   (Mine.IsValid() && Mine->GetMineState() == ELSMineState::Disarmed)) &&
 					  bStoppedInWorkRing && WorkStarted > 0 && PhaseTime - WorkStarted >= 5.8f &&

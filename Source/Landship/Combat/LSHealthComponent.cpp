@@ -102,6 +102,35 @@ FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActo
 	return Request;
 }
 
+ELSApplyDamageStatus ULSHealthComponent::EvaluateDamagePolicy(const FLSDamageRequest& Request, const AActor* Receiver)
+{
+	const ULSCombatDeveloperSettings* Settings = GetDefault<ULSCombatDeveloperSettings>();
+	const bool bSelfDamage = Request.SourceActor == Receiver;
+	if (bSelfDamage && !Settings->bAllowSelfDamage)
+	{
+		return ELSApplyDamageStatus::RejectedSelfDamageDisabled;
+	}
+	if (!bSelfDamage && !Settings->bAllowFriendlyFire && Request.Policy == ELSDamagePolicy::Standard)
+	{
+		bool bHasSourceFaction = Request.bHasSourceFaction;
+		ELSFaction SourceFaction = Request.SourceFaction;
+		if (!bHasSourceFaction && IsValid(Request.SourceActor))
+		{
+			if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Request.SourceActor))
+			{
+				bHasSourceFaction = true;
+				SourceFaction = Faction->GetFaction();
+			}
+		}
+		const ILSFactionInterface* ReceiverFaction = Cast<ILSFactionInterface>(Receiver);
+		if (bHasSourceFaction && ReceiverFaction && SourceFaction == ReceiverFaction->GetFaction())
+		{
+			return ELSApplyDamageStatus::RejectedFriendlyFireDisabled;
+		}
+	}
+	return ELSApplyDamageStatus::Applied;
+}
+
 FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Request)
 {
 	AActor* Receiver = GetOwner();
@@ -135,29 +164,10 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	{
 		return {ELSApplyDamageStatus::NoEffectZeroDamage, 0.0f};
 	}
-	const ULSCombatDeveloperSettings* Settings = GetDefault<ULSCombatDeveloperSettings>();
-	const bool bSelfDamage = Request.SourceActor == Receiver;
-	if (bSelfDamage && !Settings->bAllowSelfDamage)
+	const ELSApplyDamageStatus PolicyStatus = EvaluateDamagePolicy(Request, Receiver);
+	if (PolicyStatus != ELSApplyDamageStatus::Applied)
 	{
-		return {ELSApplyDamageStatus::RejectedSelfDamageDisabled, 0.0f};
-	}
-	if (!bSelfDamage && !Settings->bAllowFriendlyFire && Request.Policy == ELSDamagePolicy::Standard)
-	{
-		bool bHasSourceFaction = Request.bHasSourceFaction;
-		ELSFaction SourceFaction = Request.SourceFaction;
-		if (!bHasSourceFaction && IsValid(Request.SourceActor))
-		{
-			if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Request.SourceActor))
-			{
-				bHasSourceFaction = true;
-				SourceFaction = Faction->GetFaction();
-			}
-		}
-		const ILSFactionInterface* ReceiverFaction = Cast<ILSFactionInterface>(Receiver);
-		if (bHasSourceFaction && ReceiverFaction && SourceFaction == ReceiverFaction->GetFaction())
-		{
-			return {ELSApplyDamageStatus::RejectedFriendlyFireDisabled, 0.0f};
-		}
+		return {PolicyStatus, 0.0f};
 	}
 	const float AppliedDamage = FMath::Min(Request.DamageAmount, Health.CurrentHealth);
 	Health.CurrentHealth -= AppliedDamage;

@@ -90,11 +90,18 @@ void ALSCastleProjectile::BeginPlay()
 		Destroy();
 }
 
-bool ALSCastleProjectile::IsEnemy(AActor* Target) const
+bool ALSCastleProjectile::IsLivingCombatant(AActor* Target) const
 {
 	const ILSFactionInterface* Faction = IsValid(Target) ? Cast<ILSFactionInterface>(Target) : nullptr;
 	return Faction && !Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) &&
-	       LSFaction::IsValid(Faction->GetFaction()) && Faction->GetFaction() != ShotRequest.SourceFaction;
+	       LSFaction::IsValid(Faction->GetFaction());
+}
+
+FLSDamageRequest ALSCastleProjectile::MakeHitRequest() const
+{
+	FLSDamageRequest Request = ShotRequest;
+	Request.SourceActor = Source.IsValid() && !Source->IsActorBeingDestroyed() ? Source.Get() : nullptr;
+	return Request;
 }
 
 bool ALSCastleProjectile::FindPelletHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
@@ -115,6 +122,7 @@ bool ALSCastleProjectile::FindPelletHit(const FVector& Start, const FVector& End
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSShotgunPellet), false, this);
 	if (Source.IsValid())
 		Query.AddIgnoredActor(Source.Get());
+	const FLSDamageRequest Request = MakeHitRequest();
 	bool bSkipped;
 	do
 	{
@@ -125,7 +133,8 @@ bool ALSCastleProjectile::FindPelletHit(const FVector& Start, const FVector& End
 		Hits.Sort([](const FHitResult& A, const FHitResult& B) { return A.Time < B.Time; });
 		for (const FHitResult& Hit : Hits)
 		{
-			if (IsEnemy(Hit.GetActor()))
+			if (IsLivingCombatant(Hit.GetActor()) &&
+			    ULSHealthComponent::EvaluateDamagePolicy(Request, Hit.GetActor()) == ELSApplyDamageStatus::Applied)
 			{
 				OutHit = Hit;
 				return true;
@@ -142,19 +151,18 @@ bool ALSCastleProjectile::FindPelletHit(const FVector& Start, const FVector& End
 
 void ALSCastleProjectile::ApplyHit(AActor* Target, float Damage, const FVector& Direction, bool bKnockback)
 {
-	if (!IsEnemy(Target))
+	if (!IsLivingCombatant(Target))
 		return;
 	ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
 	if (!Health)
 		return;
-	FLSDamageRequest Request = ShotRequest;
+	FLSDamageRequest Request = MakeHitRequest();
 	Request.DamageAmount = Damage;
-	Request.SourceActor = Source.IsValid() && !Source->IsActorBeingDestroyed() ? Source.Get() : nullptr;
 	Request.DamageCauser = this;
 	const FLSApplyDamageResult Result = Health->ApplyDamage(Request);
 	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 		return;
-	if (bKnockback && Result.AppliedDamage > 0 && IsEnemy(Target) && !PushedTargets.Contains(Target))
+	if (bKnockback && Result.AppliedDamage > 0 && IsLivingCombatant(Target) && !PushedTargets.Contains(Target))
 	{
 		if (ALSUnit* Unit = Cast<ALSUnit>(Target); Unit && Unit->Selection->Kind == ELSSelectionKind::Unit)
 		{
@@ -169,10 +177,16 @@ void ALSCastleProjectile::Detonate()
 {
 	bResolved = true;
 	SetActorTickEnabled(false);
-	TArray<TWeakObjectPtr<AActor>> Targets;
+	struct FLSCannonBlastTarget
+	{
+		TWeakObjectPtr<AActor> Actor;
+		FVector KnockbackDirection;
+	};
+	TArray<FLSCannonBlastTarget> Targets;
+	const FVector IncomingDirection = (TargetLocation - LaunchLocation).GetSafeNormal2D();
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
-		if (!IsEnemy(*It))
+		if (!IsLivingCombatant(*It))
 			continue;
 		double Distance = FVector::Dist2D(It->GetActorLocation(), TargetLocation);
 		if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(*It))
@@ -180,13 +194,24 @@ void ALSCastleProjectile::Detonate()
 			Distance = LSObstacleGeometry::GetPlanarBodyDistance(Obstacle->GetObstacleBody(), TargetLocation);
 		}
 		if (Distance <= ShotSettings.Radius)
-			Targets.Add(*It);
+		{
+			FVector Direction = (It->GetActorLocation() - TargetLocation).GetSafeNormal2D();
+			if (Direction.IsNearlyZero())
+				Direction = IncomingDirection;
+			// 앞 대상의 피해 알림이 다른 대상을 옮겨도 범위 판정 때의 방향을 유지한다.
+			Targets.Add({*It, Direction});
+		}
 	}
-	for (const TWeakObjectPtr<AActor>& Target : Targets)
+	for (const FLSCannonBlastTarget& Target : Targets)
 	{
 		if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 			return;
-		ApplyHit(Target.Get(), ShotSettings.Damage, FVector::ZeroVector, false);
+		AActor* Actor = Target.Actor.Get();
+		if (!IsLivingCombatant(Actor))
+			continue;
+		const FVector KnockbackVelocity = Target.KnockbackDirection * ShotSettings.KnockbackSpeed +
+		                                 FVector(0, 0, ShotSettings.KnockbackLift);
+		ApplyHit(Actor, ShotSettings.Damage, Target.KnockbackDirection, !KnockbackVelocity.IsNearlyZero());
 	}
 	if (IsValid(this) && !IsActorBeingDestroyed())
 		Destroy();

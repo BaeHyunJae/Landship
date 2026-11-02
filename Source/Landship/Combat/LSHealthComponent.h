@@ -41,6 +41,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	static FLSDamageRequest MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser);
 
+	/** 유효한 Receiver에 대해 현재 오폭·자기 피해 정책만 검사한다. Applied는 정책상 허용이며 피해 적용·입력·체력 준비 검사가 아니다. */
+	static ELSApplyDamageStatus EvaluateDamagePolicy(const FLSDamageRequest& Request, const AActor* Receiver);
+
 	/** 에디터와 런타임이 같은 제거 설정 검사 규칙을 사용한다. */
 	FString GetConfigurationError() const;
 

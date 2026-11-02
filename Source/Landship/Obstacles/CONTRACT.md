@@ -5,6 +5,7 @@
 - `ALSPathObstacle`은 적 진영의 공격 가능한 몸체와 체력·시야 참여자를 제공한다. 공격 질의에는 `GetObstacleBody()`를 사용한다. `CanBeAutomaticallyAcquired()`는 터렛만 허용하며 지뢰·바리케이드는 명시적으로 공격한다.
 - `BP_PathTurret`, `BP_PathMine`, `BP_PathBarricade`를 배치한다. 터렛은 사거리 안의 성을 우선하고, 성이 없으면 현재 체력이 가장 낮은 병력을 공격한다.
 - `ALSMine`의 접촉 구는 이동 접촉 전용이며 공격 몸체와 다르다. `RequestTrigger()`는 첫 원인만 수락한다. 폭발은 양 진영 병력을 즉사시키고 성에는 최대 내구도 비율 피해를 준다.
+- 일반 공격의 오폭 설정은 장애물에도 적용한다. `bAllowFriendlyFire`가 true이면 적 탄환도 같은 진영의 바리케이드에 피해를 주거나 지뢰 몸체를 맞혀 폭발시킬 수 있고, false이면 일반 직선탄은 같은 진영 장애물을 통과한다. 장애물 지정 탄은 설정과 관계없이 첫 차단 몸체에서 멈춘다. 지뢰의 접촉 구는 일반 탄환의 명중 몸체가 아니다.
 - 해제는 `Controls`의 명령으로 시작한다. 작업자 점유는 `TryClaimDisarm()`으로 확보하고 취소 시 `ReleaseDisarm()`으로 반환한다. `TryCompleteDisarm()`은 점유한 살아 있는 작업자만 수락한다.
 - `ULSMineHazardSubsystem`은 살아 있는 위험과 변경 번호를 제공한다. 발동했으나 아직 폭발하지 않은 지뢰도 위험에 포함한다.
 

@@ -130,6 +130,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 		return bConfigured;
 	}
 
+	/** 실제 피해가 적용된 대상을 알린다. 투사체를 가로막은 같은 진영이나 최초 목표 외 적도 포함한다. */
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Attack")
 	FLSBasicAttackPerformed OnAttackPerformed;
 	/** 투사체 발사 알림이다. OnAttackPerformed는 실제 피해가 적용된 명중 시에 발생한다. */
