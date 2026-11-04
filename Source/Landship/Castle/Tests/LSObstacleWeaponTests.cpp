@@ -2,7 +2,8 @@
 #include "Castle/LSCastleProjectile.h"
 #include "Troops/LSTroopUnit.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Obstacles/LSMine.h"
@@ -125,7 +126,7 @@ bool FLSObstacleLowMineAimTest::RunTest(const FString& Parameters)
 		if (!Fixture.CreateTestWorld(EWorldType::Game))
 			return false;
 		UWorld* World = Fixture.GetTestWorld();
-		auto* Castle = World->SpawnActor<ALSMobileCastle>();
+		auto* Castle = LSCastleTestFixture::Spawn(World);
 		Castle->SetActorLocation(FVector(0, 0, 150));
 		auto* Mine = World->SpawnActor<ALSMine>();
 		Mine->SetActorLocation(FVector(400, 0, 20));

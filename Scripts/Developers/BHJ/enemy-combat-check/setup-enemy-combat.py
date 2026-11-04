@@ -26,7 +26,7 @@ for actor in actors.get_all_level_actors():
     path = actor.get_class().get_path_name()
     if actor in bounds or actor in navigation:
         continue
-    if path.startswith('/Script/Landship.') or isinstance(actor, unreal.StaticMeshActor):
+    if path.startswith('/Script/Landship.') or isinstance(actor, unreal.StaticMeshActor) or actor.get_actor_label() == 'EnemyCombat_PlayerCastle':
         actors.destroy_actor(actor)
 
 for volume in bounds:
@@ -71,7 +71,59 @@ _, floor_extent = floor.get_actor_bounds(False)
 if floor_extent.x < 3900 or floor_extent.y < 3400:
     raise RuntimeError('Enemy floor geometry does not cover the authored scene')
 
-castle = spawn('LSMobileCastle', 'EnemyCombat_PlayerCastle', (-1800, -1200, 142))
+castle_table = unreal.load_asset('/Game/Landship/Combat/Data/DT_CastleStats')
+castle_parent = unreal.load_class(None, '/Script/Landship.LSCastle')
+if not castle_table or not castle_parent:
+    raise RuntimeError('Castle class or stats table missing')
+castle_blueprint_path = '/Game/Developers/BHJ/EnemyCombat/BP_EnemyCombatCastle'
+if assets.does_asset_exist(castle_blueprint_path):
+    castle_blueprint = unreal.load_asset(castle_blueprint_path)
+else:
+    castle_blueprint = assets.duplicate_asset(
+        '/Game/Landship/Maps/Blueprints/BP_BattlefieldCastle', castle_blueprint_path)
+if not isinstance(castle_blueprint, unreal.Blueprint) or unreal.BlueprintEditorLibrary.get_blueprint_parent_class(castle_blueprint) != castle_parent:
+    raise RuntimeError('BP_EnemyCombatCastle must derive directly from ALSCastle')
+castle_class = unreal.BlueprintEditorLibrary.generated_class(castle_blueprint)
+if not castle_class:
+    raise RuntimeError('Castle fixture requires a valid compiled Blueprint template')
+castle_defaults = unreal.get_default_object(castle_class)
+row = unreal.DataTableRowHandle()
+row.set_editor_property('data_table', castle_table)
+row.set_editor_property('row_name', 'BattlefieldPrototype')
+castle_defaults.set_editor_property('stats_row', row)
+castle_defaults.get_editor_property('root_component').set_capsule_size(142.0, 142.0)
+body = castle_defaults.get_editor_property('body')
+body.set_static_mesh(unreal.load_asset('/Engine/BasicShapes/Sphere'))
+body.set_editor_property('relative_scale3d', unreal.Vector(2.84, 2.84, 2.84))
+movement = castle_defaults.get_movement_component()
+nav = movement.get_editor_property('nav_agent_props')
+nav.set_editor_property('agent_radius', 142.0)
+nav.set_editor_property('agent_height', 284.0)
+movement.set_editor_property('nav_agent_props', nav)
+movement.set_editor_property('turn_before_forward', False)
+weapons = castle_defaults.get_editor_property('weapons')
+weapons.set_editor_property('cannon_launch_offset', unreal.Vector(0, 0, 150))
+weapons.set_editor_property('shotgun_launch_offset', unreal.Vector(0, 0, 0))
+weapons.set_editor_property('ballista_launch_offset', unreal.Vector(0, 0, 0))
+unreal.BlueprintEditorLibrary.compile_blueprint(castle_blueprint)
+if not assets.save_loaded_asset(castle_blueprint):
+    raise RuntimeError('Castle fixture Blueprint save failed')
+castle_class = unreal.BlueprintEditorLibrary.generated_class(castle_blueprint)
+if not castle_class:
+    raise RuntimeError('Castle fixture has no generated class after compilation')
+readback = unreal.get_default_object(castle_class)
+readback_row = readback.get_editor_property('stats_row')
+readback_nav = readback.get_movement_component().get_editor_property('nav_agent_props')
+if readback_row.get_editor_property('data_table') != castle_table or str(readback_row.get_editor_property('row_name')) != 'BattlefieldPrototype':
+    raise RuntimeError('Castle fixture typed stats defaults were not preserved')
+if readback.get_editor_property('root_component').get_unscaled_capsule_radius() != 142.0 or readback.get_editor_property('body').get_editor_property('relative_scale3d') != unreal.Vector(2.84, 2.84, 2.84):
+    raise RuntimeError('Castle fixture body defaults were not preserved')
+if readback_nav.get_editor_property('agent_radius') != 142.0 or readback_nav.get_editor_property('agent_height') != 284.0 or readback.get_movement_component().get_editor_property('turn_before_forward'):
+    raise RuntimeError('Castle fixture movement defaults were not preserved')
+castle = actors.spawn_actor_from_class(castle_class, unreal.Vector(-1800, -1200, 142))
+if not castle:
+    raise RuntimeError('Actor spawn failed: EnemyCombat_PlayerCastle')
+castle.set_actor_label('EnemyCombat_PlayerCastle')
 castle.set_editor_property('faction', unreal.LSFaction.ALLY)
 core = spawn('LSEnemyOutpost', 'EnemyCombat_Core', (1800, 1500, 100))
 # 실제 전투 검증에서도 전장 경계와 지형을 명시해 시야를 활성화한다.

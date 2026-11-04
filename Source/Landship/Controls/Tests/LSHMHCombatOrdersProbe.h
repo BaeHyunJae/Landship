@@ -28,7 +28,7 @@ class ALSHMHCombatOrdersProbe : public AActor
 	UFUNCTION() void OnCavalry(AActor* Target, float Damage);
 	UPROPERTY() TArray<TObjectPtr<class ALSTroopUnit>> Army;
 	UPROPERTY() TObjectPtr<class ALSTroopUnit> Enemy;
-	UPROPERTY() TObjectPtr<class ALSMobileCastle> TargetCastle;
+	UPROPERTY() TObjectPtr<class ALSCastle> TargetCastle;
 	int32 Hits[3] = {0, 0, 0};
 	FVector LastPosition;
 	float BaselineHealth = 0;

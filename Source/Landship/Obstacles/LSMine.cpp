@@ -5,7 +5,6 @@
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Castle/LSCastle.h"
-#include "Castle/LSMobileCastle.h"
 #include "Troops/LSUnit.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Vision/LSVisionParticipantComponent.h"
@@ -207,7 +206,7 @@ void ALSMine::OnContact(UPrimitiveComponent* Component, AActor* Other, UPrimitiv
 	if (!IsArmed() || !IsValid(Other) || !IsValid(OtherComponent) || OtherComponent != Other->GetRootComponent())
 		return;
 	const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Other);
-	const bool bSupported = Other->IsA<ALSCastle>() || Other->IsA<ALSMobileCastle>() || Other->IsA<ALSUnit>();
+	const bool bSupported = Other->IsA<ALSCastle>() || Other->IsA<ALSUnit>();
 	if (bSupported && Faction && Faction->GetFaction() == ELSFaction::Ally &&
 		ULSCombatTargetLibrary::IsCombatAlive(Other))
 		RequestTrigger(ELSMineTriggerCause::Contact);
@@ -259,6 +258,17 @@ void ALSMine::Explode()
 	if (!IsTriggered() || !GetWorld() || GetWorld()->bIsTearingDown)
 		return;
 	State = ELSMineState::Exploding;
+	FLSMineExplosion Explosion;
+	Explosion.Mine = this;
+	Explosion.MineId = GetUniqueID();
+	Explosion.Origin = GetTriggerCenter();
+	Explosion.TimestampSeconds = GetWorld()->GetTimeSeconds();
+	// 지뢰 파괴 뒤에도 통지하도록 수신자의 약한 바인딩과 기록을 월드 타이머에 복사한다.
+	const FLSOnMineExploded Listeners = OnMineExploded;
+	GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([Listeners, Explosion]() mutable
+	{
+		Listeners.Broadcast(Explosion);
+	}));
 	NotifyChanged();
 	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 		return;
@@ -283,8 +293,8 @@ void ALSMine::Explode()
 				Mine->RequestTrigger(ELSMineTriggerCause::Chain);
 			continue;
 		}
-		const bool bCastle = Target->IsA<ALSCastle>() || Target->IsA<ALSMobileCastle>();
 		const ALSUnit* Unit = Cast<ALSUnit>(Target);
+		const bool bCastle = Target->IsA<ALSCastle>() || (Unit && Unit->Selection->Kind == ELSSelectionKind::Castle);
 		if (!bCastle && (!Unit || Unit->Selection->Kind != ELSSelectionKind::Unit))
 			continue;
 		UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Target->GetRootComponent());
@@ -299,6 +309,12 @@ void ALSMine::Explode()
 		FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(
 			bCastle ? HP.MaxHealth * CastleMaxHealthFraction : HP.CurrentHealth, this, this);
 		Request.Policy = ELSDamagePolicy::EnvironmentalHazard;
+		Request.bHasAttackOrigin = true;
+		Request.AttackOrigin = Explosion.Origin;
+		Request.bHasImpactLocation = true;
+		Request.ImpactLocation = Closest;
+		Request.IncomingDirection = (Closest - Explosion.Origin).GetSafeNormal();
+		Request.bHasIncomingDirection = !Request.IncomingDirection.IsNearlyZero();
 		TargetHealth->ApplyDamage(Request);
 		if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
 			return;

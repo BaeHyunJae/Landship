@@ -1,7 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Castle/LSCastleProjectile.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Troops/LSUnit.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSCollisionChannels.h"
@@ -323,16 +325,29 @@ bool FLSCastleAlliedShotgunKnockbackEligibilityTest::RunTest(const FString& Para
 		if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = Fixture.GetTestWorld();
 		auto* Source = MakeCastlePolicyTarget(World, FVector(0, 0, 100), Faction);
-		ALSUnit* Ally = Case == 2
-		    ? static_cast<ALSUnit*>(World->SpawnActor<ALSMobileCastle>(FVector(400, 0, 144), FRotator::ZeroRotator))
-		    : static_cast<ALSUnit*>(World->SpawnActor<ALSTroopUnit>(FVector(400, 0, 100), FRotator::ZeroRotator));
-		Ally->SetInitialFaction(Faction);
+		AActor* Ally;
+		if (Case == 2)
+		{
+			auto* Castle = LSCastleTestFixture::Spawn(World, FVector(400, 0, 144));
+			Castle->SetInitialFaction(Faction);
+			Ally = Castle;
+		}
+		else
+		{
+			auto* Troop = World->SpawnActor<ALSTroopUnit>(FVector(400, 0, 100), FRotator::ZeroRotator);
+			Troop->SetInitialFaction(Faction);
+			Ally = Troop;
+		}
 		auto* Health = Ally->FindComponentByClass<ULSHealthComponent>();
 		Health->bDestroyOnDeath = false;
 		if (!Fixture.BeginPlayInTestWorld()) return false;
-		Ally->Orders->SetComponentTickEnabled(false);
-		Ally->BasicAttack->StopAttack();
-		Ally->GetCharacterMovement()->SetComponentTickEnabled(false);
+		auto* Orders = Ally->FindComponentByClass<ULSOrderComponent>();
+		Orders->SetComponentTickEnabled(false);
+		if (auto* Troop = Cast<ALSUnit>(Ally))
+		{
+			Troop->BasicAttack->StopAttack();
+			Troop->GetCharacterMovement()->SetComponentTickEnabled(false);
+		}
 		FLSCastleWeaponSettings Settings = CastlePolicyShotSettings();
 		Settings.Damage = Case == 0 ? 0.f : Case == 1 ? 1000.f : 20.f;
 		AActor* Shot = LaunchCastlePolicyShot(*this, World, ELSCastleWeapon::Shotgun,
@@ -344,8 +359,11 @@ bool FLSCastleAlliedShotgunKnockbackEligibilityTest::RunTest(const FString& Para
 		if (!TestTrue(TEXT("명중 뒤 체력 조회"), Health->TryGetHealth(After))) return false;
 		const FString Label = FString::Printf(TEXT("Faction=%d Case=%d "), static_cast<int32>(Faction), Case);
 		TestEqual(*(Label + TEXT("0 피해·치명상·성 피해 구분")), After.CurrentHealth, Case == 0 ? 120.f : Case == 1 ? 0.f : 980.f);
-		TestFalse(*(Label + TEXT("살아남은 피해 병력만 넉백 대상")), Ally->Orders->IsKnockedBack());
-		TestTrue(*(Label + TEXT("넉백 속도 없음")), Ally->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero());
+		TestFalse(*(Label + TEXT("살아남은 피해 병력만 넉백 대상")), Orders->IsKnockedBack());
+		if (auto* Troop = Cast<ALSUnit>(Ally))
+			TestTrue(*(Label + TEXT("넉백 속도 없음")), Troop->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero());
+		else
+			TestTrue(*(Label + TEXT("성 속도 없음")), Ally->GetVelocity().IsNearlyZero());
 	}
 	return true;
 }

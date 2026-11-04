@@ -11,7 +11,6 @@ class ULSCommandCardComponent;
 class ALSCastle;
 class ALSMine;
 class ALSPathObstacle;
-class ALSMobileCastle;
 
 USTRUCT()
 struct FLSControlGroup
@@ -44,8 +43,15 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Production")
 	TObjectPtr<ULSTroopProductionComponent> Production;
 	void ProduceTroop(ELSTroopType Type);
-	ALSMobileCastle* GetSelectedArmedCastle() const;
+	ALSCastle* GetSelectedArmedCastle() const;
+	/** 전장 설정이 유효할 때 지정된 성을 반환한다. 사망한 성도 체력 표시를 위해 반환한다. */
+	ALSCastle* GetConfiguredBattlefieldCastle() const;
+	/** 무장 입력에 사용할 살아 있는 성. 전장 설정을 쓰지 않는 기존 맵에서만 선택한 성을 사용한다. */
+	ALSCastle* GetCastleWeaponSource() const;
+	ALSCastle* GetAimingCastle() const;
+	UFUNCTION(BlueprintCallable, Category = "Landship|Castle Weapons")
 	bool ArmCastleWeapon(ELSCastleWeapon Weapon);
+	UFUNCTION(BlueprintCallable, Category = "Landship|Castle Weapons")
 	ELSWeaponCastResult ConfirmCastleWeapon(const FVector& Aim);
 	bool GetCastleWeaponAim(FVector& Aim) const;
 	ELSCastleWeapon GetPendingWeapon() const
@@ -107,6 +113,13 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	bool HitWorld(FHitResult& Hit, bool bNormalRightClick = false) const;
 	void ZoomCamera(float Value);
 	bool CanUseWorldInput(bool bAllowHUD = false, bool bKeyboard = false) const;
+	bool UsesBattlefieldCastle() const;
+	// 설정 액터가 제거되어도 기존 선택 기반 입력으로 복귀하지 않는다.
+	mutable bool bRequiresBattlefieldCastle = false;
+	bool bControllerEnded = false;
+#if WITH_EDITOR
+	TSharedPtr<class IInputProcessor> PIECancelInputProcessor;
+#endif
 
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Camera", meta = (ClampMin = "0"))
 	float EdgeScrollMargin = 12.0f;
@@ -126,7 +139,7 @@ class LANDSHIP_API ALSPlayerController : public APlayerController
 	ELSCommandInput PendingInput = ELSCommandInput::None;
 	ELSCastleWeapon PendingWeapon = ELSCastleWeapon::Cannon;
 	ELSWeaponCastResult LastWeaponResult = ELSWeaponCastResult::Ready;
-	TWeakObjectPtr<ALSMobileCastle> AimingCastle;
+	TWeakObjectPtr<ALSCastle> AimingCastle;
 	mutable TWeakObjectPtr<ALSPathObstacle> AimedObstacle;
 	ELSProductionResult LastProductionResult = ELSProductionResult::Ready;
 	int32 LastGroup = INDEX_NONE;

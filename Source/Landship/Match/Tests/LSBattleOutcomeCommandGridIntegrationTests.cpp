@@ -2,7 +2,8 @@
 
 #include "Castle/LSCastleCommandProviderComponent.h"
 #include "Castle/LSCastleWeaponComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Components/Button.h"
@@ -38,7 +39,7 @@ bool FLSBattleOutcomeCommandGridTest::RunTest(const FString& Parameters)
 	FActorSpawnParameters Spawn;
 	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	auto* Setup = World->SpawnActor<ALSBattlefieldSetup>();
-	auto* Castle = World->SpawnActor<ALSMobileCastle>(FVector(10000, 0, 200), FRotator::ZeroRotator, Spawn);
+	auto* Castle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200), FRotator::ZeroRotator, Spawn);
 	auto* Core = World->SpawnActor<ALSEnemyOutpost>(FVector(0, 0, 200), FRotator::ZeroRotator, Spawn);
 	Core->BasicAttack->SetAutoAttackOnBeginPlay(false);
 	Setup->PlayerCastle = Castle;

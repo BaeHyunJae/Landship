@@ -1,6 +1,6 @@
 #include "Enemies/Tests/LSEnemyBoundaryProbe.h"
 
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Controls/LSOrderComponent.h"
@@ -90,7 +90,7 @@ void ALSEnemyBoundaryProbe::Tick(float DeltaSeconds)
 	if (Stage == 0)
 	{
 		if (StageTime < 1) { return; }
-		for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It) { Castle = *It; }
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It) { Castle = *It; }
 		for (TActorIterator<ALSEnemyOutpost> It(GetWorld()); It; ++It) { Core = *It; }
 		for (TActorIterator<ALSEnemyTroop> It(GetWorld()); It; ++It)
 		{
@@ -110,7 +110,7 @@ void ALSEnemyBoundaryProbe::Tick(float DeltaSeconds)
 			Check(false, TEXT("navigation ready before stimulus")); Finish(); return;
 		}
 		Castle->Orders->SetComponentTickEnabled(false);
-		Castle->BasicAttack->StopAttack();
+
 		Core->Behavior->SetComponentTickEnabled(false);
 		Core->BasicAttack->StopAttack();
 		if (bDense || bMovingCastle)

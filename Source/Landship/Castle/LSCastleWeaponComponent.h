@@ -2,6 +2,7 @@
 
 #include "Components/ActorComponent.h"
 #include "Castle/LSCastleWeaponData.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "LSCastleWeaponComponent.generated.h"
 
 class ALSPathObstacle;
@@ -36,6 +37,8 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	ELSWeaponChangeResult UpgradeWeapon(ELSCastleWeapon Weapon);
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Weapons")
 	FLSWeaponStateChanged OnWeaponStateChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Weapons")
+	FLSAttackExecuted OnAttackExecutedEvent;
 	const FLSCastleWeaponSettings* FindSettings(ELSCastleWeapon Weapon) const;
 	float GetRemainingCooldown(ELSCastleWeapon Weapon) const;
 	/** 현재 쿨타임을 시작할 때 확정한 길이. 강화로 진행 막대가 바뀌지 않는다. */
@@ -47,6 +50,21 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	ELSWeaponCastResult ValidateObstacleAim(ELSCastleWeapon Weapon, ALSPathObstacle* Target) const;
 	ELSWeaponCastResult CastWeaponAtObstacle(ELSCastleWeapon Weapon, ALSPathObstacle* Target);
 	bool GetRecentCast(ELSCastleWeapon& Weapon, FVector& Aim, FLSCastleWeaponSettings* Settings = nullptr) const;
+	/** 무장별 로컬 오프셋의 기준 위치다. 조준 방향을 반영한 실제 발사점은 GetWeaponFireOrigin을 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Landship|Weapons")
+	FVector GetWeaponLaunchLocation(ELSCastleWeapon Weapon) const;
+	/** 산탄은 조준 방향의 실제 성 충돌 외곽에서 시작하고, 나머지 무장은 기존 기준 위치를 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Landship|Weapons")
+	FVector GetWeaponFireOrigin(ELSCastleWeapon Weapon, const FVector& Aim) const;
+	/** 성 중심에서 대포 발사 위치까지의 로컬 오프셋(cm). 액터 크기 배율은 적용하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Weapons")
+	FVector CannonLaunchOffset = FVector(0, 0, 150);
+	/** 산탄의 발사 평면 높이를 정하는 로컬 오프셋(cm). 실제 XY 발사점은 조준 방향의 성 외곽이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Weapons")
+	FVector ShotgunLaunchOffset = FVector::ZeroVector;
+	/** 성 중심에서 발리스타 발사 위치까지의 로컬 오프셋(cm). 지면 조준 탄은 이 높이에서 수평으로 날아간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Weapons")
+	FVector BallistaLaunchOffset = FVector::ZeroVector;
 
   protected:
 	virtual void BeginPlay() override;
@@ -72,4 +90,5 @@ class LANDSHIP_API ULSCastleWeaponComponent : public UActorComponent
 	bool bCasting = false;
 	bool bChangingState = false;
 	bool bBattleActionsEnded = false;
+	int64 LastExecutionId = 0;
 };

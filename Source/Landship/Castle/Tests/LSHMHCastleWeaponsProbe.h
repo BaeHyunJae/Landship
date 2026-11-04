@@ -24,13 +24,14 @@ class ALSHMHCastleWeaponsProbe : public AActor
 	void Finish();
 	void Capture();
 	UPROPERTY()
-	TObjectPtr<class ALSMobileCastle> Castle;
+	TObjectPtr<class ALSCastle> Castle;
 	UPROPERTY()
-	TObjectPtr<class ALSMobileCastle> EnemyCastle;
+	TObjectPtr<class ALSCastle> EnemyCastle;
 	UPROPERTY()
 	TArray<TObjectPtr<class ALSTroopUnit>> Enemies;
 	UPROPERTY()
 	TObjectPtr<class ALSTroopUnit> Ally;
+	float BallistaCastTime = 0;
 	float Elapsed = 0;
 	float StageTime = 0;
 	float PushStartX = 0;

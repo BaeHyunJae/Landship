@@ -3,7 +3,7 @@
 #include "GameFramework/Actor.h"
 #include "LSObstacleReviewRuntimeProbe.generated.h"
 class ALSTroopUnit;
-class ALSMobileCastle;
+class ALSCastle;
 class ALSMine;
 class ALSBarricade;
 UCLASS()
@@ -29,7 +29,7 @@ private:
  TWeakObjectPtr<ALSTroopUnit> Source;
  TWeakObjectPtr<ALSTroopUnit> Enemy;
  TWeakObjectPtr<ALSTroopUnit> Threat;
- TWeakObjectPtr<ALSMobileCastle> Castle;
+ TWeakObjectPtr<ALSCastle> Castle;
  TWeakObjectPtr<ALSBarricade> Barrier;
  TWeakObjectPtr<ALSMine> WorkMine;
  FVector OriginalDestination = FVector::ZeroVector;

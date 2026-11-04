@@ -1,8 +1,12 @@
 #include "Enemies/Tests/LSEnemyRegressionProbe.h"
 
 #include "AIController.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSBasicProjectile.h"
+#include "Combat/LSCombatTargetLibrary.h"
+#include "Combat/LSCollisionChannels.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -12,6 +16,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Engine/TargetPoint.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
@@ -23,6 +28,16 @@
 
 struct FLSEnemyRegressionTestAccess
 {
+	static bool FindShotPosition(const ULSEnemyBehaviorComponent* Behavior, const AActor* Target, FVector& OutGoal)
+	{
+#if WITH_DEV_AUTOMATION_TESTS
+		const FVector Here = Behavior->GetOwner()->GetActorLocation();
+		return Behavior->FindAttackPosition(Target->GetActorLocation(), OutGoal,
+			Behavior->Role == ELSEnemyRole::Assault ? &Here : nullptr, Target);
+#else
+		return false;
+#endif
+	}
 	static double RetryDeadline(const ULSEnemyBehaviorComponent* Behavior)
 	{
 #if WITH_DEV_AUTOMATION_TESTS
@@ -108,6 +123,43 @@ void ALSEnemyRegressionProbe::OnOpponentDamaged(const FLSDamageResult& Damage)
 	bDamagedDuringReturn |= State == ELSEnemyState::Returning || State == ELSEnemyState::ReturnBlocked;
 }
 
+void ALSEnemyRegressionProbe::OnShotExecuted(const FLSAttackExecution& Execution)
+{
+	++ObservedShotCallbacks;
+	LastShotExecutionId = 0;
+	if (!Case.StartsWith(TEXT("ClearShot")) || !Execution.bProjectile || Execution.Source.Get() != Unit.Get() || Execution.Target.Get() != Opponent.Get() ||
+		!Unit.IsValid() || !Opponent.IsValid()) return;
+	LastShotExecutionId = Execution.ExecutionId;
+	ShotOrigins.Add(Execution.ExecutionId, Execution.SourceLocation);
+	LastShotSource = Execution.SourceLocation;
+	LastShotTarget = Execution.TargetLocation;
+	// 이 표적은 움직이지 않는다. 발사 기록과 같은 위치일 때만 공통 경로 질의의 대상 위치로 쓴다.
+	const bool bClear = Opponent->GetActorLocation().Equals(Execution.TargetLocation, .01) &&
+		Unit->BasicAttack->HasClearAttackPathFromLocation(Execution.SourceLocation, Opponent.Get());
+	if (bClear) ++ClearShotLaunches;
+	else ++BlockedShotLaunches;
+}
+
+void ALSEnemyRegressionProbe::OnShotProjectileLaunched(ALSBasicProjectile* Projectile)
+{
+	if (IsValid(Projectile) && LastShotExecutionId > 0)
+		ProjectileExecutions.Add(TWeakObjectPtr<AActor>(Projectile), LastShotExecutionId);
+}
+
+void ALSEnemyRegressionProbe::OnClearShotDamageCommitted(const FLSDamageResult& Damage)
+{
+	const int64* ExecutionId = ProjectileExecutions.Find(Damage.Causer);
+	const FVector* Origin = ExecutionId ? ShotOrigins.Find(*ExecutionId) : nullptr;
+	if (Damage.AppliedDamage > 0 && Damage.Source.Get() == Unit.Get() &&
+		Damage.bHasSourceFaction && Damage.SourceFaction == ELSFaction::Enemy &&
+		ExecutionId && Origin && Damage.bHasAttackOrigin && Origin->Equals(Damage.AttackOrigin, .01))
+	{
+		OwnCommittedDamage += Damage.AppliedDamage;
+		DamagingExecutionId = *ExecutionId;
+	}
+	else ++OtherDamageRecords;
+}
+
 void ALSEnemyRegressionProbe::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -119,25 +171,81 @@ void ALSEnemyRegressionProbe::Tick(float DeltaSeconds)
 	if (Stage == 0)
 	{
 		if (StageTime < 1 || UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(GetWorld())) { return; }
-		for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It) { Castle = *It; }
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It) { Castle = *It; }
 		for (TActorIterator<ALSEnemyOutpost> It(GetWorld()); It; ++It) { Core = *It; }
 		for (TActorIterator<ALSEnemyTroop> It(GetWorld()); It; ++It)
 		{
-			const bool bGuard = Case == TEXT("Return");
-			const ELSTroopType Type = Case == TEXT("Retry") ? ELSTroopType::Archer : ELSTroopType::Spearman;
+			const bool bGuard = Case == TEXT("Return") || Case == TEXT("ClearShotGuard") || Case == TEXT("ClearShotAnchor");
+			const ELSTroopType Type = (Case == TEXT("Retry") || Case.StartsWith(TEXT("ClearShot"))) ? ELSTroopType::Archer : ELSTroopType::Spearman;
 			if (It->Behavior->Role == (bGuard ? ELSEnemyRole::Guard : ELSEnemyRole::Assault) && It->GetTroopType() == Type) { Unit = *It; }
 		}
 		Check(Castle.IsValid() && Core.IsValid() && Unit.IsValid() && Nav &&
-			(Case == TEXT("Detour") || Case == TEXT("Return") || Case == TEXT("Retry") || Case == TEXT("AssaultBand")), TEXT("known regression case and authored actors available"));
+			(Case == TEXT("Detour") || Case == TEXT("Return") || Case == TEXT("Retry") || Case == TEXT("AssaultBand") || Case == TEXT("ClearShotAssault") || Case == TEXT("ClearShotGuard") || Case == TEXT("ClearShotAnchor")), TEXT("known regression case and authored actors available"));
 		if (Failures) { Finish(); return; }
 		Castle->Orders->SetComponentTickEnabled(false);
-		Castle->BasicAttack->StopAttack();
+
 		Castle->SetActorLocation(FVector(-3000, -2600, 142));
 		Core->Behavior->SetComponentTickEnabled(false);
 		Core->BasicAttack->StopAttack();
 		FActorSpawnParameters Spawn;
 		Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (Case == TEXT("Detour"))
+		if (Case.StartsWith(TEXT("ClearShot")))
+		{
+			for (TActorIterator<ALSEnemyTroop> It(GetWorld()); It; ++It)
+			{
+				Freeze(*It);
+				It->BasicAttack->Deactivate();
+				It->GetCharacterMovement()->StopMovementImmediately();
+				It->GetCharacterMovement()->SetComponentTickEnabled(false);
+			}
+			Core->BasicAttack->Deactivate();
+			Start = Unit->Behavior->Role == ELSEnemyRole::Guard ? Unit->GetActorLocation() : FVector(-1700, -1000, 88);
+			Unit->SetActorLocation(Start);
+			Unit->Behavior->ChaseRadius = 1000;
+			if (Case == TEXT("ClearShotAnchor"))
+			{
+				ATargetPoint* Anchor = GetWorld()->SpawnActor<ATargetPoint>(Start, FRotator::ZeroRotator, Spawn);
+				Check(Anchor != nullptr, TEXT("noncombat guard anchor spawned"));
+				if (!Anchor) { Finish(); return; }
+				Unit->Behavior->GuardedOutpost = nullptr;
+				Unit->Behavior->GuardAnchor = Anchor;
+				Unit->Behavior->GuardAnchorRadius = 700;
+			}
+			AStaticMeshActor* Wall = GetWorld()->SpawnActor<AStaticMeshActor>(Start + FVector(400, 0, 112), FRotator::ZeroRotator, Spawn);
+			Check(Wall != nullptr, TEXT("actual clear-shot terrain wall spawned"));
+			if (!Wall) { Finish(); return; }
+			Blocker = Wall;
+			auto* Mesh = Wall->GetStaticMeshComponent();
+			Mesh->SetMobility(EComponentMobility::Movable);
+			Mesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+			Wall->SetActorScale3D(FVector(.8f, 4.4f, 4));
+			Mesh->SetCollisionProfileName(TEXT("BlockAll"));
+			Mesh->SetCollisionResponseToChannel(LSCollisionChannels::ObstacleProjectile, ECR_Block);
+			Mesh->SetCanEverAffectNavigation(true);
+			Opponent = GetWorld()->SpawnActor<ALSBasicAttackTestActor>(Start + FVector(800, 0, 0), FRotator::ZeroRotator, Spawn);
+			Check(Opponent.IsValid(), TEXT("passive actual clear-shot target spawned"));
+			if (!Opponent.IsValid()) { Finish(); return; }
+			FLSHealthSnapshot InitialHealth;
+			Check(Opponent->HealthComponent->TryGetHealth(InitialHealth) && !InitialHealth.bIsDead && InitialHealth.CurrentHealth > 0,
+				TEXT("scenario target has observed initialized living health"));
+			if (Failures) { Finish(); return; }
+			OpponentInitialHealth = InitialHealth.CurrentHealth;
+			Opponent->HealthComponent->OnDamageCommitted.AddUObject(this, &ThisClass::OnClearShotDamageCommitted);
+			Unit->BasicAttack->OnAttackExecutedEvent.AddUniqueDynamic(this, &ThisClass::OnShotExecuted);
+			Unit->BasicAttack->OnProjectileLaunched.AddUniqueDynamic(this, &ThisClass::OnShotProjectileLaunched);
+			Check(Unit->BasicAttack->OnAttackExecutedEvent.IsAlreadyBound(this, &ThisClass::OnShotExecuted) &&
+				Unit->BasicAttack->OnProjectileLaunched.IsAlreadyBound(this, &ThisClass::OnShotProjectileLaunched),
+				TEXT("execution and projectile observers bound before scenario starts"));
+			FLSBasicAttackSettings AttackSettings = Unit->BasicAttack->GetAttackSettings();
+			AttackSettings.Damage = 1;
+			AttackSettings.Interval = .2f;
+			Check(Unit->BasicAttack->ConfigureAttack(AttackSettings), TEXT("bounded repeat archer damage configured"));
+			FLSProjectileAttackSettings Projectile = Unit->BasicAttack->GetProjectileSettings();
+			Projectile.ProjectileClass = ALSBasicProjectile::StaticClass();
+			Check(Unit->BasicAttack->ConfigureProjectile(Projectile), TEXT("actual archer projectile configured"));
+			Stage = 40;
+		}
+		else if (Case == TEXT("Detour"))
 		{
 			Start = FVector(-1700, -1000, 88);
 			Unit->SetActorLocation(Start);
@@ -195,7 +303,58 @@ void ALSEnemyRegressionProbe::Tick(float DeltaSeconds)
 	if (!Unit.IsValid() || !Core.IsValid()) { Check(false, TEXT("regression actors remain alive")); Finish(); return; }
 	ULSEnemyBehaviorComponent* Behavior = Unit->Behavior;
 	const ELSEnemyState State = Behavior->GetState();
-	if (Stage == 1)
+	if (Stage == 40)
+	{
+		if (StageTime < 2 || UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(GetWorld())) return;
+		Check(ULSCombatTargetLibrary::GetAttackDistance(Unit.Get(), Opponent.Get()) <= Unit->BasicAttack->GetAttackSettings().Range,
+			TEXT("archer starts inside physical attack range"));
+		Check(!Unit->BasicAttack->HasClearAttackPathFromLocation(Start, Opponent.Get()),
+			TEXT("terrain wall really blocks the initial projectile corridor"));
+		FVector Goal;
+		const bool bGoal = FLSEnemyRegressionTestAccess::FindShotPosition(Behavior, Opponent.Get(), Goal);
+		const float ActorHeight = Start.Z - Unit->GetNavAgentLocation().Z;
+		Check(bGoal && FVector::Dist2D(Goal, Start) > Behavior->ArrivalTolerance &&
+			Unit->BasicAttack->HasClearAttackPathFromLocation(Goal + FVector(0, 0, ActorHeight), Opponent.Get()),
+			TEXT("bounded actual NavMesh candidate changes position and provides a clear shot"));
+		Check(!Behavior->IsComponentTickEnabled() && !Unit->BasicAttack->IsActive() &&
+			!Unit->GetCharacterMovement()->IsComponentTickEnabled() &&
+			FVector::Dist2D(Start, Unit->GetActorLocation()) <= 1 &&
+			Opponent->GetCurrentHealth() == OpponentInitialHealth && !Opponent->HealthComponent->HasTakenDamage(),
+			TEXT("setup wait preserves frozen archer and untouched observed target health"));
+		if (Failures) { Finish(); return; }
+		Unit->BasicAttack->Activate(true);
+		Unit->GetCharacterMovement()->SetComponentTickEnabled(true);
+		Behavior->SetComponentTickEnabled(true);
+		Stage = 41; StageTime = 0;
+	}
+	else if (Stage == 41)
+	{
+		++Samples;
+		bObservedAttackReposition |= FVector::Dist2D(Start, Unit->GetActorLocation()) > Behavior->ArrivalTolerance;
+		const FVector DomainCenter = Behavior->Role == ELSEnemyRole::Guard
+			? (Behavior->GuardAnchor ? Behavior->GuardAnchor->GetActorLocation() : Core->GetActorLocation())
+			: Start;
+		const float DomainRadius = Behavior->Role == ELSEnemyRole::Guard
+			? (Behavior->GuardAnchor ? Behavior->GuardAnchorRadius : Core->GetDefenseRadius())
+			: Behavior->ChaseRadius;
+		MaximumRadius = FMath::Max(MaximumRadius, static_cast<float>(FVector::Dist2D(Unit->GetActorLocation(), DomainCenter)));
+		bInvalidState |= MaximumRadius > DomainRadius + Behavior->BoundaryAllowance;
+		if (OwnCommittedDamage <= 0 && StageTime < 12) return;
+		FLSDamageResult LastDamage;
+		const bool bOwnLastDamage = Opponent->HealthComponent->TryGetLastDamage(LastDamage) &&
+			LastDamage.Source.Get() == Unit.Get() && LastDamage.bHasSourceFaction && LastDamage.SourceFaction == ELSFaction::Enemy;
+		const FString DamageResult = FString::Printf(
+			TEXT("actual archer reposition and correlated projectile damage: initialHP=%.2f currentHP=%.2f ownDamage=%.2f execution=%lld otherDamage=%d"),
+			OpponentInitialHealth, Opponent->GetCurrentHealth(), OwnCommittedDamage, DamagingExecutionId, OtherDamageRecords);
+		Check(bObservedAttackReposition && OwnCommittedDamage > 0 && DamagingExecutionId > 0 && bOwnLastDamage, *DamageResult);
+		Check(!bInvalidState, TEXT("all actual reposition samples preserve the assigned guard or assault domain"));
+		const FString LaunchResult = FString::Printf(
+			TEXT("actual launch snapshots have clear corridors: callbacks=%d clear=%d blocked=%d source=%s target=%s currentSource=%s"),
+			ObservedShotCallbacks, ClearShotLaunches, BlockedShotLaunches, *LastShotSource.ToString(), *LastShotTarget.ToString(), *Unit->GetActorLocation().ToString());
+		Check(ClearShotLaunches > 0 && BlockedShotLaunches == 0, *LaunchResult);
+		Finish();
+	}
+	else if (Stage == 1)
 	{
 		if (StageTime < 2 || UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(GetWorld())) { return; }
 		UNavigationPath* Path = Nav ? Nav->FindPathToLocationSynchronously(GetWorld(), Unit->GetNavAgentLocation(), Opponent->GetActorLocation(), Unit.Get()) : nullptr;

@@ -6,13 +6,16 @@
 #include "Enemies/LSEnemyTroop.h"
 #include "Enemies/LSEnemyOutpost.h"
 #include "Enemies/LSBattlefieldSetup.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "UObject/UnrealType.h"
@@ -46,15 +49,21 @@ void FreezeSupportActor(AActor* Actor)
 	{
 		Behavior->SetComponentTickEnabled(false);
 	}
-	Actor->FindComponentByClass<ULSBasicAttackComponent>()->StopAttack();
+	if (ULSBasicAttackComponent* Attack = Actor->FindComponentByClass<ULSBasicAttackComponent>()) Attack->StopAttack();
 	if (ACharacter* Character = Cast<ACharacter>(Actor)) { Character->GetCharacterMovement()->DisableMovement(); }
+	else if (APawn* Pawn = Cast<APawn>(Actor))
+		if (UPawnMovementComponent* Movement = Pawn->GetMovementComponent())
+		{
+			Movement->StopMovementImmediately();
+			Movement->Deactivate();
+		}
 }
 
 ALSBattlefieldSetup* CreateSupportBattlefield(UWorld* World)
 {
 	ALSBattlefieldSetup* Setup = SpawnSupportActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-	ALSMobileCastle* Castle = SpawnSupportActor<ALSMobileCastle>(World, FVector(10000, 0, 100));
-	Castle->BasicAttack->SetAutoAttackOnBeginPlay(false);
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 100));
+
 	Setup->PlayerCastle = Castle;
 	Setup->CoreOutpost = SpawnSupportActor<ALSEnemyOutpost>(World, FVector(0, -1000, 100));
 	Setup->CoreOutpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
@@ -205,10 +214,18 @@ bool FLSEnemySupportOutgoingTest::RunTest(const FString& Parameters)
 		FLSProjectileAttackSettings Projectile;
 		if (bProjectile) { Projectile.ProjectileClass = ALSBasicProjectile::StaticClass(); }
 		TestTrue(TEXT("실제 근접·투사체 경로 설정"), Reporter->BasicAttack->ConfigureProjectile(Projectile));
-		Opponent->SetActorLocation(FVector(400, -500, 100));
+		float ReporterRadius, ReporterHeight, OpponentRadius, OpponentHeight;
+		Reporter->GetSimpleCollisionCylinder(ReporterRadius, ReporterHeight);
+		Opponent->GetSimpleCollisionCylinder(OpponentRadius, OpponentHeight);
+		Opponent->SetActorLocation(Reporter->GetActorLocation() +
+			FVector(Attack.Range + ReporterRadius + OpponentRadius + 100, 0, 0));
+		TestTrue(TEXT("접근 단계는 실제 충돌 외곽 사거리 밖이다"),
+			ULSCombatTargetLibrary::GetAttackDistance(Reporter, Opponent) > Attack.Range);
 		TestTrue(TEXT("사거리 밖 접근 대상 지정"), Reporter->BasicAttack->StartAttack(Opponent));
 		TestEqual(TEXT("접근만으로 지원을 만들지 않음"), FLSEnemySupportTestAccess::Pending(Recipient->Behavior), 0);
 		Opponent->SetActorLocation(FVector(200, -500, 100));
+		TestTrue(TEXT("공격 단계는 실제 충돌 외곽 사거리 안이다"),
+			ULSCombatTargetLibrary::GetAttackDistance(Reporter, Opponent) <= Attack.Range);
 		TestTrue(TEXT("실제 공격 시작"), Reporter->BasicAttack->StartAttack(Opponent));
 		TWeakObjectPtr<ALSBasicProjectile> LaunchedProjectile;
 		if (bProjectile)

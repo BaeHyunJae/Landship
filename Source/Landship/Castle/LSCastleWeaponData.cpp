@@ -1,6 +1,21 @@
 #include "Castle/LSCastleWeaponData.h"
 #include "Misc/DataValidation.h"
 
+bool ULSCastleWeaponData::TryGetCannonArcSteps(const FLSCastleWeaponSettings& Settings, int32& OutSteps)
+{
+	if (!FMath::IsFinite(Settings.ArcHeight) || Settings.ArcHeight < 0 ||
+	    !FMath::IsFinite(Settings.ShellRadius) || Settings.ShellRadius <= 0)
+		return false;
+	// 포물선과 현 사이의 최대 높이 차는 ArcHeight * 구간길이²다.
+	const double Tolerance = FMath::Min(1.0, static_cast<double>(Settings.ShellRadius) * .1);
+	const double RequiredSteps = FMath::Max(1.0, FMath::CeilToDouble(FMath::Sqrt(Settings.ArcHeight / Tolerance)));
+	constexpr int32 MaxCannonArcSteps = 4096;
+	if (!FMath::IsFinite(RequiredSteps) || RequiredSteps > MaxCannonArcSteps)
+		return false;
+	OutSteps = static_cast<int32>(RequiredSteps);
+	return true;
+}
+
 bool ULSCastleWeaponData::AreSettingsValid(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings)
 {
 	if (!FMath::IsFinite(Settings.Damage) || Settings.Damage < 0 || !FMath::IsFinite(Settings.Cooldown) ||
@@ -17,9 +32,10 @@ bool ULSCastleWeaponData::AreSettingsValid(ELSCastleWeapon Weapon, const FLSCast
 		       Settings.PelletCount >= 1 && Settings.PelletCount <= 64 && FMath::IsFinite(Settings.PelletRadius) &&
 		       Settings.PelletRadius > 0;
 	}
-	return FMath::IsFinite(Settings.Radius) && Settings.Radius > 0 &&
-	       (Weapon != ELSCastleWeapon::Cannon || (FMath::IsFinite(Settings.ArcHeight) && Settings.ArcHeight >= 0 &&
-	                                              FMath::IsFinite(Settings.ShellRadius) && Settings.ShellRadius > 0));
+	if (!FMath::IsFinite(Settings.Radius) || Settings.Radius <= 0)
+		return false;
+	int32 ArcSteps;
+	return Weapon != ELSCastleWeapon::Cannon || TryGetCannonArcSteps(Settings, ArcSteps);
 }
 
 const FLSCastleWeaponSettings* ULSCastleWeaponData::FindLevel(int32 Level) const

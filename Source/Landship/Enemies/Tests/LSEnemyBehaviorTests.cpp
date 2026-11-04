@@ -6,7 +6,9 @@
 #include "Enemies/LSBattlefieldSetup.h"
 #include "Enemies/LSBattlefieldStateSubsystem.h"
 #include "Enemies/Tests/LSBattlefieldStateTestObserver.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
@@ -54,9 +56,9 @@ float DealEnemyTestDamage(AActor* Target, AActor* Source, float Damage)
 ALSBattlefieldSetup* SetupEnemyTestBattlefield(UWorld* World)
 {
 	ALSBattlefieldSetup* Setup = SpawnEnemyTestActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-	ALSMobileCastle* Castle = SpawnEnemyTestActor<ALSMobileCastle>(World, FVector(10000, 0, 100));
-	Castle->GetCharacterMovement()->DisableMovement();
-	Castle->BasicAttack->SetAutoAttackOnBeginPlay(false);
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 100));
+	Castle->GetMovementComponent()->Deactivate();
+
 	Setup->PlayerCastle = Castle;
 	Setup->CoreOutpost = SpawnEnemyTestActor<ALSEnemyOutpost>(World, FVector(0, 0, 100));
 	Setup->CoreOutpost->BasicAttack->SetAutoAttackOnBeginPlay(false);

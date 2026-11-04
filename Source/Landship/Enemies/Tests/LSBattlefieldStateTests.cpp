@@ -5,7 +5,7 @@
 #include "Enemies/LSOutpost.h"
 #include "Enemies/Tests/LSBattlefieldStateTestObserver.h"
 #include "Castle/LSCastle.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSHealthComponent.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
@@ -41,13 +41,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBattlefieldCastleRepresentationsTest,
 
 bool FLSBattlefieldCastleRepresentationsTest::RunTest(const FString& Parameters)
 {
-	for (const bool bMobile : {false, true})
+	for (const bool bBlueprint : {false, true})
 	{
 		FTestWorldWrapper TestWorld;
 		if (!TestWorld.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = TestWorld.GetTestWorld();
-		AActor* Castle = bMobile ? static_cast<AActor*>(SpawnBattlefieldActor<ALSMobileCastle>(World))
-			: static_cast<AActor*>(SpawnBattlefieldActor<ALSCastle>(World));
+		UClass* CastleClass = LoadClass<ALSCastle>(nullptr, TEXT("/Game/Developers/BHJ/CombatStats/BP_TestCastle.BP_TestCastle_C"));
+		if (!TestNotNull(TEXT("설정된 성 Blueprint"), CastleClass)) return false;
+		AActor* Castle = bBlueprint ? static_cast<AActor*>(World->SpawnActor<ALSCastle>(CastleClass))
+			: static_cast<AActor*>(LSCastleTestFixture::Spawn(World));
+		if (!TestNotNull(TEXT("실제 성 표현 생성"), Castle)) return false;
 		ALSBattlefieldSetup* Setup = SpawnBattlefieldActor<ALSBattlefieldSetup>(World);
 		Setup->PlayerCastle = Castle;
 		Setup->CoreOutpost = SpawnBattlefieldActor<ALSOutpost>(World);
@@ -95,10 +98,10 @@ bool FLSBattlefieldInvalidSetupTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("설정 누락은 실패"), State->IsSetupValid());
 	ALSBattlefieldSetup* Setup = SpawnBattlefieldActor<ALSBattlefieldSetup>(World);
 	TestFalse(TEXT("참조 누락은 실패"), Setup->GetConfigurationError().IsEmpty());
-	Setup->PlayerCastle = SpawnBattlefieldActor<ALSCastle>(OtherWorld.GetTestWorld());
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(OtherWorld.GetTestWorld());
 	Setup->CoreOutpost = SpawnBattlefieldActor<ALSOutpost>(World);
 	TestTrue(TEXT("다른 월드 참조 진단"), Setup->GetConfigurationError().Contains(TEXT("world")));
-	Setup->PlayerCastle = SpawnBattlefieldActor<ALSCastle>(World);
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World);
 	Setup->CoreOutpost->SetInitialFaction(ELSFaction::Ally);
 	TestTrue(TEXT("아군 핵심 거점 거부"), Setup->GetConfigurationError().Contains(TEXT("Enemy")));
 	Setup->CoreOutpost->SetInitialFaction(ELSFaction::Enemy);
@@ -128,7 +131,7 @@ bool FLSBattlefieldCoreCaptureTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game)) return false;
 	UWorld* World = TestWorld.GetTestWorld();
 	ALSBattlefieldSetup* Setup = SpawnBattlefieldActor<ALSBattlefieldSetup>(World);
-	Setup->PlayerCastle = SpawnBattlefieldActor<ALSCastle>(World);
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World);
 	Setup->CoreOutpost = SpawnBattlefieldActor<ALSOutpost>(World);
 	ALSOutpost* Core = Setup->CoreOutpost;
 	const FName OriginalName = Core->GetFName();
@@ -178,7 +181,7 @@ bool FLSBattlefieldCaptureTeardownTest::RunTest(const FString& Parameters)
 		if (!TestWorld.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = TestWorld.GetTestWorld();
 		ALSBattlefieldSetup* Setup = SpawnBattlefieldActor<ALSBattlefieldSetup>(World);
-		Setup->PlayerCastle = SpawnBattlefieldActor<ALSCastle>(World);
+		Setup->PlayerCastle = LSCastleTestFixture::Spawn(World);
 		Setup->CoreOutpost = SpawnBattlefieldActor<ALSOutpost>(World);
 		ULSBattlefieldStateSubsystem* State = World->GetSubsystem<ULSBattlefieldStateSubsystem>();
 		State->OnWorldBeginPlay(*World);

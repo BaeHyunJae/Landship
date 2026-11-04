@@ -258,6 +258,34 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeapon(ELSCastleWeapon Weapon,
 	return CastWeaponInternal(Weapon, Aim, false);
 }
 
+FVector ULSCastleWeaponComponent::GetWeaponLaunchLocation(ELSCastleWeapon Weapon) const
+{
+	const FVector Offset = Weapon == ELSCastleWeapon::Cannon ? CannonLaunchOffset
+		: (Weapon == ELSCastleWeapon::Shotgun ? ShotgunLaunchOffset : BallistaLaunchOffset);
+	return GetOwner()->GetActorLocation() + GetOwner()->GetActorQuat().RotateVector(Offset);
+}
+
+FVector ULSCastleWeaponComponent::GetWeaponFireOrigin(ELSCastleWeapon Weapon, const FVector& Aim) const
+{
+	FVector Origin = GetWeaponLaunchLocation(Weapon);
+	if (Weapon == ELSCastleWeapon::Shotgun)
+	{
+		float Radius, HalfHeight;
+		GetOwner()->GetSimpleCollisionCylinder(Radius, HalfHeight);
+		const FVector Center = GetOwner()->GetActorLocation();
+		// 발사 평면에서 캡슐 단면의 외곽을 쓴다. 구체 아래쪽의 접촉 적을 건너뛰지 않는다.
+		const double AxisHalfHeight = FMath::Max(0.0, static_cast<double>(HalfHeight - Radius));
+		const double AxisZ = FMath::Clamp(Origin.Z, Center.Z - AxisHalfHeight, Center.Z + AxisHalfHeight);
+		const double HeightFromAxis = Origin.Z - AxisZ;
+		const double SurfaceRadius = FMath::Sqrt(FMath::Max(0.0,
+			static_cast<double>(Radius) * Radius - HeightFromAxis * HeightFromAxis));
+		const FVector Direction = (Aim - Center).GetSafeNormal2D();
+		Origin.X = Center.X + Direction.X * SurfaceRadius;
+		Origin.Y = Center.Y + Direction.Y * SurfaceRadius;
+	}
+	return Origin;
+}
+
 ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon Weapon, const FVector& Aim,
                                                                 bool bFirstBlocking)
 {
@@ -266,17 +294,33 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon
 		return Status;
 	TGuardValue<bool> Guard(bCasting, true);
 	const FLSCastleWeaponSettings Settings = *FindSettings(Weapon);
+	const FVector Start = GetWeaponFireOrigin(Weapon, Aim);
+	if (Start.ContainsNaN())
+		return ELSWeaponCastResult::InvalidData;
+	FVector ProjectileAim = Aim;
+	if (Weapon == ELSCastleWeapon::Shotgun)
+	{
+		const FVector Direction = (Aim - GetOwner()->GetActorLocation()).GetSafeNormal2D();
+		// 성 내부를 클릭해도 외곽 발사점 뒤로 조준이 뒤집히지 않는다.
+		if (!bFirstBlocking || FVector::DotProduct(Aim - Start, Direction) <= KINDA_SMALL_NUMBER)
+			ProjectileAim = Start + Direction * Settings.Range;
+	}
 	if (Weapon == ELSCastleWeapon::Ballista)
 	{
-		const FVector Offset = Aim - GetOwner()->GetActorLocation();
+		const FVector Offset = Aim - Start;
 		const FVector Direction = bFirstBlocking ? Offset.GetSafeNormal() : Offset.GetSafeNormal2D();
-		const FTransform Transform(Direction.Rotation(), GetOwner()->GetActorLocation());
+		if (Direction.IsNearlyZero())
+			return ELSWeaponCastResult::InvalidAim;
+		const FTransform Transform(Direction.Rotation(), Start);
 		ALSBasicProjectile* Projectile = GetWorld()->SpawnActorDeferred<ALSBasicProjectile>(
 		    ALSBasicProjectile::StaticClass(), Transform, nullptr, nullptr,
 		    ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 		if (!IsValid(Projectile))
 			return ELSWeaponCastResult::Unavailable;
-		const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+		Projectile->SetVisualStyle(ELSProjectileVisualStyle::BallistaBolt);
+		FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+		Request.bHasAttackOrigin = true;
+		Request.AttackOrigin = Start;
 		const bool bLaunched = bFirstBlocking
 		    ? Projectile->LaunchFirstBlocking(Request, Direction, Settings.ProjectileSpeed, Settings.Radius,
 		                                      Settings.Range / Settings.ProjectileSpeed)
@@ -293,16 +337,16 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon
 	}
 	else
 	{
-		const FVector Start = GetOwner()->GetActorLocation() +
-		                      (Weapon == ELSCastleWeapon::Cannon ? FVector(0, 0, 150) : FVector::ZeroVector);
 		const FTransform Transform(FRotator::ZeroRotator, Start);
 		ALSCastleProjectile* Projectile = GetWorld()->SpawnActorDeferred<ALSCastleProjectile>(
 		    ALSCastleProjectile::StaticClass(), Transform, nullptr, nullptr,
 		    ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 		if (!IsValid(Projectile))
 			return ELSWeaponCastResult::Unavailable;
-		const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
-		if (!Projectile->Launch(Weapon, Settings, Request, Aim, bFirstBlocking))
+		FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+		Request.bHasAttackOrigin = true;
+		Request.AttackOrigin = Start;
+		if (!Projectile->Launch(Weapon, Settings, Request, ProjectileAim, bFirstBlocking))
 		{
 			Projectile->Destroy();
 			return ELSWeaponCastResult::Unavailable;
@@ -318,6 +362,18 @@ ELSWeaponCastResult ULSCastleWeaponComponent::CastWeaponInternal(ELSCastleWeapon
 	LastWeapon = Weapon;
 	LastAim = Aim;
 	LastCastTime = GetWorld()->GetTimeSeconds();
+	FLSAttackExecution Execution;
+	Execution.Source = GetOwner();
+	Execution.SourceLocation = Start;
+	Execution.TargetLocation = ProjectileAim;
+	Execution.Direction = (ProjectileAim - Start).GetSafeNormal();
+	Execution.bProjectile = true;
+	Execution.ExecutionId = ++LastExecutionId;
+	Execution.TimestampSeconds = LastCastTime;
+	const FLSDamageRequest SourceSnapshot = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+	Execution.bHasSourceFaction = SourceSnapshot.bHasSourceFaction;
+	Execution.SourceFaction = SourceSnapshot.SourceFaction;
+	OnAttackExecutedEvent.Broadcast(Execution);
 	return ELSWeaponCastResult::Ready;
 }
 

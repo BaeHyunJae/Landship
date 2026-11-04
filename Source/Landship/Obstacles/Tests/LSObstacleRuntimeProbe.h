@@ -4,7 +4,7 @@
 #include "LSObstacleRuntimeProbe.generated.h"
 class ALSUnit;
 class ALSTroopUnit;
-class ALSMobileCastle;
+class ALSCastle;
 class ALSMine;
 class ALSBarricade;
 class ALSTurret;
@@ -27,12 +27,12 @@ class LANDSHIP_API ALSObstacleRuntimeProbe : public AActor
 	void Cleanup();
 	void BeginPhase(int32 Next);
 	ALSTroopUnit* SpawnTroop(const FVector& Position, bool bCavalry = false);
-	ALSMobileCastle* SpawnCastle(const FVector& Position);
+	ALSCastle* SpawnCastle(const FVector& Position);
 	template <class T> T* Spawn(const FVector& Position);
-	bool Move(ALSUnit* Unit, const FVector& Destination);
+	bool Move(AActor* Unit, const FVector& Destination);
 	TArray<TWeakObjectPtr<AActor>> Owned;
 	TWeakObjectPtr<ALSTroopUnit> Troop;
-	TWeakObjectPtr<ALSMobileCastle> Castle;
+	TWeakObjectPtr<ALSCastle> Castle;
 	TWeakObjectPtr<ALSMine> Mine;
 	TWeakObjectPtr<ALSBarricade> Barrier;
 	TWeakObjectPtr<ALSTurret> Turret;

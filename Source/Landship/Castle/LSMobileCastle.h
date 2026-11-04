@@ -3,7 +3,7 @@
 #include "Troops/LSUnit.h"
 #include "LSMobileCastle.generated.h"
 
-/** 병력의 이동·명령·전투를 재사용하는 대형 성 프로토타입. 시설과 무장은 별도 단계다. */
+/** 테스트 전용 성 클래스다. 실제 게임의 성 기능은 ALSCastle에 구현하며, 이 클래스에 기능을 추가하지 않는다. */
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSMobileCastle : public ALSUnit
 {
@@ -15,8 +15,6 @@ class LANDSHIP_API ALSMobileCastle : public ALSUnit
 	{
 		return false;
 	}
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Weapons")
-	TObjectPtr<class ULSCastleWeaponComponent> Weapons;
 
   protected:
 	virtual void BeginPlay() override;
