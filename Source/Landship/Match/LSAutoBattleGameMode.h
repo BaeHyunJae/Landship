@@ -136,6 +136,8 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ALSMobileCastle* SpawnCastle(const FVector& Ground, ELSFaction Faction, bool bRestoreValidatedGround = false);
 	void Freeze(ALSUnit* Unit);
 	void DestroyBattle();
+	void ReleaseUnitActor(ALSUnit* Unit);
+	void ReleaseUnitController(AAIController* Controller);
 	void AutoTick();
 	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents);
 	void FireCastle(ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const TArray<ALSUnit*>& Opponents);

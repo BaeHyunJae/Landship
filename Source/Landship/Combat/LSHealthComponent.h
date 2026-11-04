@@ -18,6 +18,9 @@ class LANDSHIP_API ULSHealthComponent : public UActorComponent
 
 public:
 	ULSHealthComponent();
+	/** 숨김·충돌 중지 상태의 풀 수명만 초기화한다. 피해 알림 실행 중에는 거부한다. */
+	bool ResetForPool();
+	bool IsProcessingDamage() const { return bProcessingDamage; }
 
 	/** 소유 대상의 수치 읽기·구성 검사 이후 부모 BeginPlay 전에 한 번 호출한다. 수치 실패의 진단은 호출자가 먼저 수행해야 한다. */
 	bool InitializeHealth(ELSCombatStatsInitResult StatsResult, float InitialHealth,
@@ -80,4 +83,6 @@ private:
 	FLSHealthSnapshot Health;
 
 	FLSPrepareCombatDeath PrepareDeathEvent;
+	bool bProcessingDamage = false;
+
 };

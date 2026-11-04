@@ -42,6 +42,11 @@ bool ULSTroopCombatComponent::IsStaggered() const
 	return bBattleEnabled && GetWorld() && GetWorld()->GetTimeSeconds() < StaggerUntil;
 }
 
+void ULSTroopCombatComponent::ResetForNewLife()
+{
+	SetBattleEnabled(false);
+}
+
 void ULSTroopCombatComponent::RefreshTick()
 {
 	SetComponentTickEnabled(bBattleEnabled && (HasSpecialAction() || IsStaggered()));

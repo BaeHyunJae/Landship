@@ -69,6 +69,38 @@ void ULSOrderComponent::EndBattleActions()
 		Attack->EndBattleActions();
 }
 
+void ULSOrderComponent::SuspendForPool()
+{
+	++OrderLifeSerial;
+	EndBattleActions();
+	SetComponentTickEnabled(false);
+	if (const APawn* Pawn = Cast<APawn>(GetOwner()))
+		if (const AAIController* AI = Cast<AAIController>(Pawn->GetController()))
+			if (UPathFollowingComponent* Path = AI->GetPathFollowingComponent())
+				Path->OnRequestFinished.RemoveAll(this);
+	MovementRequestId = FAIRequestID::InvalidRequest;
+	bMovementCompleted = false;
+	bLastMovementSucceeded = false;
+	bKnockbackActive = false;
+	KnockbackResumeAfter = 0;
+	LastAttackRepathTime = -1;
+	LastAttackTargetLocation = FVector::ZeroVector;
+	bAttackApproaching = false;
+	bUpdatingOrders = false;
+	LastFailure = ELSOrderFailure::None;
+}
+
+void ULSOrderComponent::ResumeFromPool()
+{
+	bBattleActionsEnded = false;
+	if (ULSHealthComponent* Health = GetOwner()->FindComponentByClass<ULSHealthComponent>())
+	{
+		Health->OnDamagedEvent.AddUniqueDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+		Health->OnDiedEvent.AddUniqueDynamic(this, &ULSOrderComponent::OnOwnerDamaged);
+	}
+	SetComponentTickEnabled(true);
+}
+
 bool ULSOrderComponent::CanAttack() const
 {
 	if (const ALSUnit* Unit = Cast<ALSUnit>(GetOwner()); Unit && !Unit->SupportsBasicAttack())
@@ -1020,9 +1052,11 @@ void ULSOrderComponent::RequestOrderUpdate()
 	if (bBattleActionsEnded || !IsComponentTickEnabled() || GetWorld()->GetTimerManager().TimerExists(OrderUpdateTimer))
 		return;
 	// 경로·사망 콜백 안에서 새 이동 요청을 만들지 않고 다음 틱에 한 번만 판단한다.
+	const uint64 LifeSerial = OrderLifeSerial;
 	OrderUpdateTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(
-		FTimerDelegate::CreateWeakLambda(this, [this]()
+		FTimerDelegate::CreateWeakLambda(this, [this, LifeSerial]()
 		{
+			if (OrderLifeSerial != LifeSerial) return;
 			OrderUpdateTimer.Invalidate();
 			if (IsComponentTickEnabled()) UpdateOrders(0);
 		}));

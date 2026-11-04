@@ -44,6 +44,20 @@ void ULSCavalryComponent::CancelSpecialAction()
 {
 	StopCharge();
 }
+
+void ULSCavalryComponent::ResetForNewLife()
+{
+	Super::ResetForNewLife();
+	ChargeTarget.Reset();
+	PreviousLocation = FVector::ZeroVector;
+	ChargeDirection = FVector::ZeroVector;
+	ChargeStarted = 0;
+	OriginalSpeed = 0;
+	RunUp = 0;
+	ImpactCount = 0;
+	bChargeSpent = false;
+	bLastImpactGuarded = false;
+}
 bool ULSCavalryComponent::TryStartCharge(AActor* Target)
 {
 	ALSTroopUnit* Unit = Cast<ALSTroopUnit>(GetOwner());

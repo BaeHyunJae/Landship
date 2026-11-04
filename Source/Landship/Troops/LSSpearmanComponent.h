@@ -38,6 +38,7 @@ class LANDSHIP_API ULSSpearmanComponent : public ULSTroopCombatComponent
 	AActor* GetBraceThreat() const;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Brace")
 	FLSSpearmanBraceSettings Settings;
+	virtual void ResetForNewLife() override;
 
   protected:
 	virtual void CancelSpecialAction() override;

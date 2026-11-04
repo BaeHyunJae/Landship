@@ -3,14 +3,21 @@
 #include "Troops/LSCavalryComponent.h"
 #include "Troops/LSSpearmanComponent.h"
 #include "Troops/LSArcherComponent.h"
+#include "Troops/LSTroopPoolSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Animation/AnimSequence.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "AIController.h"
+#include "BrainComponent.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Vision/LSVisionParticipantComponent.h"
 
 #include "Controls/LSSelectableComponent.h"
+#include "Controls/LSOrderComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -147,11 +154,16 @@ void ALSTroopUnit::RefreshDefinition()
 	MarkerColor = bAlly ? FLinearColor(0.08f, 0.55f, 1.0f) : FLinearColor(0.95f, 0.12f, 0.05f);
 	if (UMaterialInterface* Material = PrototypeMaterial.LoadSynchronous())
 	{
-		MarkerMaterial = UMaterialInstanceDynamic::Create(Material, this);
+		if (!MarkerMaterial || MarkerMaterialSource != Material)
+		{
+			MarkerMaterialSource = Material;
+			MarkerMaterial = UMaterialInstanceDynamic::Create(Material, this);
+		}
 		MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), MarkerColor);
 		TroopMarker->SetMaterial(0, MarkerMaterial);
 	}
 	FLSProjectileAttackSettings Shot = TroopType == ELSTroopType::Archer ? RangedAttack : FLSProjectileAttackSettings();
+	Shot.bUsePool = TroopType == ELSTroopType::Archer;
 	if (Shot.ProjectileClass && !Shot.Material)
 	{
 		Shot.Material = PrototypeMaterial.LoadSynchronous();
@@ -278,6 +290,7 @@ void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
 
 void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(PoolDeathTimer);
 	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
 	GetWorldTimerManager().ClearTimer(HitFlashTimer);
 	Health->OnDamagedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopDamaged);
@@ -300,6 +313,134 @@ void ALSTroopUnit::OnTroopDied(const FLSDamageResult& Damage)
 	BasicAttack->OnAttackExecutedEvent.RemoveDynamic(this, &ALSTroopUnit::OnTroopAttackExecuted);
 	TroopMarker->SetVisibility(false);
 	TroopLabel->SetVisibility(false);
+	if (IsPoolManaged() && bPoolRemovesOnDeath && ActivationSerial != 0)
+	{
+		const uint64 Serial = ActivationSerial;
+		const FTimerDelegate Return = FTimerDelegate::CreateWeakLambda(this, [this, Serial]()
+		{
+			if (PoolOwner.IsValid() && PoolOwner->IsAcquired(this, Serial))
+				PoolOwner->ReleaseUnit({this, Serial});
+		});
+		if (Health->DestroyDelay > 0)
+			GetWorldTimerManager().SetTimer(PoolDeathTimer, Return, Health->DestroyDelay, false);
+		else
+			PoolDeathTimer = GetWorldTimerManager().SetTimerForNextTick(Return);
+	}
+}
+
+bool ALSTroopUnit::CanReturnToPool() const
+{
+	return IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown &&
+	    !Health->IsProcessingDamage() && !BasicAttack->IsResolvingAttack() && !Orders->IsUpdatingOrders();
+}
+
+bool ALSTroopUnit::PrepareForPool(ULSTroopPoolSubsystem* Pool)
+{
+	if (GetClass() != ALSTroopUnit::StaticClass() || !HasActorBegunPlay() || IsPoolManaged() ||
+	    !IsValid(Pool) || Pool->GetWorld() != GetWorld() || !CanReturnToPool())
+		return false;
+	PoolOwner = Pool;
+	bPoolRemovesOnDeath = Health->bDestroyOnDeath;
+	Health->bDestroyOnDeath = false;
+	// 최초 생성도 같은 반환 경로로 초기화한다. 이 시점에는 아직 활성 대여가 없다.
+	return DeactivateForPool(Pool, 0);
+}
+
+bool ALSTroopUnit::DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial)
+{
+	if (!IsValid(Pool) || PoolOwner.Get() != Pool || ActivationSerial != Serial ||
+	    (Serial != 0 && Pool->IsAcquired(this, Serial)) || !CanReturnToPool())
+		return false;
+	ActivationSerial = 0;
+	SetLifeSpan(0);
+	GetWorldTimerManager().ClearTimer(PoolDeathTimer);
+	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
+	GetWorldTimerManager().ClearTimer(HitFlashTimer);
+	if (CombatBehavior)
+		CombatBehavior->SetBattleEnabled(false);
+	if (!SuspendCombatForPool())
+		return false;
+	SetActorTickEnabled(false);
+	VisualAttackTarget.Reset();
+	ActiveIdleAnimation = nullptr;
+	ActiveAttackAnimation = nullptr;
+	GetCharacterMovement()->PendingLaunchVelocity = FVector::ZeroVector;
+	GetCharacterMovement()->ClearAccumulatedForces();
+	GetCharacterMovement()->SetAvoidanceEnabled(false);
+	GetCharacterMovement()->SetComponentTickEnabled(false);
+	SetBase(static_cast<UPrimitiveComponent*>(nullptr));
+	GetMesh()->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
+	GetMesh()->SetAllPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	GetMesh()->SetAllBodiesSimulatePhysics(false);
+	GetMesh()->SetSimulatePhysics(false);
+	GetMesh()->SetPhysicsBlendWeight(0);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetMesh()->bPauseAnims = true;
+	GetMesh()->SetComponentTickEnabled(false);
+	if (AAIController* AI = Cast<AAIController>(GetController()))
+	{
+		AI->StopMovement();
+		if (UBrainComponent* Brain = AI->GetBrainComponent())
+			Brain->StopLogic(TEXT("Troop returned to pool"));
+		if (UPathFollowingComponent* Path = AI->GetPathFollowingComponent())
+			Path->SetComponentTickEnabled(false);
+		AI->SetActorTickEnabled(false);
+	}
+	SetOwner(nullptr);
+	SetInstigator(nullptr);
+	return true;
+}
+
+bool ALSTroopUnit::ActivateFromPool(ULSTroopPoolSubsystem* Pool, uint64 Serial, ELSFaction NewFaction,
+    const FTransform& Transform, AActor* NewOwner)
+{
+	if (!IsValid(Pool) || PoolOwner.Get() != Pool || ActivationSerial != 0 || !Pool->IsAcquired(this, Serial))
+		return false;
+	ActivationSerial = Serial;
+	const ALSTroopUnit* Defaults = GetClass()->GetDefaultObject<ALSTroopUnit>();
+	GetMesh()->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::SnapToTargetIncludingScale);
+	GetMesh()->SetRelativeTransform(Defaults->GetMesh()->GetRelativeTransform());
+	GetMesh()->SetCollisionObjectType(Defaults->GetMesh()->GetCollisionObjectType());
+	GetMesh()->SetCollisionResponseToChannels(Defaults->GetMesh()->GetCollisionResponseToChannels());
+	GetMesh()->bPauseAnims = false;
+	GetMesh()->SetComponentTickEnabled(true);
+	GetCapsuleComponent()->SetCollisionEnabled(Defaults->GetCapsuleComponent()->GetCollisionEnabled());
+	GetCapsuleComponent()->SetCollisionResponseToChannels(Defaults->GetCapsuleComponent()->GetCollisionResponseToChannels());
+	GetCharacterMovement()->CurrentFloor.Clear();
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->SetComponentTickEnabled(true);
+	SetActorTransform(Transform, false, nullptr, ETeleportType::TeleportPhysics);
+	SetOwner(NewOwner);
+	if (!PreparePooledCombat(NewFaction))
+		return false;
+	RefreshDefinition();
+	Health->OnDiedEvent.AddUniqueDynamic(this, &ALSTroopUnit::OnTroopDied);
+	Health->OnDamagedEvent.AddUniqueDynamic(this, &ALSTroopUnit::OnTroopDamaged);
+	if (!CombatBehavior || !CombatBehavior->IsConfigurationValid())
+		return false;
+	CombatBehavior->ResetForNewLife();
+	SetTacticalLabel(CombatBehavior->GetStatusLabel());
+	TroopMarker->SetVisibility(true);
+	TroopLabel->SetVisibility(true);
+	Lance->SetVisibility(TroopType == ELSTroopType::Cavalry);
+	SetLanceLowered(false);
+	if (!GetController())
+		SpawnDefaultController();
+	if (AAIController* AI = Cast<AAIController>(GetController()))
+	{
+		AI->SetActorTickEnabled(true);
+		if (UPathFollowingComponent* Path = AI->GetPathFollowingComponent())
+			Path->SetComponentTickEnabled(true);
+	}
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	GetCharacterMovement()->SetAvoidanceEnabled(Defaults->GetCharacterMovement()->bUseRVOAvoidance);
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	if (!Pool->IsAcquired(this, Serial))
+		return false;
+	Vision->ResumeFromPool();
+	InitializeAnimations();
+	return Pool->IsAcquired(this, Serial) && ULSCombatTargetLibrary::IsCombatAlive(this);
 }
 
 #if WITH_EDITOR

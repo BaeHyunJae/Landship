@@ -1,6 +1,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
+#include "Combat/LSProjectilePoolSubsystem.h"
 
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
@@ -16,6 +17,27 @@ ULSBasicAttackComponent::ULSBasicAttackComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	bAutoActivate = true;
+}
+
+bool ULSBasicAttackComponent::ResetForPool()
+{
+	if (bResolvingAttack || !IsValid(GetOwner()) || !GetOwner()->IsHidden() || GetOwner()->GetActorEnableCollision())
+		return false;
+	StopAttack();
+	Deactivate();
+	++CombatLifeSerial;
+	OnAttackPerformed.Clear();
+	OnProjectileLaunched.Clear();
+	OnAttackExecutedEvent.Clear();
+	AttackTargetResolverEvent.Unbind();
+	IntervalMultipliers.Reset();
+	NextAttackTime = 0;
+	AttackBlockedUntil = 0;
+	EffectiveInterval = 0;
+	bConfigured = false;
+	bHasPendingSettings = false;
+	bBattleActionsEnded = false;
+	return true;
 }
 
 bool ULSBasicAttackComponent::ConfigureAttack(const FLSBasicAttackSettings& NewSettings)
@@ -355,7 +377,12 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	const FTransform Transform(Direction.Rotation(), Origin);
 	// 발사 후 공격자가 사망해도 진영과 피해량은 바뀌지 않는다.
 	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
-	ALSBasicProjectile* Projectile =
+	const bool bUsePool = ProjectileSettings.bUsePool && ProjectileSettings.ProjectileClass &&
+	    ProjectileSettings.ProjectileClass->GetDefaultObject<ALSBasicProjectile>()->SupportsPooling();
+	ULSProjectilePoolSubsystem* Pool = bUsePool ? GetWorld()->GetSubsystem<ULSProjectilePoolSubsystem>() : nullptr;
+	const FLSProjectileLease Lease = Pool ? Pool->AcquireProjectile(ProjectileSettings.ProjectileClass, Transform) :
+	    FLSProjectileLease();
+	ALSBasicProjectile* Projectile = Pool ? Lease.Projectile.Get() :
 	    GetWorld()->SpawnActorDeferred<ALSBasicProjectile>(ProjectileSettings.ProjectileClass, Transform, nullptr,
 	                                                       nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!IsValid(Projectile))
@@ -365,19 +392,28 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	if (!Projectile->Launch(Request, Target, Direction, ProjectileSettings.Speed, ProjectileSettings.Radius,
 	                        ProjectileSettings.Lifetime, ProjectileSettings.Material))
 	{
-		Projectile->Destroy();
+		if (Pool)
+			Pool->ReleaseProjectile(Lease);
+		else
+			Projectile->Destroy();
 		return;
 	}
-	Projectile->OnDamageApplied.AddDynamic(this, &ULSBasicAttackComponent::OnProjectileDamage);
-	Projectile->FinishSpawning(Transform);
+	const uint64 LifeSerial = CombatLifeSerial;
+	Projectile->OnDamageAppliedNative.AddWeakLambda(this, [this, LifeSerial](AActor* HitTarget, float Damage)
+	{
+		if (CombatLifeSerial == LifeSerial)
+			OnProjectileDamage(HitTarget, Damage);
+	});
+	if (!Pool)
+		Projectile->FinishSpawning(Transform);
 	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
-	    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+	    !GetWorld()->bIsTearingDown && IsValid(Projectile) && (!Pool || Pool->IsAcquired(Projectile, Lease.Serial)))
 	{
 		FLSAttackExecution LaunchedExecution = Execution;
 		LaunchedExecution.ExecutionId = ++LastExecutionId;
 		OnAttackExecutedEvent.Broadcast(LaunchedExecution);
 		if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
-		    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+		    !GetWorld()->bIsTearingDown && IsValid(Projectile) && (!Pool || Pool->IsAcquired(Projectile, Lease.Serial)))
 		{
 			OnProjectileLaunched.Broadcast(Projectile);
 		}

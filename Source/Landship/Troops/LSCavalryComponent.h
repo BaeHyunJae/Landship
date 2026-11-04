@@ -44,6 +44,7 @@ class LANDSHIP_API ULSCavalryComponent : public ULSTroopCombatComponent
 	}
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Charge")
 	FLSCavalryChargeSettings Settings;
+	virtual void ResetForNewLife() override;
 
   protected:
 	virtual void CancelSpecialAction() override;

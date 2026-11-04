@@ -2,6 +2,11 @@
 
 ## 제공하는 것
 
+
+
+- 풀 병력은 숨김·충돌 중지 상태에서만 `ULSHealthComponent::ResetForPool`과 `ULSBasicAttackComponent::ResetForPool`을 사용한다. 체력과 외부 구독·기본 공격 표적/쿨타임/배율을 새 생명용으로 정리하며 피해/타격 콜백 도중 재초기화는 거부한다. 일반 초기화의 중복 호출 금지는 유지한다.
+- 기본 공격 컴포넌트의 생명 세대는 풀 초기화 때 증가한다. 발사체는 발사자의 당시 생명 세대도 보관하므로 같은 액터가 새 병력으로 재사용되면 이전 발사자를 현재 생명으로 해석하지 않는다. 이전 발사체의 공격자 측 명중 알림도 새 생명에 전달하지 않으며 저장된 발사 시 진영과 피해 판정은 유지한다.
+
 - `SetAttackIntervalMultiplier(Source, Multiplier)`는 병력별 출처를 구분해 공격 간격 배율을 적용한다. 1은 해당 출처 제거이며 같은 출처의 재적용은 중첩하지 않는다. 월드 공격속도 배율과 함께 계산하고 대기 중 공격 진행률을 보존한다. `DelayNextAttack`의 경직 보류는 별도로 유지해 배율 해제로 단축하지 않는다.
 
 - `ULSBasicAttackComponent`는 공격 간격 관리와 즉시 피해 또는 투사체 발사를 맡는다. 접근 이동은 맡지 않는다.
@@ -30,7 +35,14 @@
   - `ExplosionOcclusion`: `LSExplosionOcclusion`, GameTraceChannel6, 기본 응답 Ignore. 지뢰 폭발을 막는 벽은 Block으로 설정한다.
   - `ObstacleProjectile`: `LSObstacleProjectile`, GameTraceChannel7, 기본 응답 Block. 장애물 지정 탄을 막는 실제 몸체에 사용하며 보조 표시·접촉 구는 Ignore로 설정한다.
 - 아군·적 판정은 채널이 아니라 진영 규칙(`ILSFactionInterface`, `ULSCombatTargetLibrary::CanAutoAttackTarget`)으로 한다. 자동 표적은 오폭·자기 피해 설정과 관계없이 살아 있는 상대 진영만 고른다.
-- `ALSBasicProjectile::Launch()`는 `SpawnActorDeferred` 뒤 `FinishSpawning` 전에 한 번만 부른다. 공격 명령을 중단해도 이미 발사한 투사체는 유지된다.
+- 풀을 쓰지 않는 `ALSBasicProjectile::Launch()`는 `SpawnActorDeferred` 뒤 `FinishSpawning` 전에 한 번만 부른다. 풀에서 대여한 화살은 생성 완료 상태에서 대여당 한 번 호출한다. 공격 명령을 중단해도 이미 발사한 투사체는 유지된다.
+- `FLSProjectileAttackSettings::bUsePool`은 `SupportsPooling()`을 명시적으로 지원하는 클래스에 적용한다. 기본 화살은 지원하며 커스텀 파생 클래스와 성 무장은 기본적으로 기존 생성·제거를 유지한다. 파생 클래스가 지원하려면 추가 상태와 비동기 작업을 lifecycle에서 초기화해야 한다. 궁병 기본 화살은 풀을 사용한다.
+- `ULSProjectilePoolSubsystem`은 Game·PIE 월드마다 클래스별 비활성 버킷과 GC 소유 참조를 유지한다. `AcquireProjectile(Class, Transform, Owner, Instigator)`는 객체와 발급 세대가 든 `FLSProjectileLease`를 반환한다. 아직 발사는 아니며 호출자는 `Launch` 후 실패하면 같은 핸들을 `ReleaseProjectile(Lease)`에 전달한다. 소유자·Instigator를 지정하면 같은 월드의 유효 객체여야 한다. 기본 공격의 발사자는 기존처럼 피해 요청의 약한 참조로만 보관한다.
+- 일반 반환은 같은 월드에서 발급된 활성 대여와 세대 번호가 일치할 때만 성공한다. 대여를 먼저 소비하고 비활성화하므로 중복·재진입·오래된 핸들은 거부한다. 직접 생성·맵 배치 객체를 일반 반환으로 편입하지 않는다. 취소 불가능한 외부 콜백은 획득 당시 핸들을 보관해야 하며 현재 세대를 다시 읽어 반환하면 안 된다.
+- 액터의 `PrepareForPool`은 deferred 생성 중에만, `ActivateFromPool`은 대여 발급 후에, `DeactivateForPool`은 대여 소비 후에 호출한다. 기본 화살은 피해 요청·발사자·명중 구독·수명 타이머·속도·특수탄 상태·부착·Owner·Instigator·기하 변환을 초기화하고 Tick·충돌·표시를 끈다. 수명 콜백과 명중 후속 처리는 발사 세대 번호도 확인한다. 머티리얼 인스턴스는 유지하고 새 발사 시 진영과 재질을 갱신한다.
+- `PrewarmPool(Class, DesiredInactiveCount)`는 클래스의 비활성 개수를 목표로 한다. `ls.Pool.MaxInactivePerClass`는 클래스별 반환 보관 상한이며 0은 무제한이다. 부족 시 새 액터를 만들고 활성 발사 수는 제한하지 않는다. 반환 초과분과 외부 파괴 객체는 소유·대여 목록에서도 제거한다. 상한 변경 즉시 축소하거나 유휴 trim하지는 않는다. 월드 종료 시 활성 대여를 무효화하고 모든 소유 액터를 제거한다.
+- 개발 콘솔 `ls.Pool.Snapshot`은 클래스별 활성·비활성·최고 활성 및 생성·재사용·획득·반환·제거 횟수를 기록한다. `ls.Pool.ResetCounters`는 객체·대여를 유지하면서 현재 활성 수를 기준으로 카운터를 다시 시작한다. 진단 명령과 기록은 Shipping에서 제외한다. 실행 방법은 [개인 화살 풀 점검 절차](../../../docs/procedures/Developers/HMH/projectile-pool.md)를 따른다.
+- 자동 전투의 편성 복원은 `ReleaseAll()`로 비행 중인 풀 화살도 반환한다. 외부 코드는 발사 알림의 화살 포인터를 영구적인 사격 ID로 사용하면 안 된다. 반환 뒤 같은 액터가 다른 발사자·진영의 화살로 재사용될 수 있다. 풀 반환은 `OnDestroyed`가 아니므로 명중 연출은 기존 `OnDamageApplied`를 사용한다.
 - `ULSBasicAttackComponent::OnAttackExecutedEvent`는 공격 확정 시점의 기록(`FLSAttackExecution`)을 한 번 전달한다. 근접은 피해 처리 직전(피해 0 포함), 투사체는 발사 성공 직후에 발생한다. 명중은 두 번째 실행이 아니다. 실제 피해를 보장하지 않으므로 소비자는 후속 작업만 큐에 넣고, 처리할 때 약한 참조와 전투 상태를 다시 검증한다.
 - `SetAttackTargetResolver(Resolver)`는 준비된 타격 직전에 대상을 새로 조회하게 한다. 콜백은 후보 조회만 하고 이동·공격·지원을 실행하지 않는다. 반환한 대상은 다시 검증하고, null이거나 유효하지 않으면 그 타격의 대기시간을 소비하지 않는다. `StopAttack()`은 바인딩을 유지하고 `EndPlay`가 해제한다. 바인딩하지 않은 컴포넌트의 기존 동작은 유지한다.
 - 자동 공격과 신규 공격 시작은 `ULSVisionSubsystem::PassesFriendlySight()`를 통과한 대상에만 한다.

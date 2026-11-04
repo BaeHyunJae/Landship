@@ -33,6 +33,9 @@ class LANDSHIP_API ULSTroopCombatComponent : public UActorComponent
 	ULSTroopCombatComponent();
 	virtual bool IsConfigurationValid() const;
 	virtual void SetBattleEnabled(bool bEnabled);
+	/** 추가 상태를 초기화한 뒤 새 생명의 교전 제어를 기다린다. */
+	virtual void ResetForNewLife();
+	FString GetStatusLabel() const { return GetRestingLabel(); }
 	bool IsBattleEnabled() const
 	{
 		return bBattleEnabled;

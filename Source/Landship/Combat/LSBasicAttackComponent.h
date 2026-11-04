@@ -14,6 +14,9 @@ struct LANDSHIP_API FLSProjectileAttackSettings
 	/** 비어 있으면 기존 즉시 피해 공격을 사용한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile")
 	TSubclassOf<ALSBasicProjectile> ProjectileClass;
+	/** 풀 수명 초기화를 지원하는 클래스만 재활용한다. 미지원 클래스는 기존 생성·제거를 유지한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile")
+	bool bUsePool = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile", meta = (ClampMin = "1", Units = "cm/s"))
 	float Speed = 1400.0f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile", meta = (ClampMin = "0.01", Units = "s"))
@@ -70,6 +73,10 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	GENERATED_BODY()
   public:
 	ULSBasicAttackComponent();
+	bool IsResolvingAttack() const { return bResolvingAttack; }
+	uint64 GetCombatLifeSerial() const { return CombatLifeSerial; }
+	/** 풀에 보관한 소유자의 표적·쿨타임·배율·외부 구독을 정리한다. 타격 실행 중에는 거부한다. */
+	bool ResetForPool();
 	/** 명령 컴포넌트가 전투를 제어하는 액터는 생성자에서 자동 시작을 끈다. */
 	void SetAutoAttackOnBeginPlay(bool bEnabled)
 	{
@@ -187,4 +194,5 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	FLSResolveAttackTarget AttackTargetResolverEvent;
 	int64 LastExecutionId = 0;
 	uint64 StopRevision = 0;
+	uint64 CombatLifeSerial = 0;
 };

@@ -62,6 +62,13 @@ void ULSSpearmanComponent::CancelSpecialAction()
 {
 	StopBracing();
 }
+
+void ULSSpearmanComponent::ResetForNewLife()
+{
+	Super::ResetForNewLife();
+	BraceStarted = 0;
+	bGuardSpent = false;
+}
 FString ULSSpearmanComponent::GetRestingLabel() const
 {
 	return bGuardSpent ? TEXT("GUARD USED") : TEXT("");

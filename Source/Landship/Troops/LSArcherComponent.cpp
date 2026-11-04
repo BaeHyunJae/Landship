@@ -86,6 +86,16 @@ void ULSArcherComponent::SetBattleEnabled(bool bEnabled)
 	}
 }
 
+void ULSArcherComponent::ResetForNewLife()
+{
+	Super::ResetForNewLife();
+	if (ULSHealthComponent* Health = GetTroop()->FindComponentByClass<ULSHealthComponent>())
+	{
+		Health->OnDamagedEvent.AddUniqueDynamic(this, &ULSArcherComponent::OnDamaged);
+		Health->OnDiedEvent.AddUniqueDynamic(this, &ULSArcherComponent::OnDied);
+	}
+}
+
 FString ULSArcherComponent::GetRestingLabel() const
 {
 	return bSuppressed ? TEXT("SUPPRESSED") : FString();

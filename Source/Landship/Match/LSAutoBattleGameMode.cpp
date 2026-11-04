@@ -1,6 +1,7 @@
 #include "Match/LSAutoBattleGameMode.h"
 #include "Match/LSAutoBattlePreset.h"
 #include "Troops/LSTroopCombatComponent.h"
+#include "Troops/LSTroopPoolSubsystem.h"
 #include "Controls/LSAutoBattleController.h"
 #include "Controls/LSFreeCameraPawn.h"
 #include "Controls/LSOrderComponent.h"
@@ -10,6 +11,7 @@
 #include "Castle/LSCastleProjectile.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSBasicProjectile.h"
+#include "Combat/LSProjectilePoolSubsystem.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCollisionChannels.h"
@@ -223,19 +225,18 @@ ALSUnit* ALSAutoBattleGameMode::SpawnUnit(FLSAutoBattlePlacement& Placement, ELS
 		return nullptr;
 	}
 	const FTransform Transform(FRotator(0, Faction == ELSFaction::Ally ? 0 : 180, 0), Ground + FVector(0, 0, 90));
-	ALSTroopUnit* Unit = GetWorld()->SpawnActorDeferred<ALSTroopUnit>(
-	    ALSTroopUnit::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	ULSTroopPoolSubsystem* Pool = GetWorld()->GetSubsystem<ULSTroopPoolSubsystem>();
+	const FLSTroopLease Lease = Pool ? Pool->AcquireUnit(ALSTroopUnit::StaticClass(), Placement.Type,
+	    Faction, Transform, this) : FLSTroopLease();
+	ALSTroopUnit* Unit = Lease.Unit.Get();
 	if (!Unit)
 	{
 		return nullptr;
 	}
-	Unit->SetInitialTroopType(Placement.Type);
-	Unit->SetInitialFaction(Faction);
 	Unit->Orders->SetComponentTickEnabled(false);
-	Unit->FinishSpawning(Transform);
 	if (!ULSCombatTargetLibrary::IsCombatAlive(Unit))
 	{
-		Unit->Destroy();
+		ReleaseUnitActor(Unit);
 		return nullptr;
 	}
 	Placement.Position = Ground;
@@ -466,11 +467,9 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::RemoveUnit(int32 Id)
 	PlacementActors.Remove(Id);
 	Units.Remove(Unit);
 	AAIController* AI = Cast<AAIController>(Unit->GetController());
-	Unit->Destroy();
-	if (IsValid(AI))
-	{
-		AI->Destroy();
-	}
+	ReleaseUnitActor(Unit);
+	ReleaseUnitController(AI);
+	Controllers.Remove(AI);
 	Controllers.RemoveAll([](const TWeakObjectPtr<AAIController>& Controller) { return !Controller.IsValid(); });
 	OnChanged.Broadcast();
 	return ELSAutoBattleRequest::Success;
@@ -616,6 +615,19 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::StartBattle()
 	TGuardValue<bool> Guard(bChanging, true);
 	Agents.Reset();
 	MeleePlanner.Reset();
+	if (ULSProjectilePoolSubsystem* Pool = GetWorld()->GetSubsystem<ULSProjectilePoolSubsystem>())
+	{
+		TMap<TSubclassOf<ALSBasicProjectile>, int32> FirstVolley;
+		for (ALSUnit* Unit : Units)
+		{
+			const FLSProjectileAttackSettings& Shot = Unit->BasicAttack->GetProjectileSettings();
+			if (Shot.bUsePool && Shot.ProjectileClass &&
+			    Shot.ProjectileClass->GetDefaultObject<ALSBasicProjectile>()->SupportsPooling())
+				++FirstVolley.FindOrAdd(Shot.ProjectileClass);
+		}
+		for (const auto& Pair : FirstVolley)
+			Pool->PrewarmPool(Pair.Key, Pair.Value);
+	}
 	for (ALSUnit* Unit : Units)
 	{
 		if (ALSTroopUnit* Troop = Cast<ALSTroopUnit>(Unit))
@@ -991,23 +1003,21 @@ void ALSAutoBattleGameMode::DestroyBattle()
 	{
 		if (Projectile.IsValid())
 		{
-			Projectile->Destroy();
+			const ALSBasicProjectile* Arrow = Cast<ALSBasicProjectile>(Projectile.Get());
+			if (!Arrow || !Arrow->IsPoolManaged())
+				Projectile->Destroy();
 		}
 	}
 	Projectiles.Reset();
+	if (ULSProjectilePoolSubsystem* Pool = GetWorld()->GetSubsystem<ULSProjectilePoolSubsystem>())
+		Pool->ReleaseAll();
 	for (ALSUnit* Unit : Units)
 	{
-		if (IsValid(Unit))
-		{
-			Unit->Destroy();
-		}
+		ReleaseUnitActor(Unit);
 	}
 	for (const TWeakObjectPtr<AAIController>& AI : Controllers)
 	{
-		if (AI.IsValid())
-		{
-			AI->Destroy();
-		}
+		ReleaseUnitController(AI.Get());
 	}
 	Controllers.Reset();
 	Units.Reset();
@@ -1016,6 +1026,30 @@ void ALSAutoBattleGameMode::DestroyBattle()
 	PlacementActors.Reset();
 	AllyCastle = nullptr;
 	EnemyCastle = nullptr;
+}
+
+void ALSAutoBattleGameMode::ReleaseUnitActor(ALSUnit* Unit)
+{
+	if (!IsValid(Unit) || Unit->IsActorBeingDestroyed())
+		return;
+	if (ALSTroopUnit* Troop = Cast<ALSTroopUnit>(Unit); Troop && Troop->IsPoolManaged())
+	{
+		if (Troop->GetActivationSerial() == 0)
+			return;
+		if (ULSTroopPoolSubsystem* Pool = GetWorld()->GetSubsystem<ULSTroopPoolSubsystem>())
+			if (Pool->ReleaseUnit({Troop, Troop->GetActivationSerial()}))
+				return;
+	}
+	Unit->Destroy();
+}
+
+void ALSAutoBattleGameMode::ReleaseUnitController(AAIController* Controller)
+{
+	if (!IsValid(Controller) || Controller->IsActorBeingDestroyed())
+		return;
+	const ALSTroopUnit* Troop = Cast<ALSTroopUnit>(Controller->GetPawn());
+	if (!Troop || !Troop->IsPoolManaged())
+		Controller->Destroy();
 }
 
 void ALSAutoBattleGameMode::EndPlay(const EEndPlayReason::Type Reason)
@@ -1185,7 +1219,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 		{
 			if (IsValid(Units[I]))
 			{
-				Units[I]->Destroy();
+				ReleaseUnitActor(Units[I]);
 			}
 		}
 		Units.SetNum(OldCount);
@@ -1193,7 +1227,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 		{
 			if (Controllers[I].IsValid())
 			{
-				Controllers[I]->Destroy();
+				ReleaseUnitController(Controllers[I].Get());
 			}
 		}
 		Controllers = OldControllers;
@@ -1203,14 +1237,14 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 	{
 		if (IsValid(Old))
 		{
-			Old->Destroy();
+			ReleaseUnitActor(Old);
 		}
 	}
 	for (const auto& Old : OldControllers)
 	{
 		if (Old.IsValid())
 		{
-			Old->Destroy();
+			ReleaseUnitController(Old.Get());
 		}
 	}
 	Units.RemoveAt(0, OldCount);

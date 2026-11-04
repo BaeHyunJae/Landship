@@ -11,6 +11,7 @@ class UTextRenderComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UAnimSequence;
+class ULSTroopPoolSubsystem;
 struct FLSDamageResult;
 
 UENUM(BlueprintType)
@@ -29,6 +30,14 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   public:
 	ALSTroopUnit();
+	bool IsPoolManaged() const { return PoolOwner.IsValid(); }
+	uint64 GetActivationSerial() const { return ActivationSerial; }
+	bool CanReturnToPool() const;
+	/** 풀에서 생성한 기본 병력에만 연결한다. 일반 배치 액터는 자동 편입하지 않는다. */
+	bool PrepareForPool(ULSTroopPoolSubsystem* Pool);
+	bool ActivateFromPool(ULSTroopPoolSubsystem* Pool, uint64 Serial, ELSFaction NewFaction,
+	    const FTransform& Transform, AActor* NewOwner);
+	bool DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial);
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Troops")
 	TObjectPtr<ULSTroopCombatComponent> CombatBehavior;
 	void SetTacticalLabel(const FString& State);
@@ -107,6 +116,8 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	TObjectPtr<UAnimSequence> ActiveAttackAnimation;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> MarkerMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> MarkerMaterialSource;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback", meta = (ClampMin = "0.01", Units = "s"))
 	float HitFlashDuration = 0.12f;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback")
@@ -116,4 +127,9 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	FTimerHandle AttackAnimationTimer;
 	FTimerHandle HitFlashTimer;
 	bool bTroopTypeLocked = false;
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ULSTroopPoolSubsystem> PoolOwner;
+	uint64 ActivationSerial = 0;
+	FTimerHandle PoolDeathTimer;
+	bool bPoolRemovesOnDeath = false;
 };

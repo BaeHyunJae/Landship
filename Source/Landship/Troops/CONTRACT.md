@@ -2,6 +2,15 @@
 
 ## 제공하는 것
 
+
+
+- TABS 자동 전투의 창병·궁병·기병은 `ULSTroopPoolSubsystem`에서 클래스·병종별로 대여한다. 현재 기본 `ALSTroopUnit` 클래스만 지원하며 같은 객체의 병종은 바꾸지 않는다. 성·맵 배치 병력·기존 RTS 생산 경로를 자동 편입하지 않는다.
+- `AcquireUnit(Class, Type, Faction, Transform, Owner)`는 객체와 세대가 든 `FLSTroopLease`를 반환한다. `ReleaseUnit(Lease)`는 같은 월드의 활성 대여만 한 번 소비한다. 피해·기본 공격·명령 업데이트 실행 중 반환은 거부한다. 직접 lifecycle 함수를 호출해 활성 대여를 우회하면 안 된다.
+- 반환 시 공격·명령·경로·시야 참여·선택 권한·타이머를 중지하고 외부 체력/공격 구독을 정리한다. 메시 랙돌과 이동·AI의 Tick을 끈다. 다음 대여는 테이블 수치, 체력, 진영, 메시 부착·충돌, 애니메이션, 시야와 병종 행동을 다시 준비한다. 기병 돌격·창병 대비의 사용 여부와 궁병 피격 디버프도 초기화한다. `BeginPlay`를 다시 호출하거나 컴포넌트를 매번 생성하지 않는다.
+- 풀 병력은 제거 설정이 켜졌을 때 기존 시체 유지 시간 후 세대별 타이머로 반환한다. 즉시 제거 설정은 피해/사망 콜백을 빠져나온 다음 틱에 반환한다. 제거 설정이 꺼진 병력은 편성 정리까지 유지한다. 풀에 남은 객체 포인터는 영구 병력 ID가 아니므로 과거 대여 핸들을 다음 생명에 재사용하면 안 된다.
+- 풀은 병력과 같은 AIController를 유지하되 비활성 중 이동 경로·Brain을 중지하고 Tick을 끈다. 기본 AAIController만 지원하며 사용자 정의 AI/블루프린트 수명은 별도 초기화 구현이 필요하다. 일반 액터 제거와 월드 종료에서는 소유 AI도 제거한다.
+- `PrewarmPool(Class, Type, DesiredInactiveCount)`는 비활성 개수를 목표로 한다. `ls.TroopPool.MaxInactivePerBucket`은 클래스·병종별 반환 보관 상한이며 0은 무제한이다. 활성 편성과 생성 요청을 제한하지 않고 초과 반환분만 제거한다. 상한 변경 즉시 trim하지 않는다. `ls.TroopPool.Snapshot` 개발 진단은 Shipping에서 제외한다.
+
 - 궁병은 실제 피해를 받으면 공격 종류와 관계없이 기본 2초간 공격 간격이 1.5배가 된다. 반복 피격은 지속시간만 갱신한다. 0 피해·거부된 피해에는 적용하지 않고 이미 발사한 화살은 유지한다. 사망·전투 비활성화·제거 시 해제한다. `ULSArcherComponent`의 `SuppressionDuration`·`SuppressedIntervalMultiplier`로 조정한다. SUPPRESSED 표시는 사격 억제이며 경직과 별도로 유지된다.
 
 - `ALSTroopUnit::CombatBehavior`는 BeginPlay에서 최종 병종에 맞춰 생성되는 전투 컴포넌트 하나다. `ULSCavalryComponent`는 돌격, `ULSSpearmanComponent`는 대비·방어·반격을 소유하며 궁병은 `ULSArcherComponent`가 피격 시 사격 억제를 소유한다. 클래스는 `CombatBehaviorClasses`에서 지정하고 누락·추상 클래스는 진단 후 전투 시작을 거부한다. 기본 비활성이다. 자동 전투 모드가 시작 때 `SetBattleEnabled(true)`, 결과 확정 때 `false`를 호출한다. 비활성화는 속도·대비·경직·틱을 정리하지만 이미 소비한 돌격과 방어를 복구하지 않는다. 재전투는 새 병력으로 복원한다.

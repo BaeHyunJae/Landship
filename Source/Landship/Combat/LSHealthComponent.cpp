@@ -11,6 +11,19 @@ ULSHealthComponent::ULSHealthComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+bool ULSHealthComponent::ResetForPool()
+{
+	if (bProcessingDamage || !IsValid(GetOwner()) || !GetOwner()->IsHidden() || GetOwner()->GetActorEnableCollision())
+		return false;
+	OnDamagedEvent.Clear();
+	OnDiedEvent.Clear();
+	PrepareDeathEvent.Unbind();
+	Health = FLSHealthSnapshot();
+	InitializationState = ELSHealthInitializationState::NotAttempted;
+	InitializationFailureReason.Reset();
+	return true;
+}
+
 FString ULSHealthComponent::GetConfigurationError() const
 {
 	return FMath::IsFinite(DestroyDelay) && DestroyDelay >= 0.0f
@@ -85,6 +98,12 @@ bool ULSHealthComponent::TryGetHealth(FLSHealthSnapshot& OutHealth) const
 	return true;
 }
 
+
+
+
+
+
+
 FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser)
 {
 	FLSDamageRequest Request;
@@ -140,6 +159,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 		// 공개 알림 중 제거된 수신자에게 재진입한 요청은 상태와 필수 훅에 접근하지 않는다.
 		return {ELSApplyDamageStatus::RejectedInvalidTarget, 0.0f};
 	}
+	TGuardValue<bool> DamageGuard(bProcessingDamage, true);
 	if (InitializationState != ELSHealthInitializationState::Ready)
 	{
 		ensureAlwaysMsgf(false, TEXT("[LSHealthComponent::ApplyDamage] Health not ready: Owner=%s Reason=%s"),

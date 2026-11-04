@@ -136,6 +136,47 @@ bool ALSUnit::TryGetStats(FLSUnitStatRow& OutStats) const
 	return true;
 }
 
+bool ALSUnit::SuspendCombatForPool()
+{
+	if (Health->IsProcessingDamage() || BasicAttack->IsResolvingAttack())
+		return false;
+	Vision->SuspendForPool();
+	EndBattleActions();
+	Orders->SuspendForPool();
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	Selection->SetPlayerControlled(false);
+	if (!BasicAttack->ResetForPool() || !Health->ResetForPool())
+		return false;
+	StatsInitResult = ELSCombatStatsInitResult::NotAttempted;
+	return true;
+}
+
+bool ALSUnit::PreparePooledCombat(ELSFaction NewFaction)
+{
+	if (!IsHidden() || GetActorEnableCollision() || !LSFaction::IsValid(NewFaction) ||
+	    Health->GetInitializationState() != ELSHealthInitializationState::NotAttempted)
+		return false;
+	Faction = NewFaction;
+	bBattleActionsEnded = false;
+	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
+	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
+	    FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError()))
+		return false;
+	FLSBasicAttackSettings AttackSettings;
+	AttackSettings.Damage = Stats.AttackPower;
+	AttackSettings.Interval = Stats.AttackInterval;
+	AttackSettings.Range = Stats.AttackRange;
+	if (SupportsBasicAttack() && !BasicAttack->ConfigureAttack(AttackSettings))
+		return false;
+	BasicAttack->Activate();
+	Orders->ResumeFromPool();
+	Vision->SetSightRadius(Stats.VisionRadius);
+	Selection->SetPlayerControlled(NewFaction == ELSFaction::Ally);
+	GetCharacterMovement()->MaxWalkSpeed = Stats.MovementSpeed;
+	return true;
+}
+
 
 void ALSUnit::SetInitialFaction(ELSFaction InFaction)
 {

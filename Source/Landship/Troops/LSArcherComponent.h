@@ -13,6 +13,7 @@ class LANDSHIP_API ULSArcherComponent : public ULSTroopCombatComponent
   public:
 	virtual bool IsConfigurationValid() const override;
 	virtual void SetBattleEnabled(bool bEnabled) override;
+	virtual void ResetForNewLife() override;
 
   protected:
 	virtual void BeginPlay() override;

@@ -62,6 +62,9 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 
   protected:
 	virtual void BeginPlay() override;
+	/** 풀의 숨김·충돌 중지 상태에서만 호출한다. 새 생명의 수치와 진영을 다시 준비한다. */
+	bool PreparePooledCombat(ELSFaction NewFaction);
+	bool SuspendCombatForPool();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSHealthComponent> Health;
