@@ -12,7 +12,7 @@
 
 namespace
 {
-const TCHAR* TroopNames[] = {TEXT("Spearman"), TEXT("Archer"), TEXT("Cavalry")};
+const TCHAR* AutoBattlePresetTroopNames[] = {TEXT("Spearman"), TEXT("Archer"), TEXT("Cavalry")};
 TArray<TSharedPtr<FJsonValue>> VectorJson(const FVector& V)
 {
 	return {MakeShared<FJsonValueNumber>(V.X), MakeShared<FJsonValueNumber>(V.Y), MakeShared<FJsonValueNumber>(V.Z)};
@@ -149,7 +149,7 @@ bool FLSAutoBattlePresetStore::Encode(const FLSAutoBattlePreset& P, FString& Out
 		for (const auto& U : Units)
 		{
 			auto O = MakeShared<FJsonObject>();
-			O->SetStringField(TEXT("type"), TroopNames[static_cast<uint8>(U.Type)]);
+			O->SetStringField(TEXT("type"), AutoBattlePresetTroopNames[static_cast<uint8>(U.Type)]);
 			O->SetArrayField(TEXT("position"), VectorJson(U.Position));
 			Values.Add(MakeShared<FJsonValueObject>(O));
 		}
@@ -226,7 +226,7 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 			int32 Index = INDEX_NONE;
 			for (int32 I = 0; I < 3; ++I)
 			{
-				if (Type == TroopNames[I])
+				if (Type == AutoBattlePresetTroopNames[I])
 				{
 					Index = I;
 				}
