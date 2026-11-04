@@ -65,6 +65,7 @@ class LANDSHIP_API ALSBattlefieldSettings : public AActor
 #endif
 
   private:
+	TArray<AActor*> FindUnconfiguredParticipants(bool bIncludeInactiveLevels) const;
 #if WITH_EDITOR
 	void UpdateBoundsPreview();
 #endif

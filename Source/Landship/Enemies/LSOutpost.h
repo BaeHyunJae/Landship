@@ -79,7 +79,7 @@ class LANDSHIP_API ALSOutpost : public AActor, public ILSFactionInterface
 	/** 피해량 0과 무장 없음을 구분한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Outpost")
 	uint8 bArmed : 1 = true;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Outpost", meta = (ClampMin = "0", Units = "cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landship|Outpost", meta = (ClampMin = "0", Units = "cm"))
 	float DefenseRadius = 1200.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")

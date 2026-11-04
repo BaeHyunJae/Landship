@@ -7,7 +7,7 @@
 #include "Combat/LSFactionInterface.h"
 #include "LSCastle.generated.h"
 
-class UBoxComponent;
+class UCapsuleComponent;
 
 /** 초기 수치·진영·체력과 사망 처리를 소유한다. 공격 실행은 별도 기능에서 담당한다. */
 UCLASS(Blueprintable)
@@ -25,8 +25,14 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 	TObjectPtr<class ULSOrderComponent> Orders;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSVisionParticipantComponent> Vision;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Weapons")
+	TObjectPtr<class ULSCastleWeaponComponent> Weapons;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class UStaticMeshComponent> Body;
 
 	virtual UPawnMovementComponent* GetMovementComponent() const override;
+	virtual FVector GetNavAgentLocation() const override;
+	UCapsuleComponent* GetCapsuleComponent() const { return Collision; }
 	bool RequestMove(const FVector& Destination);
 	bool IsMoving() const;
 	void StopMoving();
@@ -76,7 +82,7 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 
 	/** 전투 대상 탐색에 사용하는 건물 충돌 영역이다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
-	TObjectPtr<UBoxComponent> Collision;
+	TObjectPtr<UCapsuleComponent> Collision;
 
   private:
 	/** 실패 시 실행만 차단하며 사망 알림·랙돌·제거를 수행하지 않는다. */

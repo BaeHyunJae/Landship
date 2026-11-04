@@ -4,7 +4,6 @@
 #include "Controls/LSCommandCardComponent.h"
 
 #include "Castle/LSCastle.h"
-#include "Castle/LSMobileCastle.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Components/InputComponent.h"
@@ -25,10 +24,32 @@
 #include "Maps/LSBattlefieldSettings.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Match/LSBattleOutcomePolicy.h"
+#include "Enemies/LSBattlefieldSetup.h"
+#include "Enemies/LSBattlefieldStateSubsystem.h"
+#include "Enemies/LSEnemyBehaviorComponent.h"
+#if WITH_EDITOR
+#include "Framework/Application/IInputProcessor.h"
+#endif
 
 namespace
 {
 TAutoConsoleVariable<int32> CVarRTSInputDebug(TEXT("LS.RTS.InputDebug"), 0, TEXT("RTS 선택 입력 진단"));
+#if WITH_EDITOR
+class FLSPendingInputCancelProcessor final : public IInputProcessor
+{
+  public:
+	explicit FLSPendingInputCancelProcessor(TFunction<bool()> InCancelInput)
+	    : CancelPendingInput(MoveTemp(InCancelInput)) {}
+	virtual void Tick(float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override {}
+	virtual bool HandleKeyDownEvent(FSlateApplication& SlateApp, const FKeyEvent& Event) override
+	{
+		return Event.GetKey() == EKeys::Escape && !Event.IsRepeat() && CancelPendingInput();
+	}
+
+  private:
+	TFunction<bool()> CancelPendingInput;
+};
+#endif
 }
 
 ALSPlayerController::ALSPlayerController()
@@ -45,9 +66,25 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 	{
 		if (Params.Key == EKeys::Tab)
 		{
+			CancelInput();
 			CommandCard->CycleGroup();
 			return true;
 		}
+		const FModifierKeysState Modifiers = FSlateApplication::Get().GetModifierKeys();
+		if (!Modifiers.IsShiftDown() && !Modifiers.IsControlDown() && !Modifiers.IsAltDown() &&
+		    !Modifiers.IsCommandDown())
+		{
+			const FKey WeaponKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
+			for (int32 Index = 0; Index < UE_ARRAY_COUNT(WeaponKeys); ++Index)
+				if (Params.Key == WeaponKeys[Index])
+				{
+					ArmCastleWeapon(static_cast<ELSCastleWeapon>(Index));
+					return true;
+				}
+		}
+		// 무장 키는 준비 실패·보조 키 조합에서도 선택 카드로 다시 전달하지 않는다.
+		if (Params.Key == EKeys::Q || Params.Key == EKeys::W || Params.Key == EKeys::E)
+			return true;
 		if (CommandCard->HandleHotkey(Params.Key))
 			return true;
 	}
@@ -88,7 +125,7 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 void ALSPlayerController::ProduceTroop(ELSTroopType Type)
 {
 	CancelInput();
-	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || !GetSelectedArmedCastle())
 	{
 		LastProductionResult = ELSProductionResult::Unavailable;
 		return;
@@ -96,16 +133,83 @@ void ALSPlayerController::ProduceTroop(ELSTroopType Type)
 	LastProductionResult = Production->Produce(Type);
 }
 
-ALSMobileCastle* ALSPlayerController::GetSelectedArmedCastle() const
+ALSCastle* ALSPlayerController::GetSelectedArmedCastle() const
 {
 	for (AActor* Actor : GetSelectedActors())
 	{
-		ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Actor);
+		ALSCastle* Castle = Cast<ALSCastle>(Actor);
 		if (Castle && Castle->GetFaction() == ELSFaction::Ally && Castle->Selection->CanPlayerControl() &&
 		    ULSCombatTargetLibrary::IsCombatAlive(Castle))
 			return Castle;
 	}
 	return nullptr;
+}
+
+bool ALSPlayerController::UsesBattlefieldCastle() const
+{
+	if (GetWorld())
+	{
+		for (TActorIterator<ALSBattlefieldSetup> It(GetWorld()); It; ++It)
+			bRequiresBattlefieldCastle = true;
+		if (!bRequiresBattlefieldCastle)
+			for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+				if (It->FindComponentByClass<ULSEnemyBehaviorComponent>())
+				{
+					bRequiresBattlefieldCastle = true;
+					break;
+				}
+	}
+	return bRequiresBattlefieldCastle;
+}
+
+ALSCastle* ALSPlayerController::GetConfiguredBattlefieldCastle() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || bControllerEnded || World->bIsTearingDown ||
+	    (World->WorldType != EWorldType::Game && World->WorldType != EWorldType::PIE))
+		return nullptr;
+	int32 SetupCount = 0;
+	ALSBattlefieldSetup* Setup = nullptr;
+	for (TActorIterator<ALSBattlefieldSetup> It(World); It; ++It)
+	{
+		Setup = *It;
+		++SetupCount;
+	}
+	bRequiresBattlefieldCastle |= SetupCount > 0;
+	const auto* State = World->GetSubsystem<ULSBattlefieldStateSubsystem>();
+	FLSPlayerCastleState Snapshot;
+	if (SetupCount != 1 || !State || !State->IsSetupValid() || !State->TryGetPlayerCastleState(Snapshot) ||
+	    Snapshot.Castle.Get() != Setup->PlayerCastle.Get() || !Setup->GetConfigurationError().IsEmpty())
+		return nullptr;
+	auto* Castle = Cast<ALSCastle>(Snapshot.Castle.Get());
+	return IsValid(Castle) && !Castle->IsActorBeingDestroyed() && Castle->GetWorld() == World &&
+	               Castle->GetFaction() == ELSFaction::Ally
+	           ? Castle : nullptr;
+}
+
+ALSCastle* ALSPlayerController::GetCastleWeaponSource() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || bControllerEnded || World->bIsTearingDown ||
+	    (World->WorldType != EWorldType::Game && World->WorldType != EWorldType::PIE) ||
+	    LSBattleOutcome::AreActionsStopped(World))
+		return nullptr;
+	ALSCastle* Castle = GetConfiguredBattlefieldCastle();
+	if (const auto* State = World->GetSubsystem<ULSBattlefieldStateSubsystem>();
+	    State && !LSBattleOutcome::IsManaged(World) && State->IsBattleEndedForEnemies())
+		return nullptr;
+	if (!Castle && !UsesBattlefieldCastle())
+		Castle = GetSelectedArmedCastle();
+	return IsValid(Castle) && Castle->GetWorld() == World && !Castle->IsActorBeingDestroyed() &&
+	               Castle->Selection->CanPlayerControl() && ULSCombatTargetLibrary::IsCombatAlive(Castle)
+	           ? Castle : nullptr;
+}
+
+ALSCastle* ALSPlayerController::GetAimingCastle() const
+{
+	return PendingInput == ELSCommandInput::CastleWeapon && AimingCastle.IsValid() &&
+	               GetCastleWeaponSource() == AimingCastle.Get()
+	           ? AimingCastle.Get() : nullptr;
 }
 
 bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
@@ -116,7 +220,7 @@ bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
 		LastWeaponResult = ELSWeaponCastResult::Unavailable;
 		return false;
 	}
-	ALSMobileCastle* Castle = GetSelectedArmedCastle();
+	ALSCastle* Castle = GetCastleWeaponSource();
 	LastWeaponResult = Castle ? Castle->Weapons->GetStatus(Weapon) : ELSWeaponCastResult::Unavailable;
 	if (LastWeaponResult != ELSWeaponCastResult::Ready)
 		return false;
@@ -130,7 +234,7 @@ bool ALSPlayerController::ArmCastleWeapon(ELSCastleWeapon Weapon)
 ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
 {
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()) || PendingInput != ELSCommandInput::CastleWeapon ||
-	    !AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get())
+	    !GetAimingCastle())
 	{
 		CancelInput();
 		LastWeaponResult = ELSWeaponCastResult::Unavailable;
@@ -147,8 +251,7 @@ ELSWeaponCastResult ALSPlayerController::ConfirmCastleWeapon(const FVector& Aim)
 bool ALSPlayerController::GetCastleWeaponAim(FVector& Aim) const
 {
 	AimedObstacle.Reset();
-	if (PendingInput != ELSCommandInput::CastleWeapon || !AimingCastle.IsValid() ||
-	    GetSelectedArmedCastle() != AimingCastle.Get() || !GetWorld())
+	if (!GetAimingCastle() || !GetWorld())
 		return false;
 	if (const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD()))
 	{
@@ -208,6 +311,7 @@ void ALSPlayerController::SetupInputComponent()
 void ALSPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	UsesBattlefieldCastle();
 	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
 	{
 		Vision->OnSnapshotCommittedEvent.AddDynamic(this, &ALSPlayerController::PruneSelection);
@@ -218,6 +322,25 @@ void ALSPlayerController::BeginPlay()
 		Mode.SetHideCursorDuringCapture(false);
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(Mode);
+#if WITH_EDITOR
+		if (GetWorld()->WorldType == EWorldType::PIE && FSlateApplication::IsInitialized())
+		{
+			// PIE의 종료 단축키는 PlayerController보다 먼저 실행되므로 준비 입력의 취소만 앞서 처리한다.
+			const TWeakObjectPtr<ALSPlayerController> WeakController(this);
+			PIECancelInputProcessor = MakeShared<FLSPendingInputCancelProcessor>([WeakController]()
+			{
+				ALSPlayerController* Controller = WeakController.Get();
+				if (!Controller || Controller->bControllerEnded || !Controller->GetWorld() ||
+				    Controller->GetWorld()->bIsTearingDown || Controller->GetWorld()->WorldType != EWorldType::PIE ||
+				    Controller->GetPendingInput() == ELSCommandInput::None ||
+				    !Controller->CanUseWorldInput(true, true))
+					return false;
+				Controller->CancelInput();
+				return true;
+			});
+			FSlateApplication::Get().RegisterInputPreProcessor(PIECancelInputProcessor);
+		}
+#endif
 		if (Cast<ALSRTSCameraPawn>(GetPawn()))
 		{
 			SetViewTarget(GetPawn());
@@ -239,6 +362,9 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 	    FSlateApplication::Get().GetCursorPos(), FSlateApplication::Get().GetInteractiveTopLevelWindows());
 	// 새 PIE 창은 SPIEViewport를 사용하므로 타입 이름 대신 실제 전장 위젯을 비교한다.
 	const TSharedPtr<SViewport> GameViewport = Client->GetGameViewportWidget();
+	const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
+	if (bKeyboard && Focused.IsValid() && Focused != GameViewport)
+		return false;
 	const ALSRTSHUD* HUD = Cast<ALSRTSHUD>(GetHUD());
 	bool bMinimapPath = false;
 	bool bBattleHUDPath = false;
@@ -278,6 +404,13 @@ bool ALSPlayerController::CanUseWorldInput(bool bAllowHUD, bool bKeyboard) const
 
 void ALSPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	bControllerEnded = true;
+#if WITH_EDITOR
+	if (PIECancelInputProcessor && FSlateApplication::IsInitialized())
+		FSlateApplication::Get().UnregisterInputPreProcessor(PIECancelInputProcessor);
+	PIECancelInputProcessor.Reset();
+#endif
+	CancelInput();
 	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
 	{
 		Vision->OnSnapshotCommittedEvent.RemoveDynamic(this, &ALSPlayerController::PruneSelection);
@@ -312,7 +445,7 @@ void ALSPlayerController::PlayerTick(float DeltaSeconds)
 	}
 	PruneSelection();
 	if (PendingInput == ELSCommandInput::CastleWeapon &&
-	    (!AimingCastle.IsValid() || GetSelectedArmedCastle() != AimingCastle.Get() ||
+	    (!GetAimingCastle() ||
 	     AimingCastle->Weapons->GetStatus(PendingWeapon) != ELSWeaponCastResult::Ready))
 		CancelInput();
 	ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn());

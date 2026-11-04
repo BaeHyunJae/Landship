@@ -18,6 +18,9 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	/** 명령과 공격을 영구 정지하되 낙하·착지와 명중에 의한 물리 반응은 유지한다. */
 	void EndBattleActions();
 	virtual bool SupportsBasicAttack() const { return true; }
+	bool IsGameplayStaged() const { return bGameplayStaged; }
+	/** 네이티브 생산 액터를 컴포넌트 등록 전에 격리한다. 생산 컴포넌트만 해제한다. */
+	void StageForProduction();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSSelectableComponent> Selection;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
@@ -65,6 +68,7 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	/** 풀의 숨김·충돌 중지 상태에서만 호출한다. 새 생명의 수치와 진영을 다시 준비한다. */
 	bool PreparePooledCombat(ELSFaction NewFaction);
 	bool SuspendCombatForPool();
+	virtual void ActivateProducedUnit();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSHealthComponent> Health;
@@ -78,6 +82,10 @@ class LANDSHIP_API ALSUnit : public ACharacter, public ILSFactionInterface
 	FDataTableRowHandle StatsRow;
 
   private:
+	friend class ULSTroopProductionComponent;
+	void ReleaseProductionStaging();
+	bool bGameplayStaged = false;
+	TArray<TWeakObjectPtr<class UPrimitiveComponent>> ProductionOverlapComponents;
 	void StopCombatMovement();
 	void NeutralizeCombat();
 	void PrepareForDeath();

@@ -1,6 +1,6 @@
 #include "Troops/Tests/LSHMHProductionProbe.h"
 
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
@@ -68,12 +68,12 @@ void ALSHMHProductionProbe::Tick(float DeltaSeconds)
 			Finish();
 			return;
 		}
-		ALSMobileCastle* EnemyCastle = nullptr;
-		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
+		ALSCastle* EnemyCastle = nullptr;
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 		{
-			It->Orders->SetComponentTickEnabled(false);
-			It->BasicAttack->StopAttack();
-			if (ALSMobileCastle* Found = Cast<ALSMobileCastle>(*It))
+			if (auto* Orders = It->FindComponentByClass<ULSOrderComponent>()) Orders->SetComponentTickEnabled(false);
+			if (auto* Attack = It->FindComponentByClass<ULSBasicAttackComponent>()) Attack->StopAttack();
+			if (ALSCastle* Found = Cast<ALSCastle>(*It))
 			{
 				if (Found->GetFaction() == ELSFaction::Ally)
 				{
@@ -132,29 +132,42 @@ void ALSHMHProductionProbe::Tick(float DeltaSeconds)
 		}
 		Check(FVector::Dist2D(Spear->GetActorLocation(), Castle->GetActorLocation()) > 500,
 		      TEXT("성 주변이 막히면 더 먼 빈 공간 탐색"));
-		Spear->Orders->SetComponentTickEnabled(false);
-		Spear->BasicAttack->StopAttack();
+		Check(Spear->Orders->GetOrderKind() == ELSOrderKind::Idle && Spear->Orders->GetQueuedCount() == 0,
+		      TEXT("생산한 병력은 자동 추종·예약 명령 없이 대기"));
+		for (const auto& Unit : Controller->Production->GetLastProducedBatch())
+		{
+			Unit->Orders->SetComponentTickEnabled(false);
+			Unit->BasicAttack->StopAttack();
+		}
 		Check(Controller->GetSelectedActors().Contains(Castle), TEXT("생산 버튼은 성 선택 유지"));
-		Check(State->GetCurrentPopulation() == 4, TEXT("생산 성공 시 인구수 1 증가"));
+		Check(State->GetCurrentPopulation() == 5, TEXT("생산 성공 시 인구수 2 증가"));
 		Check(Controller->Production->Produce(ELSTroopType::Spearman) == ELSProductionResult::Cooldown &&
-		          State->GetCurrentPopulation() == 4,
+		          State->GetCurrentPopulation() == 5,
 		      TEXT("같은 병종 연속 생산 거부"));
 		Check(Controller->Production->Produce(ELSTroopType::Archer) == ELSProductionResult::Ready,
 		      TEXT("다른 병종은 독립 쿨타임으로 즉시 생산"));
-		Controller->Production->GetLastProducedUnit()->Orders->SetComponentTickEnabled(false);
+		for (const auto& Unit : Controller->Production->GetLastProducedBatch())
+		{
+			Unit->Orders->SetComponentTickEnabled(false);
+			Unit->BasicAttack->StopAttack();
+		}
 		Check(Controller->Production->Produce(ELSTroopType::Cavalry) == ELSProductionResult::Ready,
 		      TEXT("기마병 생산"));
-		Controller->Production->GetLastProducedUnit()->Orders->SetComponentTickEnabled(false);
-		Check(State->GetCurrentPopulation() == 6, TEXT("세 병종 생산 인구수 합산"));
+		for (const auto& Unit : Controller->Production->GetLastProducedBatch())
+		{
+			Unit->Orders->SetComponentTickEnabled(false);
+			Unit->BasicAttack->StopAttack();
+		}
+		Check(State->GetCurrentPopulation() == 9, TEXT("세 병종 생산 인구수 합산"));
 		Controller->ApplySelection({});
 		Controller->ApplySelection({Castle});
 		Check(Controller->Production->GetRemainingCooldown(ELSTroopType::Spearman) > 9,
 		      TEXT("선택 해제·재선택으로 쿨타임 초기화 불가"));
 		Spear->FindComponentByClass<ULSHealthComponent>()->ApplyDamage(
 		    ULSHealthComponent::MakeDamageRequest(10000, EnemyCastle, EnemyCastle));
-		Check(State->GetCurrentPopulation() == 5, TEXT("병력 사망 시 인구수 반환"));
+		Check(State->GetCurrentPopulation() == 8, TEXT("병력 사망 시 인구수 반환"));
 		Spear->Destroy();
-		Check(State->GetCurrentPopulation() == 5, TEXT("시체 제거로 인구수 중복 반환 방지"));
+		Check(State->GetCurrentPopulation() == 8, TEXT("시체 제거로 인구수 중복 반환 방지"));
 		Blocker->SetBoxExtent(FVector(6000, 6000, 2000));
 		Controller->ConsoleCommand(TEXT("HighResShot 1600x900"));
 		Stage = 1;
@@ -164,11 +177,15 @@ void ALSHMHProductionProbe::Tick(float DeltaSeconds)
 	{
 		Check(Controller->Production->GetRemainingCooldown(ELSTroopType::Spearman) == 0,
 		      TEXT("10초 경과 후 쿨타임 해제"));
+		ALSTroopUnit* LastProduced = Controller->Production->GetLastProducedUnit();
 		Check(Controller->Production->Produce(ELSTroopType::Spearman) == ELSProductionResult::NoSpace,
 		      TEXT("탐색 범위 전체가 막힌 경우 생산 거부"));
-		Check(State->GetCurrentPopulation() == 5 &&
+		Check(State->GetCurrentPopulation() == 8 &&
 		          Controller->Production->GetRemainingCooldown(ELSTroopType::Spearman) == 0,
 		      TEXT("공간 부족 시 인구수·쿨타임 보존"));
+		Check(Controller->Production->GetLastProducedUnit() == LastProduced &&
+		          Controller->Production->GetSelectedProducer() == Castle,
+		      TEXT("공간 부족 시 마지막 생산 병력·선택 생산자 보존"));
 		Blocker->GetOwner()->Destroy();
 		Check(Controller->Production->Produce(ELSTroopType::Spearman) == ELSProductionResult::Ready,
 		      TEXT("공간 확보 후 즉시 재생산"));

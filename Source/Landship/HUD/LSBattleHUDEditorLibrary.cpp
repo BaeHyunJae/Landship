@@ -6,6 +6,7 @@
 #include "WidgetBlueprint.h"
 #include "WidgetBlueprintFactory.h"
 #include "Blueprint/WidgetTree.h"
+#include "Animation/WidgetAnimation.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -65,15 +66,31 @@ UCanvasPanel* Panel(UWidgetTree* Tree, UCanvasPanel* Root, const TCHAR* Name, FV
 
 bool ULSBattleHUDEditorLibrary::CreateBattleHUDAsset()
 {
+	return BuildBattleHUDAsset(false);
+}
+
+bool ULSBattleHUDEditorLibrary::RebuildBattleHUDAsset()
+{
+	return BuildBattleHUDAsset(true);
+}
+
+bool ULSBattleHUDEditorLibrary::BuildBattleHUDAsset(bool bRebuild)
+{
 #if WITH_EDITOR
 	const TCHAR* PackageName = TEXT("/Game/Landship/HUD/UI/WBP_BattleHUD");
-	if (LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Landship/HUD/UI/WBP_BattleHUD.WBP_BattleHUD")))
+	auto* BP = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Landship/HUD/UI/WBP_BattleHUD.WBP_BattleHUD"));
+	if (BP && !bRebuild)
 		return true;
-	auto* Factory = NewObject<UWidgetBlueprintFactory>();
-	Factory->ParentClass = ULSBattleHUDWidget::StaticClass();
-	auto* BP = Cast<UWidgetBlueprint>(Factory->FactoryCreateNew(UWidgetBlueprint::StaticClass(),
-	                                                            CreatePackage(PackageName), TEXT("WBP_BattleHUD"),
-	                                                            RF_Public | RF_Standalone, nullptr, GWarn));
+	const bool bNewAsset = BP == nullptr;
+	if (BP)
+		BP->WidgetTree = NewObject<UWidgetTree>(BP, NAME_None, RF_Transactional);
+	else
+	{
+		auto* Factory = NewObject<UWidgetBlueprintFactory>();
+		Factory->ParentClass = ULSBattleHUDWidget::StaticClass();
+		BP = Cast<UWidgetBlueprint>(Factory->FactoryCreateNew(UWidgetBlueprint::StaticClass(),
+		    CreatePackage(PackageName), TEXT("WBP_BattleHUD"), RF_Public | RF_Standalone, nullptr, GWarn));
+	}
 	if (!BP)
 		return false;
 	UWidgetTree* Tree = BP->WidgetTree;
@@ -82,6 +99,28 @@ bool ULSBattleHUDEditorLibrary::CreateBattleHUDAsset()
 	auto* Root = Tree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
 	Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	Tree->RootWidget = Root;
+	auto* CastleStatus = Panel(Tree, Root, TEXT("CastleStatusPanel"), FVector2D(420, 154));
+	Place(CastleStatus, Label(Tree, TEXT("CastleHealthText"), TEXT("이동 성"), 16),
+	      FVector2D(12, 10), FVector2D(396, 24));
+	auto* Health = Tree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("CastleHealthProgress"));
+	Health->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Health->SetFillColorAndOpacity(FLinearColor(0.25f, 0.82f, 0.5f));
+	Place(CastleStatus, Health, FVector2D(12, 39), FVector2D(396, 10));
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const float X = 12 + Index * 134;
+		Place(CastleStatus, Label(Tree, *FString::Printf(TEXT("CastleWeaponTitle%d"), Index), TEXT(""), 13),
+		      FVector2D(X, 62), FVector2D(128, 22));
+		Place(CastleStatus, Label(Tree, *FString::Printf(TEXT("CastleWeaponState%d"), Index), TEXT(""), 11),
+		      FVector2D(X, 88), FVector2D(128, 22));
+		auto* Bar = Tree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(),
+		    FName(*FString::Printf(TEXT("CastleWeaponProgress%d"), Index)));
+		Bar->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Bar->SetFillColorAndOpacity(FLinearColor(0.2f, 0.7f, 0.9f));
+		Place(CastleStatus, Bar, FVector2D(X, 116), FVector2D(128, 5));
+	}
+	Place(CastleStatus, Label(Tree, TEXT("CastleWeaponHint"), TEXT("Q/W/E 조준 · 전장 좌클릭 발사 · 우클릭/Esc 취소"), 10),
+	      FVector2D(12, 130), FVector2D(396, 18));
 	auto* Info = Panel(Tree, Root, TEXT("InfoPanel"), FVector2D(340, 125));
 	Place(Info, Label(Tree, TEXT("SelectionText"), TEXT("대상을 선택하세요")), FVector2D(12, 8), FVector2D(316, 78));
 	auto* Failure = Label(Tree, TEXT("FailureText"), TEXT(""), 11);
@@ -128,10 +167,30 @@ bool ULSBattleHUDEditorLibrary::CreateBattleHUDAsset()
 	CaptionSlot->SetAlignment(FVector2D(0.5f, 0));
 	CaptionSlot->SetPosition(FVector2D(0, 40));
 	CaptionSlot->SetSize(FVector2D(300, 60));
+	// 기존 WBP는 GUID 지도가 있어 컴파일러가 새 위젯의 GUID를 자동으로 만들지 않는다.
+	TSet<FName> VariableNames;
+	BP->ForEachSourceWidget([BP, &VariableNames](UWidget* Widget)
+	{
+		VariableNames.Add(Widget->GetFName());
+		if (!BP->WidgetVariableNameToGuidMap.Contains(Widget->GetFName()))
+			BP->OnVariableAdded(Widget->GetFName());
+	});
+	for (UWidgetAnimation* Animation : BP->Animations)
+		if (Animation)
+		{
+			VariableNames.Add(Animation->GetFName());
+			if (!BP->WidgetVariableNameToGuidMap.Contains(Animation->GetFName()))
+				BP->OnVariableAdded(Animation->GetFName());
+		}
+	TArray<FName> PreviousNames;
+	BP->WidgetVariableNameToGuidMap.GetKeys(PreviousNames);
+	for (const FName Name : PreviousNames)
+		if (!VariableNames.Contains(Name))
+			BP->OnVariableRemoved(Name);
 	FKismetEditorUtilities::CompileBlueprint(BP);
 	if (BP->Status == BS_Error)
 		return false;
-	FAssetRegistryModule::AssetCreated(BP);
+	if (bNewAsset) FAssetRegistryModule::AssetCreated(BP);
 	BP->MarkPackageDirty();
 	FSavePackageArgs Args;
 	Args.TopLevelFlags = RF_Public | RF_Standalone;

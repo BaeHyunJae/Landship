@@ -19,7 +19,7 @@
 
 - 준비 단계의 PlaceUnit·ResetFormation·MoveCastle·SelectWeapon은 진영 인자를 받으며 생략하면 기존 아군 동작이다. 적은 아군 예산·인구를 소비하지 않는다. 배치 식별자는 아군 양수·적 음수·선택 없음 0이며 MoveUnit·RemoveUnit은 ID로 진영을 결정한다. 재도전은 양측 수정 편성을 유지한다.
 - `SetPreparationLimits`는 이미 사용한 비용·인구보다 작거나 유효 범위 밖인 요청을 거부한다. 변경 성공 때만 예산·상한·알림을 확정한다.
-- `FLSAutoBattlePresetStore`는 ADR-0005의 JSON 형식을 `Saved/AutoBattlePresets`에서 관리한다. 이름은 공백을 포함한 문자·숫자·밑줄·하이픈으로 제한하며 경로 입력을 거부한다. 새 저장은 기존 이름을 덮어쓰지 않고 명시적인 교체만 허용한다. 임시 파일 작성 후 파일 교체를 확정하고 실패하면 임시 파일을 정리한다.
+- `FLSAutoBattlePresetStore`는 ADR-0020의 JSON 형식을 `Saved/AutoBattlePresets`에서 관리한다. 이름은 공백을 포함한 문자·숫자·밑줄·하이픈으로 제한하며 경로 입력을 거부한다. 새 저장은 기존 이름을 덮어쓰지 않고 명시적인 교체만 허용한다. 임시 파일 작성 후 파일 교체를 확정하고 실패하면 임시 파일을 정리한다.
 - `GetPreset`은 양측 준비 편성과 경제·성·무장을 복사한다. `ApplyPreset`은 준비 중 형식·현재 전장·NavMesh·장애물·겹침을 검사한 후 새 액터 전부가 생성된 경우에만 이전 액터와 교체한다. 실패하면 기존 편성과 액터를 유지한다. 성공은 BattleId 갱신과 OnChanged로 알리고 ID를 새로 부여한다. 저장·불러오기는 준비 단계에서만 가능하다.
 
 ### 에디터 적 편성 도구
@@ -60,3 +60,7 @@
 ## 공용 테스트 맵
 
 해당 없음.
+
+### TABS와 실제 전장 성의 경계
+
+- TABS 편성은 `ALSAutoBattleCastle`을 생성한다. 이동 시험용 `ALSMobileCastle`의 몸체를 재사용하되 자동 전투 무장은 Match의 파생 클래스만 소유한다. 실제 전장의 `ALSCastle`과 전장 설정 검증은 변경하지 않는다.

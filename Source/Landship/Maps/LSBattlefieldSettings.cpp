@@ -63,12 +63,20 @@ bool ALSBattlefieldSettings::HasValidSettings() const
 
 TArray<AActor*> ALSBattlefieldSettings::FindUnconfiguredParticipants() const
 {
+	return FindUnconfiguredParticipants(false);
+}
+
+TArray<AActor*> ALSBattlefieldSettings::FindUnconfiguredParticipants(bool bIncludeInactiveLevels) const
+{
 	TArray<AActor*> Missing;
 	if (!GetWorld())
 	{
 		return Missing;
 	}
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	// 런타임 경고는 활성 레벨만, 저작 데이터 검증은 아직 비활성인 레벨까지 검사한다.
+	const EActorIteratorFlags Flags = bIncludeInactiveLevels ? EActorIteratorFlags::SkipPendingKill
+		: EActorIteratorFlags::SkipPendingKill | EActorIteratorFlags::OnlyActiveLevels;
+	for (TActorIterator<AActor> It(GetWorld(), AActor::StaticClass(), Flags); It; ++It)
 	{
 		const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(*It);
 		bool bNeedsParticipant = Faction && Faction->GetFaction() == ELSFaction::Enemy;
@@ -146,14 +154,22 @@ EDataValidationResult ALSBattlefieldSettings::IsDataValid(FDataValidationContext
 {
 	const EDataValidationResult BaseResult = Super::IsDataValid(Context);
 	bool bInvalid = BaseResult == EDataValidationResult::Invalid;
-	const TArray<AActor*> MissingParticipants = FindUnconfiguredParticipants();
+	const TArray<AActor*> MissingParticipants = FindUnconfiguredParticipants(true);
 	for (const AActor* Missing : MissingParticipants)
 	{
 		Context.AddError(FText::FromString(
 			FString::Printf(TEXT("시야 참여 설정이 없는 적 또는 장애물: %s"), *Missing->GetPathName())));
 		bInvalid = true;
 	}
-	if (GetWorld() && Find(GetWorld()) != this)
+	int32 SettingsCount = 0;
+	if (GetWorld())
+	{
+		for (TActorIterator<ALSBattlefieldSettings> It(GetWorld(), StaticClass(), EActorIteratorFlags::SkipPendingKill); It; ++It)
+		{
+			++SettingsCount;
+		}
+	}
+	if (GetWorld() && (SettingsCount != 1 || !HasValidSettings()))
 	{
 		Context.AddError(FText::FromString(TEXT("전장 설정은 월드에 유효한 인스턴스 하나만 있어야 합니다.")));
 		bInvalid = true;

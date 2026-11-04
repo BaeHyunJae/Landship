@@ -1,7 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Castle/LSMobileCastle.h"
 #include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSHealthComponent.h"
@@ -14,11 +14,15 @@
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "Engine/Level.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/WorldSettings.h"
 #include "Maps/LSBattlefieldSettings.h"
 #include "Match/LSGameMode.h"
 #include "Misc/AutomationTest.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "Tests/AutomationCommon.h"
 #include "UObject/UnrealType.h"
 #include "Vision/LSMinimapWidget.h"
@@ -71,7 +75,7 @@ bool FLSVisionNativeDeathContractTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	ALSMobileCastle* Mobile = World->SpawnActor<ALSMobileCastle>(FVector(0, 0, 300), FRotator::ZeroRotator);
+	ALSCastle* Mobile = LSCastleTestFixture::Spawn(World, FVector(0, 0, 300), FRotator::ZeroRotator);
 	UClass* CastleClass =
 		LoadClass<ALSCastle>(nullptr, TEXT("/Game/Developers/BHJ/CombatStats/BP_TestCastle.BP_TestCastle_C"));
 	if (!TestNotNull(TEXT("실제 성 BP"), CastleClass) || !TestNotNull(TEXT("실제 이동 성"), Mobile))
@@ -102,7 +106,7 @@ bool FLSVisionNativeDeathContractTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TestTrue(TEXT("명시적 전장 시야 활성화"), Vision->IsVisionEnabled());
-	FLSUnitStatRow MobileStats;
+	FLSCastleStatRow MobileStats;
 	FLSCastleStatRow CastleStats;
 	if (!TestTrue(TEXT("이동 성 수치 준비"), Mobile->TryGetStats(MobileStats)) ||
 		!TestTrue(TEXT("성 수치 준비"), Castle->TryGetStats(CastleStats)))
@@ -211,10 +215,27 @@ bool FLSVisionMapAuthoringContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("누락된 적 발견"), Missing.Contains(MissingEnemy));
 	TestTrue(TEXT("경로 장애물 채널 누락 발견"), Missing.Contains(Obstacle));
 	TestFalse(TEXT("설정된 적 제외"), Missing.Contains(ConfiguredEnemy));
+	const bool bOriginalLevelVisible = World->PersistentLevel->bIsVisible;
+	World->PersistentLevel->bIsVisible = false;
+	Missing = Settings->FindUnconfiguredParticipants();
+	TestTrue(TEXT("런타임 누락 경고는 비활성 레벨 제외"), Missing.IsEmpty());
+#if WITH_EDITOR
+	FDataValidationContext MissingInactiveValidation;
+	TestEqual(TEXT("저작 검증은 비활성 레벨의 누락 발견"), Settings->IsDataValid(MissingInactiveValidation), EDataValidationResult::Invalid);
+	TestEqual(TEXT("비활성 레벨의 적과 장애물 누락을 각각 보고"), MissingInactiveValidation.GetNumErrors(), 2u);
+#endif
+	World->PersistentLevel->bIsVisible = bOriginalLevelVisible;
 	AddContractParticipant(MissingEnemy);
 	AddContractParticipant(Obstacle);
 	TestTrue(TEXT("모든 역할 설정 후 누락 없음"), Settings->FindUnconfiguredParticipants().IsEmpty());
 	TestTrue(TEXT("단일 유효 설정 발견"), ALSBattlefieldSettings::Find(World) == Settings);
+#if WITH_EDITOR
+	World->PersistentLevel->bIsVisible = false;
+	FDataValidationContext InactiveValidation;
+	TestEqual(TEXT("비활성 레벨의 설정 데이터는 유효"), Settings->IsDataValid(InactiveValidation), EDataValidationResult::Valid);
+	TestNull(TEXT("실행용 Find는 비활성 레벨을 계속 제외"), ALSBattlefieldSettings::Find(World));
+	World->PersistentLevel->bIsVisible = bOriginalLevelVisible;
+#endif
 	const FVector2D OriginalMax = Settings->BoundsMax;
 	Settings->BoundsMax = Settings->BoundsMin;
 	TestNull(TEXT("크기 0 경계 거절"), ALSBattlefieldSettings::Find(World));
@@ -274,7 +295,7 @@ bool FLSVisionPauseContractTest::RunTest(const FString& Parameters)
 	}
 	UWorld* World = Fixture.GetTestWorld();
 	ALSBattlefieldSettings* Settings = World->SpawnActor<ALSBattlefieldSettings>();
-	ALSMobileCastle* Source = World->SpawnActor<ALSMobileCastle>();
+	ALSCastle* Source = LSCastleTestFixture::Spawn(World);
 	APlayerState* Pauser = World->SpawnActor<APlayerState>();
 	if (!Settings || !Source || !Pauser)
 	{

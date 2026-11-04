@@ -5,10 +5,12 @@
 
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSFactionInterface.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
 #include "TimerManager.h"
 #include "Combat/LSBasicAttackTuningSubsystem.h"
 #include "Obstacles/LSPathObstacle.h"
@@ -37,6 +39,46 @@ bool ULSBasicAttackComponent::ResetForPool()
 	bConfigured = false;
 	bHasPendingSettings = false;
 	bBattleActionsEnded = false;
+	return true;
+}
+
+bool ULSBasicAttackComponent::HasClearAttackPathFromLocation(const FVector& SourceLocation, const AActor* Target) const
+{
+	AActor* Source = GetOwner();
+	if (!bConfigured || !IsValid(Source) || Source->IsActorBeingDestroyed() || !IsValid(Target) ||
+		Target->IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown ||
+		Target->GetWorld() != GetWorld() || SourceLocation.ContainsNaN() || Target->GetActorLocation().ContainsNaN())
+		return false;
+	if (!ProjectileSettings.ProjectileClass)
+		return true;
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBasicAttackPosition), false, Source);
+	Query.bFindInitialOverlaps = true;
+	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, Source, nullptr);
+	FHitResult Hit;
+	while (GetWorld()->SweepSingleByChannel(Hit, SourceLocation, Target->GetActorLocation(), FQuat::Identity,
+		LSCollisionChannels::ObstacleProjectile, FCollisionShape::MakeSphere(ProjectileSettings.Radius), Query) &&
+		(Hit.bBlockingHit || Hit.bStartPenetrating))
+	{
+		AActor* Blocker = Hit.GetActor();
+		if (Blocker == Target)
+			return true;
+		const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Blocker);
+		const bool bCombatBody = IsValid(Blocker) && Faction && Blocker->FindComponentByClass<ULSHealthComponent>();
+		if (bCombatBody && (!LSFaction::IsValid(Faction->GetFaction()) ||
+			!ULSCombatTargetLibrary::IsCombatAlive(Blocker) ||
+			ULSHealthComponent::EvaluateDamagePolicy(Request, Blocker) != ELSApplyDamageStatus::Applied))
+		{
+			Query.AddIgnoredActor(Blocker);
+			continue;
+		}
+		if (Cast<APawn>(Blocker) && !(bCombatBody && Request.bHasSourceFaction &&
+			Request.SourceFaction == Faction->GetFaction()))
+		{
+			Query.AddIgnoredActor(Blocker);
+			continue;
+		}
+		return false;
+	}
 	return true;
 }
 
@@ -288,6 +330,11 @@ void ULSBasicAttackComponent::UpdateAttack()
 	Execution.Target = Target;
 	Execution.SourceLocation = GetOwner()->GetActorLocation();
 	Execution.TargetLocation = Target->GetActorLocation();
+	Execution.Direction = (Execution.TargetLocation - Execution.SourceLocation).GetSafeNormal();
+	Execution.TimestampSeconds = GetWorld()->GetTimeSeconds();
+	const FLSDamageRequest FrozenRequest = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), GetOwner());
+	Execution.bHasSourceFaction = FrozenRequest.bHasSourceFaction;
+	Execution.SourceFaction = FrozenRequest.SourceFaction;
 	Execution.bProjectile = ProjectileSettings.ProjectileClass != nullptr;
 	if (Execution.bProjectile)
 	{
@@ -307,7 +354,13 @@ void ULSBasicAttackComponent::UpdateAttack()
 	{
 		return;
 	}
-	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), GetOwner());
+	FLSDamageRequest Request = FrozenRequest;
+	Request.bHasAttackOrigin = true;
+	Request.AttackOrigin = Execution.SourceLocation;
+	Request.bHasImpactLocation = true;
+	Request.ImpactLocation = Execution.TargetLocation;
+	Request.bHasIncomingDirection = !Execution.Direction.IsNearlyZero();
+	Request.IncomingDirection = Execution.Direction;
 	const float AppliedDamage = Health->ApplyDamage(Request).AppliedDamage;
 	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
 	    !GetWorld()->bIsTearingDown && FMath::IsFinite(AppliedDamage) && AppliedDamage > 0.0f)
@@ -372,11 +425,15 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	{
 		return;
 	}
-	const FVector Origin = GetOwner()->GetActorLocation();
-	const FVector Direction = Target->GetActorLocation() - Origin;
+	const FVector Origin = Execution.SourceLocation;
+	const FVector Direction = Execution.Direction;
 	const FTransform Transform(Direction.Rotation(), Origin);
 	// 발사 후 공격자가 사망해도 진영과 피해량은 바뀌지 않는다.
-	const FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+	FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, GetOwner(), nullptr);
+	Request.bHasSourceFaction = Execution.bHasSourceFaction;
+	Request.SourceFaction = Execution.SourceFaction;
+	Request.bHasAttackOrigin = true;
+	Request.AttackOrigin = Origin;
 	const bool bUsePool = ProjectileSettings.bUsePool && ProjectileSettings.ProjectileClass &&
 	    ProjectileSettings.ProjectileClass->GetDefaultObject<ALSBasicProjectile>()->SupportsPooling();
 	ULSProjectilePoolSubsystem* Pool = bUsePool ? GetWorld()->GetSubsystem<ULSProjectilePoolSubsystem>() : nullptr;
@@ -389,6 +446,7 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	{
 		return;
 	}
+	Projectile->SetVisualStyle(ProjectileSettings.VisualStyle);
 	if (!Projectile->Launch(Request, Target, Direction, ProjectileSettings.Speed, ProjectileSettings.Radius,
 	                        ProjectileSettings.Lifetime, ProjectileSettings.Material))
 	{

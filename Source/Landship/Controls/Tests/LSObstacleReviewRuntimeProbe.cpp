@@ -2,7 +2,8 @@
 #include "Controls/LSOrderComponent.h"
 #include "Controls/LSPlayerController.h"
 #include "Troops/LSTroopUnit.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Maps/LSBattlefieldSettings.h"
 #include "Obstacles/LSMine.h"
@@ -149,7 +150,8 @@ void ALSObstacleReviewRuntimeProbe::Tick(float DeltaSeconds)
   else
   {
    WorkMine = Spawn<ALSMine>(FVector(0, -1800, 0));
-   Castle = Spawn<ALSMobileCastle>(FVector(-350, -1500, 142));
+   Castle = LSCastleTestFixture::Spawn(GetWorld(), FVector(-350, -1500, 142));
+   if (Castle.IsValid()) Owned.Add(Castle.Get());
    Source->SetActorLocation(FVector(-800, -1800, 88));
    if (WorkMine.IsValid()) { WorkMine->OnDestroyed.AddDynamic(this, &ThisClass::OnMineDestroyed); }
    if (Phase == 6)

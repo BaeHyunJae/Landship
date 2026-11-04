@@ -15,7 +15,7 @@
 #include "Controls/LSAutoBattleController.h"
 #include "Controls/LSFreeCameraPawn.h"
 #include "Controls/LSOrderComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Match/LSAutoBattleCastle.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -359,7 +359,7 @@ void ALSAutoBattleProbe::TickMatchup(float DeltaSeconds)
 		}
 		Check(MatchupEnemy.IsValid(), TEXT("상성 검사 적 배치"));
 		Check(Mode->StartBattle() == ELSAutoBattleRequest::Success, TEXT("실제 자동 전투 시작"));
-		for (ALSMobileCastle* Castle : {Mode->GetAllyCastle(), Mode->GetEnemyCastle()})
+		for (ALSAutoBattleCastle* Castle : {Mode->GetAllyCastle(), Mode->GetEnemyCastle()})
 		{
 			Castle->Weapons->Deactivate();
 			Castle->GetCharacterMovement()->DisableMovement();

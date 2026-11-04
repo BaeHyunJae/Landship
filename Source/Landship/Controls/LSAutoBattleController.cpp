@@ -2,7 +2,7 @@
 #include "Controls/LSFreeCameraPawn.h"
 #include "HUD/LSAutoBattleWidget.h"
 #include "Combat/LSCollisionChannels.h"
-#include "Castle/LSMobileCastle.h"
+#include "Match/LSAutoBattleCastle.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"

@@ -2,6 +2,7 @@
 #include "Enemies/LSOutpost.h"
 #include "Enemies/LSBattlefieldStateSubsystem.h"
 #include "Enemies/LSEnemyDecisionPolicy.h"
+#include "Maps/LSBattlefieldEncounterCoordinator.h"
 #include "Match/LSBattleOutcomePolicy.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
@@ -54,7 +55,19 @@ FString ULSEnemyBehaviorComponent::GetConfigurationError(bool bCheckPlacement, c
 		}
 	}
 	if (Role != ELSEnemyRole::Guard && Role != ELSEnemyRole::Assault) { return TEXT("Invalid enemy role"); }
-	if (bCheckPlacement && !IsStationary() && Role == ELSEnemyRole::Guard)
+	if (bStartRegionallyDormant && Role != ELSEnemyRole::Assault) { return TEXT("Regional dormancy requires Assault role"); }
+	if (GuardAnchor && (Role != ELSEnemyRole::Guard || GuardedOutpost || GuardAnchor->FindComponentByClass<ULSHealthComponent>() ||
+		GuardAnchor->GetWorld() != GetWorld() || !FMath::IsFinite(GuardAnchorRadius) || GuardAnchorRadius <= 0))
+	{
+		return TEXT("Guard anchor requires Guard role, no guarded outpost, same-world noncombat actor and positive radius");
+	}
+	if (bCheckPlacement && !IsStationary() && Role == ELSEnemyRole::Guard && GuardAnchor)
+	{
+		if (Placement.ContainsNaN() || GuardAnchor->GetActorLocation().ContainsNaN() ||
+			FVector::Dist2D(Placement, GuardAnchor->GetActorLocation()) > GuardAnchorRadius)
+			return TEXT("Guard initial placement must be inside its anchor radius");
+	}
+	if (bCheckPlacement && !IsStationary() && Role == ELSEnemyRole::Guard && !GuardAnchor)
 	{
 		if (!IsValid(GuardedOutpost) || GuardedOutpost->GetWorld() != GetWorld())
 		{
@@ -83,7 +96,9 @@ EDataValidationResult ULSEnemyBehaviorComponent::IsDataValid(FDataValidationCont
 	EDataValidationResult Result = Super::IsDataValid(Context);
 	const AActor* Owner = GetOwner();
 	const bool bCheckPlacement = Owner && !IsTemplate() && !Owner->IsTemplate();
-	const FString Error = GetConfigurationError(bCheckPlacement, Owner ? Owner->GetActorLocation() : FVector::ZeroVector);
+	FString Error = GetConfigurationError(bCheckPlacement, Owner ? Owner->GetActorLocation() : FVector::ZeroVector);
+	if (Error.IsEmpty() && bCheckPlacement && bStartRegionallyDormant)
+		Error = ALSBattlefieldEncounterCoordinator::GetDormantMembershipError(Owner);
 	if (!Error.IsEmpty())
 	{
 		Context.AddError(FText::FromString(FString::Printf(TEXT("%s: %s"), *GetPathName(), *Error)));
@@ -119,7 +134,29 @@ void ULSEnemyBehaviorComponent::BeginPlay()
 		Health->OnDamagedEvent.AddDynamic(this, &ThisClass::OnDamaged);
 		Health->OnDiedEvent.AddDynamic(this, &ThisClass::OnDamaged);
 	}
+	if (IsRegionallyDormant())
+	{
+		State = ELSEnemyState::RegionallyDormant;
+		StopMovement();
+		if (Attack.IsValid()) Attack->StopAttack();
+		const FString MembershipError = ALSBattlefieldEncounterCoordinator::GetDormantMembershipError(GetOwner());
+		if (!MembershipError.IsEmpty())
+		{
+			LastStopReason = MembershipError;
+			UE_LOG(LogTemp, Error, TEXT("%s"), *MembershipError);
+		}
+	}
 	if (LSBattleOutcome::AreActionsStopped(GetWorld())) EndBattleActions();
+}
+
+bool ULSEnemyBehaviorComponent::ActivateRegion()
+{
+	if (!IsRegionallyDormant() || Role != ELSEnemyRole::Assault || ShouldEndBattleActions() ||
+		State == ELSEnemyState::Dead || !ULSCombatTargetLibrary::IsCombatAlive(GetOwner())) return false;
+	bRegionActivated = true;
+	State = ELSEnemyState::WaitingForSetup;
+	NextDecision = 0;
+	return true;
 }
 
 bool ULSEnemyBehaviorComponent::ShouldEndBattleActions() const
@@ -184,7 +221,7 @@ AActor* ULSEnemyBehaviorComponent::GetTarget() const
 bool ULSEnemyBehaviorComponent::CanAttack() const
 {
 	const ALSOutpost* Outpost = Cast<ALSOutpost>(GetOwner());
-	return bConfigurationValid && State != ELSEnemyState::Ended && State != ELSEnemyState::Dead && Attack.IsValid() &&
+	return !IsRegionallyDormant() && bConfigurationValid && State != ELSEnemyState::Ended && State != ELSEnemyState::Dead && Attack.IsValid() &&
 	       Attack->IsConfigured() && (!Outpost || Outpost->IsArmed()) &&
 	       ULSCombatTargetLibrary::IsCombatAlive(GetOwner());
 }
@@ -214,6 +251,13 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 		State = ELSEnemyState::Dead;
 		StopMovement();
 		if (Attack.IsValid()) { Attack->StopAttack(); }
+		return;
+	}
+	if (IsRegionallyDormant())
+	{
+		State = ELSEnemyState::RegionallyDormant;
+		StopMovement();
+		if (Attack.IsValid()) Attack->StopAttack();
 		return;
 	}
 	if (!bConfigurationValid)
@@ -268,7 +312,8 @@ void ULSEnemyBehaviorComponent::TickComponent(float Delta, ELevelTick TickType,
 	const AActor* CurrentTarget = Target.Get();
 	const bool bTargetLost = CurrentTarget && !ULSCombatTargetLibrary::IsCombatAlive(CurrentTarget);
 	const bool bEnteredRange = CurrentTarget && Attack.IsValid() && !Attack->GetAttackTarget() &&
-		FVector::Dist(GetOwner()->GetActorLocation(), CurrentTarget->GetActorLocation()) <= Attack->GetAttackSettings().Range;
+		ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), CurrentTarget) <= Attack->GetAttackSettings().Range &&
+		Attack->HasClearAttackPathFromLocation(GetOwner()->GetActorLocation(), CurrentTarget);
 	const bool bTargetMoved = CurrentTarget &&
 		FVector::DistSquared(CurrentTarget->GetActorLocation(), LastDecisionTargetLocation) >= FMath::Square(RepathDistance);
 	if (GetWorld()->GetTimeSeconds() >= NextDecision || bTargetLost || bEnteredRange || bTargetMoved)
@@ -288,35 +333,47 @@ AActor* ULSEnemyBehaviorComponent::ResolveAttackTarget() const
 
 AActor* ULSEnemyBehaviorComponent::SelectTarget(float Radius, bool bRequirePath, FVector& OutGoal, const AActor* RequiredOpponent) const
 {
+	if (IsRegionallyDormant()) return nullptr;
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	TArray<FOverlapResult> Hits;
 	const FVector Here = GetOwner()->GetActorLocation();
+	float SourceRadius, SourceHeight;
+	GetOwner()->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
+	// 감지는 중심 반경을 유지하고 타격 후보만 양측 충돌 외곽까지 포함한다.
+	const FCollisionShape SearchShape = bRequirePath
+		? FCollisionShape::MakeSphere(FMath::Max(0.01f, Radius))
+		: FCollisionShape::MakeBox(FVector(Radius + SourceRadius + 1, Radius + SourceRadius + 1, Radius + SourceHeight + 1));
 	GetWorld()->OverlapMultiByObjectType(Hits, Here, FQuat::Identity, Objects,
-	    FCollisionShape::MakeSphere(FMath::Max(0.01f, Radius)),
+	    SearchShape,
 	    FCollisionQueryParams(SCENE_QUERY_STAT(LSEnemyTargets), false, GetOwner()));
 	AActor* Best = nullptr;
 	LSEnemyDecisionPolicy::FLSEnemyTargetScore BestScore;
 	FLSPlayerCastleState CastleState;
 	const ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
-	const AActor* StrategicCastle = bRequirePath && Role == ELSEnemyRole::Assault && Battlefield &&
-		Battlefield->TryGetPlayerCastleState(CastleState) ? CastleState.Castle.Get() : nullptr;
+	const bool bHasCastle = Battlefield && Battlefield->TryGetPlayerCastleState(CastleState);
+	const AActor* StrategicCastle = bRequirePath && Role == ELSEnemyRole::Assault && bHasCastle ? CastleState.Castle.Get() : nullptr;
+	TArray<AActor*> Candidates;
+	for (const FOverlapResult& Hit : Hits) { Candidates.AddUnique(Hit.GetActor()); }
+	// 큰 구형 캡슐의 지면 근처는 원통 외곽과 다르므로 물리 겹침 질의가 성을 놓칠 수 있다.
+	if (bHasCastle) { Candidates.AddUnique(CastleState.Castle.Get()); }
 	const FVector ProposedCenter = Here;
 	const FVector* ProvisionalCenter = bRequirePath && Role == ELSEnemyRole::Assault && !bEngagementLatched ? &ProposedCenter : nullptr;
-	for (const FOverlapResult& Hit : Hits)
+	for (AActor* Candidate : Candidates)
 	{
-		AActor* Candidate = Hit.GetActor();
 		if (bRequirePath && Candidate == StrategicCastle) { continue; }
 		if (RequiredOpponent && Candidate != RequiredOpponent) { continue; }
 		if (!ULSCombatTargetLibrary::CanAutoAttackTarget(GetOwner(), Candidate)) { continue; }
+		if (!bRequirePath && !Attack->HasClearAttackPathFromLocation(Here, Candidate)) { continue; }
 		const double Distance = FVector::DistSquared(Here, Candidate->GetActorLocation());
-		if (Distance > FMath::Square(static_cast<double>(Radius))) { continue; }
+		if (bRequirePath ? Distance > FMath::Square(static_cast<double>(Radius))
+			: ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Candidate) > Radius) { continue; }
 		FLSHealthSnapshot Snapshot;
 		const ULSHealthComponent* CandidateHealth = Candidate->FindComponentByClass<ULSHealthComponent>();
 		if (!CandidateHealth || !CandidateHealth->TryGetHealth(Snapshot)) { continue; }
 		FVector Goal = FVector::ZeroVector;
-		if (bRequirePath && !FindAttackPosition(Candidate->GetActorLocation(), Goal, ProvisionalCenter)) { continue; }
+		if (bRequirePath && !FindAttackPosition(Candidate->GetActorLocation(), Goal, ProvisionalCenter, Candidate)) { continue; }
 		const AActor* Current = Attack.IsValid() ? Attack->GetAttackTarget() : Target.Get();
 		const LSEnemyDecisionPolicy::FLSEnemyTargetScore Score{Snapshot.CurrentHealth, Distance, Candidate->GetUniqueID(), Candidate == Current};
 		if (!Best || LSEnemyDecisionPolicy::IsBetterTarget(Score, BestScore))
@@ -331,6 +388,12 @@ AActor* ULSEnemyBehaviorComponent::SelectTarget(float Radius, bool bRequirePath,
 
 bool ULSEnemyBehaviorComponent::GetMovementDomain(FVector& Center, float& Radius, const FVector* ProvisionalChaseCenter) const
 {
+	if (Role == ELSEnemyRole::Guard && IsValid(GuardAnchor))
+	{
+		Center = GuardAnchor->GetActorLocation();
+		Radius = GuardAnchorRadius;
+		return true;
+	}
 	if (Role == ELSEnemyRole::Guard && IsValid(GuardedOutpost))
 	{
 		Center = GuardedOutpost->GetActorLocation();
@@ -356,8 +419,10 @@ bool ULSEnemyBehaviorComponent::ResolvePath(const FVector& Desired, FVector& Out
 {
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const ANavigationData* NavData = Pawn && Nav
+		? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
 	FNavLocation Point;
-	if (!Pawn || !Nav || !Nav->ProjectPointToNavigation(Desired, Point, FVector(50, 50, 300))) { return false; }
+	if (!NavData || !Nav->ProjectPointToNavigation(Desired, Point, FVector(50, 50, 300), NavData)) { return false; }
 	FVector Center;
 	float Radius = 0;
 	const bool bDomain = bConstrain && GetMovementDomain(Center, Radius, ProvisionalChaseCenter);
@@ -388,8 +453,10 @@ bool ULSEnemyBehaviorComponent::GetNavigationOriginHeight(double& OutHeight) con
 {
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const ANavigationData* NavData = Pawn && Nav
+		? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
 	FNavLocation Projected;
-	if (!Pawn || !Nav || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), Projected, FVector(150, 150, 300)))
+	if (!NavData || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), Projected, FVector(150, 150, 300), NavData))
 	{
 		return false;
 	}
@@ -397,23 +464,36 @@ bool ULSEnemyBehaviorComponent::GetNavigationOriginHeight(double& OutHeight) con
 	return true;
 }
 
-bool ULSEnemyBehaviorComponent::FindAttackPosition(const FVector& OpponentLocation, FVector& OutGoal, const FVector* ProvisionalChaseCenter) const
+bool ULSEnemyBehaviorComponent::FindAttackPosition(const FVector& OpponentLocation, FVector& OutGoal, const FVector* ProvisionalChaseCenter, const AActor* Opponent) const
 {
-	if (!Attack.IsValid()) { return false; }
+	if (IsRegionallyDormant() || !Attack.IsValid()) { return false; }
 	const float Range = Attack->GetAttackSettings().Range;
 	const FVector Here = GetOwner()->GetActorLocation();
-	// 경로의 바닥 높이 대신 액터 원점 높이로 사거리를 검사한다.
+	// 저장된 지원 위치는 점으로 조사하고, 실제 표적은 공통 타격 판정과 같은 외곽 거리를 쓴다.
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	if (!Pawn) { return false; }
 	double Height = 0;
 	if (!GetNavigationOriginHeight(Height)) { return false; }
-	if (FVector::Dist(Here, OpponentLocation) <= Range && ResolvePath(Pawn->GetNavAgentLocation(), OutGoal, true, ProvisionalChaseCenter))
+	const auto AttackDistance = [&](const FVector& Location)
+	{
+		return Opponent ? ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), Opponent, Location)
+			: FVector::Dist(Location, OpponentLocation);
+	};
+	const auto CanAttackFrom = [&](const FVector& Location)
+	{
+		return AttackDistance(Location) <= Range && (!Opponent || Attack->HasClearAttackPathFromLocation(Location, Opponent));
+	};
+	float SourceRadius, SourceHeight, TargetRadius = 0, TargetHeight = 0;
+	GetOwner()->GetSimpleCollisionCylinder(SourceRadius, SourceHeight);
+	if (Opponent) { Opponent->GetSimpleCollisionCylinder(TargetRadius, TargetHeight); }
+	const FVector ApproachCenter = OpponentLocation - FVector(0, 0, Opponent ? TargetHeight : 0);
+	if (CanAttackFrom(Here) && ResolvePath(Pawn->GetNavAgentLocation(), OutGoal, true, ProvisionalChaseCenter))
 	{
 		return true;
 	}
 	FVector CenterGoal;
-	if (ResolvePath(OpponentLocation, CenterGoal, true, ProvisionalChaseCenter) &&
-		FVector::Dist(CenterGoal + FVector(0, 0, Height), OpponentLocation) <= Range)
+	if (ResolvePath(ApproachCenter, CenterGoal, true, ProvisionalChaseCenter) &&
+		CanAttackFrom(CenterGoal + FVector(0, 0, Height)))
 	{
 		// 이동 표적을 향해 계속 접근하고 실제 사거리 진입은 판단/타격 단계에서 확인한다.
 		OutGoal = CenterGoal;
@@ -430,7 +510,7 @@ bool ULSEnemyBehaviorComponent::FindAttackPosition(const FVector& OpponentLocati
 		{
 			const FVector Edge = Center + ToOpponent * FMath::Min(FMath::Max(0.0f, Radius - Inset), static_cast<float>(FVector::Dist2D(Center, OpponentLocation)));
 			FVector Goal;
-			if (ResolvePath(Edge, Goal, true, ProvisionalChaseCenter) && FVector::Dist(Goal + FVector(0, 0, Height), OpponentLocation) <= Range)
+			if (ResolvePath(Edge, Goal, true, ProvisionalChaseCenter) && CanAttackFrom(Goal + FVector(0, 0, Height)))
 			{
 				OutGoal = Goal;
 				return true;
@@ -441,9 +521,10 @@ bool ULSEnemyBehaviorComponent::FindAttackPosition(const FVector& OpponentLocati
 	{
 		const float Angle = Index == 0 ? 0.0f : ((Index % 2 ? 1.0f : -1.0f) * ((Index + 1) / 2) * 22.5f);
 		const FVector Direction = TowardOwner.IsNearlyZero() ? FVector::ForwardVector : TowardOwner;
-		const FVector Desired = OpponentLocation + Direction.RotateAngleAxis(Angle, FVector::UpVector) * (Range * 0.9f);
+		const float ApproachRadius = Range * 0.9f + (Opponent ? SourceRadius + TargetRadius : 0);
+		const FVector Desired = ApproachCenter + Direction.RotateAngleAxis(Angle, FVector::UpVector) * ApproachRadius;
 		FVector Goal;
-		if (ResolvePath(Desired, Goal, true, ProvisionalChaseCenter) && FVector::Dist(Goal + FVector(0, 0, Height), OpponentLocation) <= Range)
+		if (ResolvePath(Desired, Goal, true, ProvisionalChaseCenter) && CanAttackFrom(Goal + FVector(0, 0, Height)))
 		{
 			OutGoal = Goal;
 			return true;
@@ -452,7 +533,7 @@ bool ULSEnemyBehaviorComponent::FindAttackPosition(const FVector& OpponentLocati
 	return false;
 }
 
-bool ULSEnemyBehaviorComponent::Move(const FVector& Goal, const FVector* AttackPosition)
+bool ULSEnemyBehaviorComponent::Move(const FVector& Goal, const FVector* AttackPosition, const AActor* AttackTarget)
 {
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	if (ACharacter* Character = Cast<ACharacter>(Pawn))
@@ -468,11 +549,13 @@ bool ULSEnemyBehaviorComponent::Move(const FVector& Goal, const FVector* AttackP
 	float Acceptance = ArrivalTolerance;
 	if (AttackPosition && Pawn && Attack.IsValid())
 	{
-		// 이동 도착 판정의 여유까지 실제 3D 사거리 안에 들어와야 타격할 수 있다.
+		// 도착 오차를 더한 위치에서도 실제 타격 사거리를 벗어나지 않게 한다.
 		double Height = 0;
 		if (!GetNavigationOriginHeight(Height)) { return false; }
-		const double Vertical = FMath::Abs(Goal.Z + Height - AttackPosition->Z);
-		const double StandingDistance = FMath::Sqrt(FVector::DistSquared2D(Goal, *AttackPosition) + Vertical * Vertical);
+		const FVector StandingLocation = Goal + FVector(0, 0, Height);
+		const double StandingDistance = AttackTarget
+			? ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), AttackTarget, StandingLocation)
+			: FVector::Dist(StandingLocation, *AttackPosition);
 		const double RemainingRange = Attack->GetAttackSettings().Range - StandingDistance;
 		if (RemainingRange < 0) { return false; }
 		Acceptance = FMath::Min(Acceptance, static_cast<float>(FMath::Max(0.0, RemainingRange - 1.0)));
@@ -738,7 +821,7 @@ void ULSEnemyBehaviorComponent::March()
 		return;
 	}
 	FVector Goal;
-	if (!FindAttackPosition(Castle.Location, Goal))
+	if (!FindAttackPosition(Castle.Location, Goal, nullptr, Castle.Castle.Get()))
 	{
 		StopMovement();
 		State = ELSEnemyState::WaitingForPath;
@@ -771,15 +854,15 @@ void ULSEnemyBehaviorComponent::March()
 			RecoveryGoal = Goal;
 		}
 		// 실제 전략 공격 위치에 도착하면 짧은 경로의 목적을 달성한 것이다.
-		const bool bAtCastleAttackPosition = FVector::Dist(Here, Castle.Location) <= Attack->GetAttackSettings().Range &&
-			FVector::Dist2D(Here, Goal) <= ArrivalTolerance;
+		const bool bAtCastleAttackPosition = ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Castle.Castle.Get()) <= Attack->GetAttackSettings().Range &&
+			Attack->HasClearAttackPathFromLocation(Here, Castle.Castle.Get()) && FVector::Dist2D(Here, Goal) <= ArrivalTolerance;
 		if (LSEnemyDecisionPolicy::IsRecoveryComplete(RecoveryProgress, RecoveryAdvanceDistance, bAtCastleAttackPosition))
 		{
 			bRecovering = false;
 		}
 	}
 	State = bRecovering ? ELSEnemyState::MarchRecovery : ELSEnemyState::Marching;
-	Move(Goal, &Castle.Location);
+	Move(Goal, &Castle.Location, Castle.Castle.Get());
 }
 
 bool ULSEnemyBehaviorComponent::TryEngage(AActor* Candidate, FVector Goal, const AActor* StrategicCastle)
@@ -799,7 +882,7 @@ bool ULSEnemyBehaviorComponent::TryEngage(AActor* Candidate, FVector Goal, const
 		EngagementCenter = GetOwner()->GetActorLocation();
 		bEngagementLatched = true;
 		// 새 추적 기준점을 적용한 뒤 경로를 다시 검증한다.
-		if (!FindAttackPosition(Candidate->GetActorLocation(), Goal))
+		if (!FindAttackPosition(Candidate->GetActorLocation(), Goal, nullptr, Candidate))
 		{
 			bEngagementLatched = false;
 			EngagementCenter = PreviousCenter;
@@ -809,13 +892,13 @@ bool ULSEnemyBehaviorComponent::TryEngage(AActor* Candidate, FVector Goal, const
 	Target = Candidate;
 	State = ELSEnemyState::Engaging;
 	const FVector OpponentLocation = Candidate->GetActorLocation();
-	Move(Goal, &OpponentLocation);
+	Move(Goal, &OpponentLocation, Candidate);
 	return true;
 }
 
 void ULSEnemyBehaviorComponent::Decide()
 {
-	if (!Health.IsValid() || !Attack.IsValid()) { return; }
+	if (IsRegionallyDormant() || !Health.IsValid() || !Attack.IsValid()) { return; }
 	FLSHealthSnapshot Snapshot;
 	if (!Health->TryGetHealth(Snapshot) || !Attack->IsConfigured()) { return; }
 	if (ULSOrderComponent* Orders = GetOwner()->FindComponentByClass<ULSOrderComponent>(); Orders && Orders->IsComponentTickEnabled())
@@ -829,7 +912,7 @@ void ULSEnemyBehaviorComponent::Decide()
 		const ALSUnit* Unit = Cast<ALSUnit>(GetOwner());
 		if (!Unit || !Unit->TryGetStats(Stats)) { return; }
 		DetectionRadius = Stats.DetectionRange;
-		if (Role == ELSEnemyRole::Guard && (!IsValid(GuardedOutpost) || GuardedOutpost->GetWorld() != GetWorld()))
+		if (Role == ELSEnemyRole::Guard && !IsValid(GuardAnchor) && (!IsValid(GuardedOutpost) || GuardedOutpost->GetWorld() != GetWorld()))
 		{
 			State = ELSEnemyState::WaitingForSetup;
 			StopMovement();
@@ -955,7 +1038,7 @@ void ULSEnemyBehaviorComponent::Decide()
 
 void ULSEnemyBehaviorComponent::EmitSupport(AActor* Opponent, const FVector& OwnLocation, const FVector& OpponentLocation)
 {
-	if (State == ELSEnemyState::Ended || ShouldEndBattleActions() || !IsValid(Opponent)) { return; }
+	if (IsRegionallyDormant() || State == ELSEnemyState::Ended || ShouldEndBattleActions() || !IsValid(Opponent)) { return; }
 	FLSEnemySupportRequest Request;
 	Request.Requester = GetOwner();
 	Request.Opponent = Opponent;
@@ -972,7 +1055,7 @@ void ULSEnemyBehaviorComponent::EmitSupport(AActor* Opponent, const FVector& Own
 		ULSEnemyBehaviorComponent* Recipient = RecipientActor->FindComponentByClass<ULSEnemyBehaviorComponent>();
 		if (!Recipient || Recipient->IsStationary() || !IsSameFaction(RecipientActor)) { continue; }
 		MaximumAcceptanceRadius = FMath::Max(MaximumAcceptanceRadius, Recipient->SupportAcceptanceRadius);
-		if (Recipient->Role == ELSEnemyRole::Guard && Recipient->GuardedOutpost == GetOwner())
+		if (Recipient->Role == ELSEnemyRole::Guard && !Recipient->GuardAnchor && Recipient->GuardedOutpost == GetOwner())
 		{
 			Recipient->ReceiveSupport(Request);
 		}
@@ -999,7 +1082,7 @@ void ULSEnemyBehaviorComponent::EmitSupport(AActor* Opponent, const FVector& Own
 
 void ULSEnemyBehaviorComponent::ReceiveSupport(const FLSEnemySupportRequest& Request)
 {
-	if (State == ELSEnemyState::Ended || State == ELSEnemyState::Dead || ShouldEndBattleActions()) { return; }
+	if (IsRegionallyDormant() || State == ELSEnemyState::Ended || State == ELSEnemyState::Dead || ShouldEndBattleActions()) { return; }
 	if (Role == ELSEnemyRole::Assault)
 	{
 		FLSPlayerCastleState Castle;
@@ -1037,12 +1120,12 @@ bool ULSEnemyBehaviorComponent::SelectSupport()
 	for (int32 Index = 0; Index < Inbox.Num(); ++Index)
 	{
 		const FLSEnemySupportRequest& Request = Inbox[Index];
-		const bool bOwnOutpost = Role == ELSEnemyRole::Guard && Request.Requester.Get() == GuardedOutpost;
+		const bool bOwnOutpost = Role == ELSEnemyRole::Guard && !GuardAnchor && Request.Requester.Get() == GuardedOutpost;
 		if (bHasActiveSupport && !bOwnOutpost) { continue; }
 		FVector Goal;
 		if (!GetSupportGoal(Request, Goal)) { continue; }
 		const double Distance = FVector::DistSquared(GetOwner()->GetActorLocation(), Request.RequesterLocation);
-		const bool bBestOwn = Best != INDEX_NONE && Role == ELSEnemyRole::Guard && Inbox[Best].Requester.Get() == GuardedOutpost;
+		const bool bBestOwn = Best != INDEX_NONE && Role == ELSEnemyRole::Guard && !GuardAnchor && Inbox[Best].Requester.Get() == GuardedOutpost;
 		if (Best == INDEX_NONE || (bOwnOutpost && !bBestOwn) || (bOwnOutpost == bBestOwn && Distance < BestDistance))
 		{
 			Best = Index;

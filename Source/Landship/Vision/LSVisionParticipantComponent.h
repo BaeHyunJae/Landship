@@ -27,6 +27,9 @@ class LANDSHIP_API ULSVisionParticipantComponent : public UActorComponent
 	/** 성·병력의 기존 수치 초기화가 반경을 전달한다. 별도 기본 반경으로 대체하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Vision", meta = (DevelopmentOnly))
 	void SetSightRadius(float Radius);
+	/** 비활성 상태에서는 시야·마커·최초 발견에 참여하지 않는다. 활성화 시 현재 가시 상태를 기준으로 등록한다. */
+	void SetParticipationEnabled(bool bEnabled);
+	bool IsParticipationEnabled() const { return bParticipationEnabled; }
 	float GetSightRadius() const
 	{
 		return SightRadius;
@@ -48,6 +51,8 @@ class LANDSHIP_API ULSVisionParticipantComponent : public UActorComponent
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
   private:
+	void RegisterParticipation();
+	bool bParticipationEnabled = true;
 	float SightRadius = 0.0f;
 	bool bOriginalHidden = false;
 	bool bRegistered = false;

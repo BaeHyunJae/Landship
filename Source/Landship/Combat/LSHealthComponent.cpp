@@ -5,10 +5,30 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/DataValidation.h"
+#include "HAL/ThreadSafeCounter64.h"
+#include "TimerManager.h"
+
+namespace
+{
+int64 NextLSDamageReceiverId()
+{
+	static FThreadSafeCounter64 NextReceiverId;
+	return NextReceiverId.Increment();
+}
+}
 
 ULSHealthComponent::ULSHealthComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	DamageReceiverId = NextLSDamageReceiverId();
+}
+
+bool ULSHealthComponent::TryGetLastDamage(FLSDamageResult& OutDamage) const
+{
+	if (!bHasTakenDamage)
+		return false;
+	OutDamage = LastDamage;
+	return true;
 }
 
 bool ULSHealthComponent::ResetForPool()
@@ -21,6 +41,9 @@ bool ULSHealthComponent::ResetForPool()
 	PrepareDeathEvent.Unbind();
 	ActiveHealer.Reset();
 	HealingClaimSerial = 0;
+	LastDamage = FLSDamageResult();
+	bHasTakenDamage = false;
+	DamageReceiverId = NextLSDamageReceiverId();
 	Health = FLSHealthSnapshot();
 	InitializationState = ELSHealthInitializationState::NotAttempted;
 	InitializationFailureReason.Reset();
@@ -244,16 +267,58 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 		return {PolicyStatus, 0.0f};
 	}
 	const float AppliedDamage = FMath::Min(Request.DamageAmount, Health.CurrentHealth);
+	const float PreviousHealth = Health.CurrentHealth;
 	Health.CurrentHealth -= AppliedDamage;
 	Health.bIsDead = Health.CurrentHealth == 0.0f;
 	FLSDamageResult Damage;
 	Damage.RequestedDamage = Request.DamageAmount;
 	Damage.AppliedDamage = AppliedDamage;
 	Damage.CurrentHealth = Health.CurrentHealth;
+	Damage.PreviousHealth = PreviousHealth;
+	Damage.MaxHealth = Health.MaxHealth;
+	Damage.Receiver = Receiver;
+	Damage.bReceiverHiddenAtCommit = Receiver->IsHidden();
+	Damage.ReceiverId = DamageReceiverId;
+	Damage.TimestampSeconds = GetWorld()->GetTimeSeconds();
+	Damage.bHasSourceFaction = Request.bHasSourceFaction;
+	Damage.SourceFaction = Request.SourceFaction;
+	Damage.bHasAttackOrigin = Request.bHasAttackOrigin;
+	Damage.AttackOrigin = Request.AttackOrigin;
+	Damage.bHasImpactLocation = Request.bHasImpactLocation;
+	Damage.ImpactLocation = Request.ImpactLocation;
+	Damage.bHasIncomingDirection = Request.bHasIncomingDirection;
+	Damage.IncomingDirection = Request.IncomingDirection;
 	Damage.SourceActor = IsValid(Request.SourceActor) ? Request.SourceActor : nullptr;
 	Damage.DamageCauser = IsValid(Request.DamageCauser) ? Request.DamageCauser : nullptr;
+	if (!Damage.bHasSourceFaction && IsValid(Request.SourceActor))
+	{
+		if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Request.SourceActor))
+		{
+			Damage.bHasSourceFaction = true;
+			Damage.SourceFaction = Faction->GetFaction();
+		}
+	}
+	Damage.Source = Damage.SourceActor.Get();
+	Damage.Causer = Damage.DamageCauser.Get();
+	FLSDamageResult DeferredDamage = Damage;
+	DeferredDamage.SourceActor = nullptr;
+	DeferredDamage.DamageCauser = nullptr;
+	LastDamage = DeferredDamage;
+	bHasTakenDamage = true;
+	// 액터에 묶인 타이머는 사망 훅에서 제거될 수 있다. 기록과 약한 구독을 값으로 복사한다.
+	const FLSOnDamageCommitted CommittedListeners = OnDamageCommitted;
+	const TWeakObjectPtr<UWorld> DamageWorld = GetWorld();
+	const auto QueueCommitted = [DamageWorld, CommittedListeners, DeferredDamage]()
+	{
+		if (UWorld* World = DamageWorld.Get(); World && !World->bIsTearingDown)
+			World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([CommittedListeners, DeferredDamage]()
+			{
+				CommittedListeners.Broadcast(DeferredDamage);
+			}));
+	};
 	if (!Health.bIsDead)
 	{
+		QueueCommitted();
 		OnDamagedEvent.Broadcast(Damage);
 		return {ELSApplyDamageStatus::Applied, AppliedDamage};
 	}
@@ -261,6 +326,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	// 상태 확정과 필수 처리가 끝난 대상만 공개 사망 알림에서 관찰할 수 있다.
 	TWeakObjectPtr<AActor> WeakOwner(GetOwner());
 	PrepareDeathEvent.Execute();
+	QueueCommitted();
 	AActor* Owner = WeakOwner.Get();
 	// 필수 훅도 충돌 변경 콜백을 일으킨다. 그 안에서 끝난 수신자에게 공개 알림을 보내지 않는다.
 	if (!IsValid(this) || !IsValid(Owner) || Owner->IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)

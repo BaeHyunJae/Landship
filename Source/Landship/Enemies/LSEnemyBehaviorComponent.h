@@ -18,7 +18,7 @@ enum class ELSEnemyRole : uint8 { Guard, Assault };
 UENUM(BlueprintType)
 enum class ELSEnemyState : uint8
 {
-	WaitingForSetup, WaitingForPath, GuardIdle, Marching, MarchRecovery, Engaging, Supporting, Returning, ReturnBlocked, ReenteringDomain, Ended, Dead
+	WaitingForSetup, WaitingForPath, GuardIdle, Marching, MarchRecovery, Engaging, Supporting, Returning, ReturnBlocked, ReenteringDomain, Ended, Dead, RegionallyDormant
 };
 
 /** 적 전용 저작 클래스에서만 추가한다. 명령 큐와 이동 제어권을 공유하지 않는다. */
@@ -34,6 +34,17 @@ public:
 	ELSEnemyRole Role = ELSEnemyRole::Guard;
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy")
 	TObjectPtr<ALSOutpost> GuardedOutpost;
+	/** 켜진 Assault는 지역 조정자가 활성화하기 전까지 이동·감지·공격·지원에 참여하지 않는다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy")
+	bool bStartRegionallyDormant = false;
+	/** 지정하면 거점 대신 이 비전투 액터의 원형 구역을 지킨다. 초기 위치로 복귀한다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy")
+	TObjectPtr<AActor> GuardAnchor;
+	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Landship|Enemy", meta = (ClampMin = "1"))
+	float GuardAnchorRadius = 3000.0f;
+	bool IsRegionallyDormant() const { return bStartRegionallyDormant && !bRegionActivated; }
+	/** 생존·준비 완료·전투 진행 중일 때만 휴면을 해제한다. 판단은 다음 행동 틱에 수행한다. */
+	bool ActivateRegion();
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Enemy", meta = (ClampMin = "0.01"))
 	float DecisionInterval = 0.1f;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Enemy", meta = (ClampMin = "0"))
@@ -101,9 +112,9 @@ private:
 	bool IsStationary() const;
 	bool GetMovementDomain(FVector& Center, float& Radius, const FVector* ProvisionalChaseCenter = nullptr) const;
 	bool ResolvePath(const FVector& Desired, FVector& OutGoal, bool bConstrain = true, const FVector* ProvisionalChaseCenter = nullptr) const;
-	bool FindAttackPosition(const FVector& OpponentLocation, FVector& OutGoal, const FVector* ProvisionalChaseCenter = nullptr) const;
+	bool FindAttackPosition(const FVector& OpponentLocation, FVector& OutGoal, const FVector* ProvisionalChaseCenter = nullptr, const AActor* Opponent = nullptr) const;
 	bool GetNavigationOriginHeight(double& OutHeight) const;
-	bool Move(const FVector& Goal, const FVector* AttackPosition = nullptr);
+	bool Move(const FVector& Goal, const FVector* AttackPosition = nullptr, const AActor* AttackTarget = nullptr);
 	uint32 GetRouteConditions(const FVector& Goal) const;
 	void RecordMovementFailure();
 	void StopMovement();
@@ -148,6 +159,7 @@ private:
 	TMap<FIntVector, uint32> FailedReturnConditions;
 	double NextMoveAttempt = 0;
 	FAIRequestID MovementRequestId = FAIRequestID::InvalidRequest;
+	bool bRegionActivated = false;
 	bool bMovementFailed = false;
 	bool bMovementFailedBeforeReentry = false;
 	bool bConfigurationValid = true;

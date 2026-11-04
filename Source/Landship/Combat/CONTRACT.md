@@ -22,12 +22,19 @@
 - 사거리는 양측 충돌 원통 외곽 사이의 거리다(`ULSCombatTargetLibrary::GetAttackDistance`). 첫 공격은 준비되면 즉시 적용하고 이후 실제 간격을 지킨다. 중단·대상 변경·설정 변경으로 쿨타임을 우회하지 않는다. 긴 프레임에서 밀린 공격을 몰아 적용하지 않으며, 프레임보다 빠른 공격 빈도는 보장하지 않는다.
 - `OnAttackPerformed(Target, AppliedDamage)`는 실제 감소량이 양수이고 공격자 수명이 유효할 때 공격자 측 연출용으로 발생한다. 투사체 공격에서는 발사가 아니라 명중 뒤에 발생하며 `Target`은 실제 피해를 받은 대상으로, 같은 진영이나 최초 지정 목표 외의 적도 포함한다. 공통 피격·사망 알림을 대신하지 않는다. `OnProjectileLaunched(Projectile)`는 투사체 발사 직후 발생한다.
 - `ULSBasicAttackTuningSubsystem::TryGetBasicAttackSpeedMultiplier(float&)`는 플레이 시작 때 확정한 배율을 반환한다. 배율의 원본은 프로젝트 설정 '기본 공격 속도 배율'(`ULSCombatDeveloperSettings`)이며 유한한 양수만 쓴다. 플레이 중에 바꾼 값은 다음 플레이부터 반영한다. 플레이 중에 생성한 병력·적·거점도 같은 월드의 배율을 쓴다.
-- `ALSBasicProjectile::Launch(...)`는 발사 시 목표의 생존 여부를 검사하지만 비행 중에는 목표를 고정하지 않는다. 이전 위치에서 다음 위치까지 구체로 `Unit`·`Building`을 스윕해 처음 만난 살아 있고 진영이 유효한 전투 대상 한 곳에 명중한다. 최초 목표 외의 적도 사격을 가로막으며, 같은 진영은 오폭 허용 시 명중하고 금지 시 통과한다. 발사자·시체·지형·장식물은 통과하고 중력은 없다. 목표가 이동·제거되어도 계속 직진하며 명중하거나 수명이 끝나면 제거된다.
-- `ALSBasicProjectile::LaunchInDirection(...)`는 발리스타의 방향 사격이며 같은 경로 명중 규칙을 사용한다. `LaunchFirstBlocking(...)`는 발사자를 제외하고 지형·같은 진영을 포함해 `LSObstacleProjectile`을 막는 첫 실제 몸체에서 멈추며, 그 대상의 피해는 공통 체력 정책이 결정한다.
+- `ALSBasicProjectile::Launch(...)`는 발사 시 목표의 생존 여부를 검사하지만 비행 중에는 목표를 고정하지 않는다. 이전 위치에서 다음 위치까지 구체로 검사해 첫 피해 허용 몸체와 첫 실제 지형 중 먼저 만난 곳에서 멈춘다. 전투 몸체는 `Unit`·`Building`에서 찾으며, 최초 목표 외의 적도 가로막는다. 같은 진영은 오폭 허용 시 명중하고 금지 시 통과한다. 실제 벽·지형은 `LSObstacleProjectile`의 Block 응답으로 막고, Ignore로 설정한 보조 표시·접촉 구는 통과한다. 발사자·시체는 통과하고 중력은 없다. 목표가 이동·제거되어도 계속 직진하며 명중하거나 수명이 끝나면 제거된다. 화살과 터렛 탄은 같은 규칙을 쓴다.
+- `ALSBasicProjectile::LaunchInDirection(...)`는 발리스타의 방향 사격이다. 발사자·시체와 피해 정책이 거부한 전투 몸체는 통과하며, 경로의 첫 피해 허용 전투 몸체와 `LSObstacleProjectile`을 막는 실제 지형 중 먼저 만난 곳에서 멈춘다. 투사체 반경·피해 정책·수명은 지정한 값을 유지한다. `LaunchFirstBlocking(...)`는 발사자를 제외하고 지형·같은 진영을 포함해 `LSObstacleProjectile`을 막는 첫 실제 몸체에서 멈추며, 그 대상의 피해는 공통 체력 정책이 결정한다.
 - `ULSHealthComponent::EvaluateDamagePolicy(Request, Receiver)`는 현재 오폭·자기 피해 설정만 판정하는 부작용 없는 C++ 함수다. `Applied`는 정책상 허용이라는 뜻이며 실제 피해·체력 준비·입력 유효성을 보장하지 않는다. 거부 시 `RejectedSelfDamageDisabled` 또는 `RejectedFriendlyFireDisabled`를 반환한다. 투사체의 통과 판정과 `ApplyDamage`가 이 규칙을 공유한다.
 - `bAllowFriendlyFire`와 `bAllowSelfDamage`의 기본값은 모두 true이며, 질의·피해 시점의 현재 값을 사용한다. 자기 피해는 오폭 설정과 독립적이다. `EnvironmentalHazard`는 같은 진영의 오폭 차단만 우회하며 자기 피해 설정은 유지한다.
 - 발사 시 진영과 피해량을 복사하고 공격자는 약한 참조로 보관하므로, 발사 뒤 공격자가 사라져도 비행과 피해 판정은 계속된다.
 - `OnDamageApplied(Target, AppliedDamage)`는 실제 감소량이 양수일 때 실제 피격 대상을 전달한다. 같은 진영이나 최초 지정 목표 외의 적도 포함하며 발사자의 생존 여부와 별개다.
+- `FLSProjectileAttackSettings::VisualStyle`은 `Arrow`, `TurretBolt`, `BallistaBolt` 중 시각 형태를 정한다. `ALSBasicProjectile::SetVisualStyle`은 Deferred 생성 중에만 적용한다. 형태는 충돌·속도·피해를 바꾸지 않으며 시각 메시를 내비게이션에 등록하지 않는다. `IsInFlight`, `GetFlightOrigin`, `GetFlightDirection`, `GetRemainingFlightTime`과 액터 위치로 실제 비행을 조회한다.
+- `FLSDamageRequest`의 `AttackOrigin`, `ImpactLocation`, `IncomingDirection`은 각각의 `bHas...`가 참일 때만 알려진 값이다. 공격 생산자는 실행·명중 시점의 실제 값을 복사한다. 체력 컴포넌트는 모르는 공격 원점을 현재 주체 위치나 월드 원점으로 대체하지 않는다.
+- `ULSHealthComponent::HasTakenDamage()`는 양수 피해가 확정된 뒤 참이다. 0 피해와 거부된 요청은 이 값을 바꾸거나 최근 기록을 만들지 않는다. `TryGetLastDamage`는 확정된 최근 피해를 복사하며 기록이 없으면 false를 반환하고 출력을 보존한다. 기록에는 이전·현재·최대 체력, 실제 감소량, 진영, 명시된 공격 기하, 월드 시각과 수신자의 약한 참조가 들어 있다.
+- `GetDamageReceiverId()`는 체력 컴포넌트별로 생성 시 부여하는 프로세스 안의 고유한 `int64` 키다. 저장 데이터 식별자가 아니며 액터가 제거된 뒤에도 `FLSDamageResult::ReceiverId`로 같은 피해 수신자의 기록을 연결할 수 있다.
+- `FLSDamageResult::bReceiverHiddenAtCommit`은 양수 피해가 확정됐을 때 수신 액터의 `IsHidden()` 값이다. 기본값은 false이며, 이후 액터가 보이거나 숨겨져도 기록을 바꾸지 않는다. 시야·연출 소비자는 이 값과 소비 시점의 시야 상태를 함께 판정한다.
+- 네이티브 `OnDamageCommitted(const FLSDamageResult&)`는 양수 피해를 치명 여부와 관계없이 다음 타이머 틱에 알린다. 같은 틱에 전달되는 기록 사이의 순서는 보장하지 않는다. 기존 비치명 `OnDamagedEvent`, 필수 `PrepareDeath`, 공개 `OnDiedEvent`의 순서를 유지하며 치명 기록은 필수 사망 훅이 반환한 뒤 큐에 넣는다. 기록과 확정 시점의 구독 목록을 복사하므로 공격자·피격 대상이 제거되어도 살아 있는 소비자는 기록을 받는다. 소비자는 `AddUObject` 또는 `AddWeakLambda`로 수명에 묶어 구독한다. `RemoveAll`을 호출해도 이미 복사한 구독 목록은 바뀌지 않으므로 살아 있는 소비자는 이미 확정한 기록을 받을 수 있다. 소비자는 콜백에서 자신의 종료 상태를 검사한다. 월드 종료는 남은 타이머를 종료한다.
+- 최근 기록과 `OnDamageCommitted`는 `Source`·`Causer`의 약한 참조만 보관한다. 기존 동기 알림과의 호환을 위한 `SourceActor`·`DamageCauser`는 지연 기록에서 비어 있다. 공격자·투사체 제거 후 연출은 보관한 진영과 기하를 사용한다.
 - `LSCollisionChannels`(`Combat/LSCollisionChannels.h`)와 `Config/DefaultEngine.ini`의 채널 번호는 함께 관리한다. 1~5는 Object 채널이며 기본 응답은 `LSProjectile`만 Ignore이고 나머지는 Block이다. 6~7은 Trace 채널이다.
   - `Unit`: `LSUnit`, GameTraceChannel1
   - `Building`: `LSBuilding`, GameTraceChannel2
@@ -46,6 +53,8 @@
 - 개발 콘솔 `ls.Pool.Snapshot`은 클래스별 활성·비활성·최고 활성 및 생성·재사용·획득·반환·제거 횟수를 기록한다. `ls.Pool.ResetCounters`는 객체·대여를 유지하면서 현재 활성 수를 기준으로 카운터를 다시 시작한다. 진단 명령과 기록은 Shipping에서 제외한다. 실행 방법은 [개인 화살 풀 점검 절차](../../../docs/procedures/Developers/HMH/projectile-pool.md)를 따른다.
 - 자동 전투의 편성 복원은 `ReleaseAll()`로 비행 중인 풀 화살도 반환한다. 외부 코드는 발사 알림의 화살 포인터를 영구적인 사격 ID로 사용하면 안 된다. 반환 뒤 같은 액터가 다른 발사자·진영의 화살로 재사용될 수 있다. 풀 반환은 `OnDestroyed`가 아니므로 명중 연출은 기존 `OnDamageApplied`를 사용한다.
 - `ULSBasicAttackComponent::OnAttackExecutedEvent`는 공격 확정 시점의 기록(`FLSAttackExecution`)을 한 번 전달한다. 근접은 피해 처리 직전(피해 0 포함), 투사체는 발사 성공 직후에 발생한다. 명중은 두 번째 실행이 아니다. 실제 피해를 보장하지 않으므로 소비자는 후속 작업만 큐에 넣고, 처리할 때 약한 참조와 전투 상태를 다시 검증한다.
+- `FLSAttackExecution`은 주체·목표의 약한 참조, 실행 위치·조준 위치·방향·시각과 주체 진영을 실행 시점에 고정한다. 위치는 이후 이동이나 제거에 따라 갱신되지 않는다.
+- `ULSBasicAttackComponent::HasClearAttackPathFromLocation(SourceLocation, Target)`는 후보 액터 중심에서 목표 액터 중심까지 발사 경로를 검사한다. 준비되지 않았거나 입력이 유효하지 않으면 false이며, 준비된 즉시 피해 공격은 유효한 입력에 true다. 투사체 공격은 설정한 충돌 반경으로 `LSObstacleProjectile`을 검사한다. 발사자는 제외하며 목표에 먼저 닿으면 경로가 열려 있다. 체력·진영을 가진 다른 몸체는 기존 `MakeDamageRequest`·`EvaluateDamagePolicy`와 전투 생존 판정을 사용한다. 준비되지 않았거나 죽은 몸체와 피해 정책이 거부한 몸체는 통과한다. 피해를 허용하는 Pawn이 아닌 시설은 경로를 막는다. 상대 `APawn`은 이동 계획의 장애물에서 제외하지만, 오폭을 허용하는 같은 진영 Pawn은 경로를 막는다. 체력·진영이 없는 다른 Pawn도 이동 계획에서 제외하며, Pawn이 아닌 실제 벽·지형은 경로를 막는다. 사거리·목표 자격·시야·쿨타임을 판정하거나 상태를 바꾸지 않는다. 실제 발사체는 이후의 모든 피해 허용 몸체에 명중할 수 있으므로 열린 경로가 명중을 보장하지 않는다.
 - `SetAttackTargetResolver(Resolver)`는 준비된 타격 직전에 대상을 새로 조회하게 한다. 콜백은 후보 조회만 하고 이동·공격·지원을 실행하지 않는다. 반환한 대상은 다시 검증하고, null이거나 유효하지 않으면 그 타격의 대기시간을 소비하지 않는다. `StopAttack()`은 바인딩을 유지하고 `EndPlay`가 해제한다. 바인딩하지 않은 컴포넌트의 기존 동작은 유지한다.
 - 자동 공격과 신규 공격 시작은 `ULSVisionSubsystem::PassesFriendlySight()`를 통과한 대상에만 한다.
 
@@ -66,3 +75,5 @@
 ## 공용 테스트 맵
 
 해당 없음.
+
+- 풀 반환 시 피격 이력을 비우고 피해 수신 식별자를 새로 부여한다. `OnDamageCommitted` 구독은 컴포넌트 수명 동안 유지하며, 지연된 피해 표시는 수신 식별자가 현재 생명과 일치할 때만 반영한다.

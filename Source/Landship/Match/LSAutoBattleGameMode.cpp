@@ -6,7 +6,7 @@
 #include "Controls/LSFreeCameraPawn.h"
 #include "Controls/LSOrderComponent.h"
 #include "Controls/LSSelectableComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Match/LSAutoBattleCastle.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Castle/LSCastleProjectile.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -199,7 +199,7 @@ void ALSAutoBattleGameMode::Freeze(ALSUnit* Unit)
 	Unit->Orders->SetComponentTickEnabled(false);
 	Unit->Selection->SetPlayerControlled(false);
 	Unit->BasicAttack->Deactivate();
-	if (ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Unit))
+	if (ALSAutoBattleCastle* Castle = Cast<ALSAutoBattleCastle>(Unit))
 	{
 		Castle->Weapons->Deactivate();
 	}
@@ -245,7 +245,7 @@ ALSUnit* ALSAutoBattleGameMode::SpawnUnit(FLSAutoBattlePlacement& Placement, ELS
 	return Unit;
 }
 
-ALSMobileCastle* ALSAutoBattleGameMode::SpawnCastle(const FVector& Ground, ELSFaction Faction,
+ALSAutoBattleCastle* ALSAutoBattleGameMode::SpawnCastle(const FVector& Ground, ELSFaction Faction,
                                                     bool bRestoreValidatedGround)
 {
 	FVector Projected;
@@ -254,8 +254,8 @@ ALSMobileCastle* ALSAutoBattleGameMode::SpawnCastle(const FVector& Ground, ELSFa
 		return nullptr;
 	}
 	const FTransform Transform(FRotator::ZeroRotator, Projected + FVector(0, 0, 144));
-	ALSMobileCastle* Castle = GetWorld()->SpawnActorDeferred<ALSMobileCastle>(
-	    ALSMobileCastle::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	ALSAutoBattleCastle* Castle = GetWorld()->SpawnActorDeferred<ALSAutoBattleCastle>(
+	    ALSAutoBattleCastle::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!Castle)
 	{
 		return nullptr;
@@ -514,7 +514,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::MoveCastle(const FVector& Ground, EL
 	{
 		return ELSAutoBattleRequest::WrongPhase;
 	}
-	ALSMobileCastle* EditingCastle = Faction == ELSFaction::Ally ? AllyCastle : EnemyCastle;
+	ALSAutoBattleCastle* EditingCastle = Faction == ELSFaction::Ally ? AllyCastle : EnemyCastle;
 	if (!IsValid(EditingCastle) || (Faction != ELSFaction::Ally && Faction != ELSFaction::Enemy))
 	{
 		return ELSAutoBattleRequest::InvalidTarget;
@@ -551,7 +551,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::SelectWeapon(ELSCastleWeapon Weapon,
 	{
 		return ELSAutoBattleRequest::WrongPhase;
 	}
-	ALSMobileCastle* EditingCastle = Faction == ELSFaction::Ally ? AllyCastle : EnemyCastle;
+	ALSAutoBattleCastle* EditingCastle = Faction == ELSFaction::Ally ? AllyCastle : EnemyCastle;
 	if ((Faction != ELSFaction::Ally && Faction != ELSFaction::Enemy) || !IsValid(EditingCastle))
 	{
 		return ELSAutoBattleRequest::Unavailable;
@@ -638,7 +638,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::StartBattle()
 		{
 			Unit->BasicAttack->Activate();
 		}
-		if (ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Unit))
+		if (ALSAutoBattleCastle* Castle = Cast<ALSAutoBattleCastle>(Unit))
 		{
 			Castle->Weapons->Activate();
 		}
@@ -753,7 +753,7 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 			Agent.NextRepath = 0;
 		Agent.Target = Target;
 	}
-	const bool bMelee = !bSupport && !Unit->IsA<ALSMobileCastle>() &&
+	const bool bMelee = !bSupport && !Unit->IsA<ALSAutoBattleCastle>() &&
 	    !Unit->BasicAttack->GetProjectileSettings().ProjectileClass;
 	FLSMeleeApproachResult MeleePlan;
 	if (bMelee && !Directive.bHoldPosition && !Directive.bSuppressBasicAttack)
@@ -795,7 +795,7 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 		}
 		return;
 	}
-	const ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Unit);
+	const ALSAutoBattleCastle* Castle = Cast<ALSAutoBattleCastle>(Unit);
 	FLSCastleWeaponSettings WeaponSettings;
 	if (Castle && !Castle->Weapons->GetResolvedSettings(Castle == AllyCastle ? SelectedWeapon : Scenario->EnemyWeapon,
 	                                                    WeaponSettings))
@@ -882,7 +882,7 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 	}
 }
 
-void ALSAutoBattleGameMode::FireCastle(ALSMobileCastle* Castle, ELSCastleWeapon Weapon,
+void ALSAutoBattleGameMode::FireCastle(ALSAutoBattleCastle* Castle, ELSCastleWeapon Weapon,
                                        const TArray<ALSUnit*>& Opponents)
 {
 	if (!ULSCombatTargetLibrary::IsCombatAlive(Castle) ||
@@ -995,7 +995,7 @@ void ALSAutoBattleGameMode::CollectOutcome(UWorld* World, ELevelTick TickType, f
 				}
 			}
 			Unit->EndBattleActions();
-			if (ALSMobileCastle* Castle = Cast<ALSMobileCastle>(Unit))
+			if (ALSAutoBattleCastle* Castle = Cast<ALSAutoBattleCastle>(Unit))
 			{
 				Castle->Weapons->EndBattleActions();
 			}
@@ -1196,8 +1196,8 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 	const auto OldUnits = Units;
 	const auto OldControllers = Controllers;
 	const int32 OldCount = Units.Num();
-	ALSMobileCastle* NewAlly = SpawnCastle(P.AllyCastle, ELSFaction::Ally);
-	ALSMobileCastle* NewEnemy = NewAlly ? SpawnCastle(P.EnemyCastle, ELSFaction::Enemy) : nullptr;
+	ALSAutoBattleCastle* NewAlly = SpawnCastle(P.AllyCastle, ELSFaction::Ally);
+	ALSAutoBattleCastle* NewEnemy = NewAlly ? SpawnCastle(P.EnemyCastle, ELSFaction::Enemy) : nullptr;
 	bool bSuccess = NewAlly && NewEnemy;
 	TMap<int32, TObjectPtr<ALSUnit>> NewActors;
 	int32 AllyId = 1, EnemyId = -1;

@@ -6,9 +6,11 @@
 
 class ALSEnemyTroop;
 class ALSEnemyOutpost;
-class ALSMobileCastle;
+class ALSCastle;
 class ALSBasicAttackTestActor;
+class ALSBasicProjectile;
 struct FLSDamageResult;
+struct FLSAttackExecution;
 
 /** 명시적인 실행 플래그가 있을 때만 실제 경로 실패와 복귀 중 전투를 관찰한다. */
 UCLASS()
@@ -26,7 +28,12 @@ private:
 	void Freeze(ALSEnemyTroop* Unit);
 	UFUNCTION()
 	void OnOpponentDamaged(const FLSDamageResult& Damage);
-	TWeakObjectPtr<ALSMobileCastle> Castle;
+	UFUNCTION()
+	void OnShotExecuted(const FLSAttackExecution& Execution);
+	UFUNCTION()
+	void OnShotProjectileLaunched(ALSBasicProjectile* Projectile);
+	void OnClearShotDamageCommitted(const FLSDamageResult& Damage);
+	TWeakObjectPtr<ALSCastle> Castle;
 	TWeakObjectPtr<ALSEnemyOutpost> Core;
 	TWeakObjectPtr<ALSEnemyTroop> Unit;
 	TWeakObjectPtr<ALSBasicAttackTestActor> Opponent;
@@ -34,6 +41,16 @@ private:
 	FString Case;
 	FVector Start = FVector::ZeroVector;
 	FVector Center = FVector::ZeroVector;
+	FVector LastShotSource = FVector::ZeroVector;
+	FVector LastShotTarget = FVector::ZeroVector;
+	TMap<TWeakObjectPtr<AActor>, int64> ProjectileExecutions;
+	TMap<int64, FVector> ShotOrigins;
+	int64 LastShotExecutionId = 0;
+	int64 DamagingExecutionId = 0;
+	float OpponentInitialHealth = 0;
+	float OwnCommittedDamage = 0;
+	int32 ObservedShotCallbacks = 0;
+	int32 OtherDamageRecords = 0;
 	double RetryDeadline = 0;
 	float Elapsed = 0;
 	float StageTime = 0;
@@ -42,9 +59,12 @@ private:
 	int32 Stage = 0;
 	int32 Failures = 0;
 	int32 Samples = 0;
+	int32 ClearShotLaunches = 0;
+	int32 BlockedShotLaunches = 0;
 	bool bDamagedDuringReturn = false;
 	bool bInvalidState = false;
 	bool bSupportObserved = false;
 	bool bResumedSupportMovement = false;
 	bool bObservedBandReentry = false;
+	bool bObservedAttackReposition = false;
 };

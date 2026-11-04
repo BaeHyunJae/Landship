@@ -5,7 +5,7 @@
 #include "Match/LSMeleeApproachPlanner.h"
 #include "LSAutoBattleGameMode.generated.h"
 
-class ALSMobileCastle;
+class ALSAutoBattleCastle;
 class AAIController;
 struct FLSAutoBattlePreset;
 
@@ -71,11 +71,11 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	{
 		return Scenario;
 	}
-	ALSMobileCastle* GetAllyCastle() const
+	ALSAutoBattleCastle* GetAllyCastle() const
 	{
 		return AllyCastle;
 	}
-	ALSMobileCastle* GetEnemyCastle() const
+	ALSAutoBattleCastle* GetEnemyCastle() const
 	{
 		return EnemyCastle;
 	}
@@ -133,14 +133,14 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	void InitializeScenario();
 	bool Rebuild(const TArray<FLSAutoBattlePlacement>& NewFormation, bool bRestoreValidatedGround);
 	ALSUnit* SpawnUnit(FLSAutoBattlePlacement& Placement, ELSFaction Faction, bool bRestoreValidatedGround = false);
-	ALSMobileCastle* SpawnCastle(const FVector& Ground, ELSFaction Faction, bool bRestoreValidatedGround = false);
+	ALSAutoBattleCastle* SpawnCastle(const FVector& Ground, ELSFaction Faction, bool bRestoreValidatedGround = false);
 	void Freeze(ALSUnit* Unit);
 	void DestroyBattle();
 	void ReleaseUnitActor(ALSUnit* Unit);
 	void ReleaseUnitController(AAIController* Controller);
 	void AutoTick();
 	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents, const TArray<ALSUnit*>& Allies);
-	void FireCastle(ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const TArray<ALSUnit*>& Opponents);
+	void FireCastle(ALSAutoBattleCastle* Castle, ELSCastleWeapon Weapon, const TArray<ALSUnit*>& Opponents);
 	void CollectOutcome(UWorld* World, ELevelTick TickType, float DeltaSeconds);
 	void OnActorSpawned(AActor* Actor);
 	void Fail(const FString& Reason);
@@ -149,9 +149,9 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	UPROPERTY(Transient)
 	TObjectPtr<ALSAutoBattleScenario> Scenario;
 	UPROPERTY(Transient)
-	TObjectPtr<ALSMobileCastle> AllyCastle;
+	TObjectPtr<ALSAutoBattleCastle> AllyCastle;
 	UPROPERTY(Transient)
-	TObjectPtr<ALSMobileCastle> EnemyCastle;
+	TObjectPtr<ALSAutoBattleCastle> EnemyCastle;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ALSUnit>> Units;
 	UPROPERTY(Transient)

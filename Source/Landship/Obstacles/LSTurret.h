@@ -2,6 +2,8 @@
 #include "Obstacles/LSPathObstacle.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "LSTurret.generated.h"
+class UMaterialInstanceDynamic;
+
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSTurret : public ALSPathObstacle
 {
@@ -11,10 +13,18 @@ class LANDSHIP_API ALSTurret : public ALSPathObstacle
 	virtual bool CanBeAutomaticallyAcquired() const override { return true; }
 	virtual FString GetConfigurationError() const override;
 	void StopObstacleActions();
+#if WITH_DEV_AUTOMATION_TESTS
+	friend struct FLSTurretCoverTestAccess;
+#endif
 
   protected:
 	virtual void BeginPlay() override;
 	virtual void PrepareForDeath() override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	void UpdateThreatVisual();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) TObjectPtr<UStaticMeshComponent> Barrel;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ThreatMaterial;
 	AActor* ResolveTarget();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) TObjectPtr<ULSBasicAttackComponent> BasicAttack;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret") FLSBasicAttackSettings AttackSettings;

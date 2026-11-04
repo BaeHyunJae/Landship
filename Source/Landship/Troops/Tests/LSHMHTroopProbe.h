@@ -4,7 +4,7 @@
 #include "LSHMHTroopProbe.generated.h"
 
 class ALSTroopUnit;
-class ALSMobileCastle;
+class ALSCastle;
 
 /** 전용 실행 옵션에서만 병종의 실제 이동·사거리·추적을 검사한다. */
 UCLASS(NotBlueprintable)
@@ -40,9 +40,9 @@ class ALSHMHTroopProbe : public AActor
 	UPROPERTY()
 	TArray<TObjectPtr<ALSTroopUnit>> Enemies;
 	UPROPERTY()
-	TObjectPtr<ALSMobileCastle> Castle;
+	TObjectPtr<ALSCastle> Castle;
 	UPROPERTY()
-	TObjectPtr<ALSMobileCastle> EnemyCastle;
+	TObjectPtr<ALSCastle> EnemyCastle;
 	float CastleDetour = 0;
 	bool bCastleRetargeted = false;
 	TArray<FVector> Starts;

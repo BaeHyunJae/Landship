@@ -1,6 +1,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Castle/Tests/LSWeaponStateObserver.h"
 #include "Combat/LSBasicProjectile.h"
@@ -49,7 +51,7 @@ bool FLSWeaponStateTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = TestWorld.GetTestWorld();
-	ALSMobileCastle* Castle = World->SpawnActor<ALSMobileCastle>();
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World);
 	ALSPlayerController* Controller = World->SpawnActor<ALSPlayerController>();
 	ALSWeaponStateObserver* Observer = World->SpawnActor<ALSWeaponStateObserver>();
 	ULSCastleWeaponData* Cannon = CopyData(World, TEXT("DA_Cannon"));
@@ -128,8 +130,8 @@ bool FLSWeaponProjectileLevelTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = TestWorld.GetTestWorld();
-	ALSMobileCastle* Castle = World->SpawnActor<ALSMobileCastle>(FVector(0, 0, 144), FRotator::ZeroRotator);
-	ALSMobileCastle* Enemy = World->SpawnActor<ALSMobileCastle>(FVector(600, 0, 144), FRotator::ZeroRotator);
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 144), FRotator::ZeroRotator);
+	ALSCastle* Enemy = LSCastleTestFixture::Spawn(World, FVector(600, 0, 144), FRotator::ZeroRotator);
 	Enemy->SetInitialFaction(ELSFaction::Enemy);
 	ULSCastleWeaponData* Data = CopyData(World, TEXT("DA_Ballista"));
 	if (!Data)
@@ -138,8 +140,8 @@ bool FLSWeaponProjectileLevelTest::RunTest(const FString& Parameters)
 	Castle->Weapons->SetWeaponDefinitions({Data});
 	if (!TestWorld.BeginPlayInTestWorld())
 		return false;
-	Castle->GetCharacterMovement()->SetComponentTickEnabled(false);
-	Enemy->GetCharacterMovement()->SetComponentTickEnabled(false);
+	Castle->GetMovementComponent()->SetComponentTickEnabled(false);
+	Enemy->GetMovementComponent()->SetComponentTickEnabled(false);
 	Castle->Weapons->CastWeapon(ELSCastleWeapon::Ballista, FVector(1800, 0, 0));
 	Castle->Weapons->UpgradeWeapon(ELSCastleWeapon::Ballista);
 	Castle->Weapons->SetWeaponEnabled(ELSCastleWeapon::Ballista, false);
@@ -167,7 +169,7 @@ bool FLSWeaponInvalidDataTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = TestWorld.GetTestWorld();
-	ALSMobileCastle* Castle = World->SpawnActor<ALSMobileCastle>();
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World);
 	ULSCastleWeaponData* Data = CopyData(World, TEXT("DA_Cannon"));
 	if (!Data)
 		return false;
@@ -205,23 +207,23 @@ bool FLSWeaponUpgradedAreaTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = TestWorld.GetTestWorld();
-	ALSMobileCastle* Castle = World->SpawnActor<ALSMobileCastle>();
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World);
 	ALSBasicAttackTestActor* Inside =
-	    World->SpawnActor<ALSBasicAttackTestActor>(FVector(1575, 0, 100), FRotator::ZeroRotator);
+	    World->SpawnActor<ALSBasicAttackTestActor>(FVector(1900, 0, 100), FRotator::ZeroRotator);
 	ALSBasicAttackTestActor* Outside =
-	    World->SpawnActor<ALSBasicAttackTestActor>(FVector(1625, 0, 100), FRotator::ZeroRotator);
+	    World->SpawnActor<ALSBasicAttackTestActor>(FVector(1950, 0, 100), FRotator::ZeroRotator);
 	Inside->SetInitialFaction(ELSFaction::Enemy);
 	Outside->SetInitialFaction(ELSFaction::Enemy);
 	if (!TestWorld.BeginPlayInTestWorld())
 		return false;
-	TestTrue(TEXT("1레벨 사거리 밖"), Castle->Weapons->ValidateAim(ELSCastleWeapon::Cannon, FVector(1300, 0, 0)) ==
+	TestTrue(TEXT("1레벨 사거리 밖"), Castle->Weapons->ValidateAim(ELSCastleWeapon::Cannon, FVector(1625, 0, 0)) ==
 	                                      ELSWeaponCastResult::OutOfRange);
 	Castle->Weapons->UpgradeWeapon(ELSCastleWeapon::Cannon);
 	TestEqual(TEXT("조준과 실행이 참조할 2레벨 반경"), Castle->Weapons->FindSettings(ELSCastleWeapon::Cannon)->Radius,
 	          300.0f);
 	TestTrue(TEXT("2레벨 사거리 적용"),
-	         Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, FVector(1300, 0, 0)) == ELSWeaponCastResult::Ready);
-	AdvanceProgression(World, 0.8f);
+	         Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon, FVector(1625, 0, 0)) == ELSWeaponCastResult::Ready);
+	AdvanceProgression(World, 1.1f);
 	TestEqual(TEXT("강화된 범위와 피해 적용"), ProgressionHealth(Inside), 20.0f);
 	TestEqual(TEXT("강화 범위 밖 대상 제외"), ProgressionHealth(Outside), 100.0f);
 	TestWorld.ForwardErrorMessages(this);

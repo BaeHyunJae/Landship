@@ -4,7 +4,10 @@
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Troops/LSTroopUnit.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Components/CapsuleComponent.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Controls/LSSelectableComponent.h"
@@ -20,8 +23,9 @@ bool FLSCombatSurfaceRangeTest::RunTest(const FString& Parameters)
 		return false;
 	UWorld* World = Fixture.GetTestWorld();
 	auto* Source = World->SpawnActor<ALSTroopUnit>(FVector(300, 0, 96), FRotator::ZeroRotator);
-	auto* Target = World->SpawnActor<ALSMobileCastle>(FVector(0, 0, 144), FRotator::ZeroRotator);
+	auto* Target = LSCastleTestFixture::Spawn(World, FVector(0, 0, 144), FRotator::ZeroRotator);
 	Target->SetInitialFaction(ELSFaction::Enemy);
+	Target->GetCapsuleComponent()->SetCapsuleSize(142, 142);
 	if (!Fixture.BeginPlayInTestWorld())
 		return false;
 	Source->Orders->SetComponentTickEnabled(false);
@@ -30,7 +34,7 @@ bool FLSCombatSurfaceRangeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("경계 검사용 사거리 고정"), Source->BasicAttack->ConfigureAttack(Settings));
 	Target->Orders->SetComponentTickEnabled(false);
 	Source->GetCharacterMovement()->SetComponentTickEnabled(false);
-	Target->GetCharacterMovement()->SetComponentTickEnabled(false);
+	Target->GetMovementComponent()->SetComponentTickEnabled(false);
 	TestTrue(TEXT("중심 거리는 사거리 밖"),
 	         FVector::Dist(Source->GetActorLocation(), Target->GetActorLocation()) > 150);
 	TestTrue(TEXT("외곽 간 거리는 사거리 안"), ULSCombatTargetLibrary::GetAttackDistance(Source, Target) < 150);
@@ -75,7 +79,7 @@ bool FLSCombatAvoidanceStateTest::RunTest(const FString& Parameters)
 		return false;
 	Target->Orders->SetComponentTickEnabled(false);
 	Source->GetCharacterMovement()->DisableMovement();
-	Target->GetCharacterMovement()->DisableMovement();
+	Target->GetMovementComponent()->Deactivate();
 	FLSOrder Hold;
 	Hold.Kind = ELSOrderKind::Hold;
 	TestTrue(TEXT("위치 사수 요청 접수"), Source->Orders->SubmitOrder(Hold));

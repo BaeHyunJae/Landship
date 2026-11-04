@@ -3,7 +3,7 @@
 ## 제공하는 것
 
 - 현재 표적의 사망·사거리 진입·`RepathDistance` 이상의 이동은 다음 행동 틱에 다시 판단하고, 이동 완료도 다음 판단을 앞당긴다. 이때에도 수비·진격·복귀 구역과 실패 경로 재시도 조건은 유지한다. 플레이어 명령 컴포넌트로 적 행동을 실행하지 않는다.
-- `ALSBattlefieldSetup`은 맵에서 플레이어 성(`PlayerCastle`)과 핵심 거점(`CoreOutpost`)을 명시적으로 지정한다. 맵에 하나만 배치한다. 성은 아군 진영·성 선택 분류·체력 컴포넌트 하나를 가져야 하고, 핵심 거점은 적 진영이며 체력 컴포넌트 하나를 가지고 사망해도 액터를 유지해야 한다. 두 참조는 같은 월드에 있어야 한다. 에디터 유효성 검사가 이를 확인한다.
+- `ALSBattlefieldSetup`은 맵에서 플레이어 성(`PlayerCastle`)과 핵심 거점(`CoreOutpost`)을 명시적으로 지정한다. 맵에 하나만 배치한다. 성은 실제 게임 성인 `ALSCastle` 또는 그 파생 클래스이며 아군 진영·성 선택 분류·체력 컴포넌트 하나를 가져야 하고, 핵심 거점은 적 진영이며 체력 컴포넌트 하나를 가지고 사망해도 액터를 유지해야 한다. 두 참조는 같은 월드에 있어야 한다. 병력 이동 시험용 `ALSMobileCastle`이나 성 선택 분류만 붙인 일반 액터는 거부한다. 에디터와 런타임의 구성 검사가 같은 조건을 확인한다.
 - 유효한 `ALSBattlefieldSettings`가 있는 맵에서는 핵심 거점의 `ULSVisionParticipantComponent`에 `bPublicCorePosition`이 켜져 있어야 하고 다른 액터에는 켜져 있으면 안 된다. 에디터 유효성 검사가 오류로 보고하며 설정을 자동으로 바꾸지 않는다. 핵심 거점을 바꾸면 인스턴스의 플래그도 옮긴다.
 - `ULSBattlefieldStateSubsystem`은 Game/PIE 월드에서 BeginPlay 때 배치된 설정을 해석한다. 참조 해석과 체력 준비 완료는 별개다.
   - `IsSetupValid()`는 지정한 참조의 구성 검사 결과를 반환한다.
@@ -17,10 +17,15 @@
   - `HasBeenCaptured()`, `TryGetCapture(Out)`로 살아 있는 거점에서 함락 사실을 조회한다.
   - `OnOutpostCapturedEvent`는 다음 틱에 한 번 발생한다. 정리 도중 액터가 제거되면 개별 알림은 생략될 수 있다.
   - `IsArmed()`, `GetDefenseRadius()`로 무장 여부와 방어 반경을 조회한다.
-- `ALSEnemyOutpost`는 기본값으로 공용 거점 표(`DT_OutpostStats`)의 `PrototypeTest` 행을 쓴다. 수치와 무장 여부(`bArmed`), 방어 반경(`DefenseRadius`)은 파생 블루프린트의 기본값에서 정한다. `bArmed`가 꺼져 있어도 피격 시 주변 병력에 지원을 요청한다. 본체는 시제품 재질에 진영 색으로 표시한다.
+- `ALSEnemyOutpost`는 기본값으로 공용 거점 표(`DT_OutpostStats`)의 `PrototypeTest` 행을 쓴다. 수치와 무장 여부(`bArmed`)는 파생 블루프린트의 기본값에서 정한다. 방어 반경(`DefenseRadius`)은 그 기본값을 사용하되 맵의 거점 인스턴스에서 조정할 수 있으며, 담당 Guard의 이동 구역과 초기 배치 검사에 같은 값이 적용된다. `bArmed`가 꺼져 있어도 피격 시 주변 병력에 지원을 요청한다. 본체는 시제품 재질에 진영 색으로 표시한다.
 - `ALSEnemyTroop`은 공용 `ALSTroopUnit`의 병종·수치·표시를 그대로 쓰고 적 진영으로 시작한다. 병종은 전투 준비 전에 `SetInitialTroopType()`으로 지정한다.
+- 적 병력의 감지 반경과 표적 동률 거리 점수는 액터 중심의 3D 거리를 기준으로 한다. 실제 공격 대상·접근·도착 판정은 공통 전투의 충돌 몸체 외곽 사거리를 사용한다. 큰 전장 성은 감지·생존·진영 검사를 유지한 채 공격 후보에 포함하며, 실제 이동 투영은 해당 병력의 NavData를 사용한다.
+- 투사체를 쓰는 적 병력은 사거리 안이어도 공통 공격의 발사 경로 검사가 막힌 위치에 멈춰 발사하지 않는다. 기존의 유한한 접근 후보를 해당 병력의 NavMesh에 투영하고, 실제 몸체 중심 높이에서 사거리와 발사 경로를 함께 검사해 이동 위치를 고른다. Guard의 담당 거점·수비 기준점 구역과 Assault의 추적 경계, 전체 경로 제한은 유지하며 휴면 병력은 이동하지 않는다. 고정 시설은 사격 위치를 바꾸지 않는다.
 - `ALSEnemyTroop`의 `Behavior`(`ULSEnemyBehaviorComponent`)를 설정한다.
   - 배치한 인스턴스에서 `Role`(Guard/Assault)과 Guard의 `GuardedOutpost`를 정한다(`EditInstanceOnly`). Guard의 초기 위치가 복귀 기준이고, 방어 구역은 담당 거점의 `DefenseRadius`가 정한다.
+  - 거점 없는 수비 구역은 같은 월드의 비전투 액터 `GuardAnchor`와 `GuardAnchorRadius`로 지정한다. `GuardedOutpost`와 함께 지정할 수 없다. 이 모드는 앵커 중심의 반경을 지키며 초기 위치로 복귀한다. 담당 거점의 지원 요청을 거리와 무관하게 받거나 우선하는 규칙은 거점 모드에만 적용한다.
+  - `bStartRegionallyDormant`는 기본값이 false이며 Assault 인스턴스에만 켠다. 휴면 중에도 기존 시야·충돌·피해 수신을 유지하지만 이동·감지·공격·지원 송수신을 하지 않는다. `Maps`의 `ALSBattlefieldEncounterCoordinator`에 정확히 한 번 배정해야 하며 누락이나 중복은 오류다. 지역별 공격대 규모는 조정자의 `AssaultMembers` 소속 배열이 정하며 적 행동 컴포넌트는 같은 규모를 요구하지 않는다.
+  - `ActivateRegion()`은 체력이 준비된 생존 Assault의 휴면만 해제한다. 사망이나 전투 종료를 되돌리지 않고, 호출 안에서 행동을 판단하지 않는다. 실제 행동은 다음 적 행동 틱에서 재개한다.
   - 수신 반경(`SupportAcceptanceRadius`), 추적 반경(`ChaseRadius`), 진격 재개 거리(`RecoveryAdvanceDistance`), 경계 여유(`BoundaryAllowance`), 복귀 영역(`ReturnAreaRadius`), 요청 수명(`PendingSupportLifetime`) 같은 수치는 파생 블루프린트의 클래스 기본값에서 정한다(`EditDefaultsOnly`).
   - `GetState()`, `GetTarget()`, `GetLastStopReason()`로 동작 상태·현재 표적·중단 사유를 조회한다.
 - 런타임에 병력을 생성할 때는 `SpawnActor`의 Transform에 실제 초기 위치를 넣고, 첫 행동 전에 `Role`과 `GuardedOutpost`를 지정한다. 복귀 기준 위치는 BeginPlay 때의 위치다. 구성 오류로 준비 대기 중인 병력도 올바른 참조를 받으면 다시 판단을 시작한다.

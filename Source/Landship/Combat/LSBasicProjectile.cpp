@@ -30,17 +30,19 @@ ALSBasicProjectile::ALSBasicProjectile()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cone(TEXT("/Engine/BasicShapes/Cone.Cone"));
 	Shaft = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Shaft"));
 	Shaft->SetupAttachment(Collision);
+	Shaft->SetCanEverAffectNavigation(false);
 	Shaft->SetStaticMesh(Cube.Object);
-	Shaft->SetRelativeLocation(FVector(-35, 0, 0));
-	Shaft->SetRelativeScale3D(FVector(0.5f, 0.05f, 0.05f));
+	Shaft->SetRelativeLocation(FVector(-30, 0, 0));
+	Shaft->SetRelativeScale3D(FVector(0.6f, 0.04f, 0.04f));
 	Shaft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Shaft->SetCanEverAffectNavigation(false);
 	Tip = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Tip"));
 	Tip->SetupAttachment(Collision);
+	Tip->SetCanEverAffectNavigation(false);
 	Tip->SetStaticMesh(Cone.Object);
-	Tip->SetRelativeLocation(FVector(-10, 0, 0));
+	Tip->SetRelativeLocation(FVector(10, 0, 0));
 	Tip->SetRelativeRotation(FRotator(90, 0, 0));
-	Tip->SetRelativeScale3D(FVector(0.13f, 0.13f, 0.2f));
+	Tip->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.2f));
 	Tip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Tip->SetCanEverAffectNavigation(false);
 }
@@ -89,12 +91,41 @@ bool ALSBasicProjectile::IsCurrentFlight(uint64 Serial) const
 	    PoolOwner->IsAcquired(this, Serial)));
 }
 
+void ALSBasicProjectile::SetVisualStyle(ELSProjectileVisualStyle Style)
+{
+	if (bLaunched)
+		return;
+	VisualStyle = Style;
+	if (Style == ELSProjectileVisualStyle::TurretBolt)
+	{
+		Shaft->SetRelativeLocation(FVector(-12, 0, 0));
+		Shaft->SetRelativeScale3D(FVector(0.32f, 0.14f, 0.14f));
+		Tip->SetRelativeLocation(FVector(12, 0, 0));
+		Tip->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.16f));
+	}
+	else if (Style == ELSProjectileVisualStyle::BallistaBolt)
+	{
+		Shaft->SetRelativeLocation(FVector(-45, 0, 0));
+		Shaft->SetRelativeScale3D(FVector(0.9f, 0.09f, 0.09f));
+		Tip->SetRelativeLocation(FVector(15, 0, 0));
+		Tip->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.3f));
+	}
+	else
+	{
+		Shaft->SetRelativeLocation(FVector(-30, 0, 0));
+		Shaft->SetRelativeScale3D(FVector(0.6f, 0.04f, 0.04f));
+		Tip->SetRelativeLocation(FVector(10, 0, 0));
+		Tip->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.2f));
+	}
+}
+
 bool ALSBasicProjectile::Launch(const FLSDamageRequest& Request, AActor* Target, const FVector& Direction, float Speed,
                                 float Radius, float Lifetime, UMaterialInterface* Material)
 {
 	if (!IsValid(Target) || !ULSCombatTargetLibrary::IsCombatAlive(Target) ||
 	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
+	bStopsAtWorldGeometry = true;
 	return true;
 }
 
@@ -104,8 +135,7 @@ bool ALSBasicProjectile::LaunchInDirection(const FLSDamageRequest& Request, cons
 	if (!Request.bHasSourceFaction || !LSFaction::IsValid(Request.SourceFaction) ||
 	    !InitializeFlight(Request, Direction, Speed, Radius, Lifetime, Material))
 		return false;
-	Shaft->SetRelativeScale3D(FVector(0.9f, 0.09f, 0.09f));
-	Tip->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.25f));
+	bStopsAtWorldGeometry = true;
 	return true;
 }
 
@@ -135,6 +165,9 @@ bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const
 	// 공격자를 강하게 보유하지 않는다. 제거된 뒤에도 저장된 진영으로 오폭을 판정한다.
 	ShotRequest.SourceActor = nullptr;
 	ShotRequest.DamageCauser = nullptr;
+	FlightOrigin = GetActorLocation();
+	ShotRequest.bHasAttackOrigin = true;
+	ShotRequest.AttackOrigin = FlightOrigin;
 	FlightVelocity = Direction.GetSafeNormal() * Speed;
 	Collision->SetSphereRadius(Radius);
 	SetActorRotation(FlightVelocity.Rotation());
@@ -154,6 +187,8 @@ bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const
 	}
 	else
 		SetLifeSpan(Lifetime);
+	if (!Material)
+		Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Landship/Troops/Materials/M_TroopPrototype.M_TroopPrototype"));
 	if (Material)
 	{
 		if (FlightMaterial != Material || !FlightMaterialInstance)
@@ -161,8 +196,10 @@ bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const
 			FlightMaterial = Material;
 			FlightMaterialInstance = UMaterialInstanceDynamic::Create(Material, this);
 		}
-		const FLinearColor Color = Request.SourceFaction == ELSFaction::Ally ? FLinearColor(0.08f, 0.55f, 1.0f)
-		                                                                     : FLinearColor(0.95f, 0.12f, 0.05f);
+		const FLinearColor Color = VisualStyle == ELSProjectileVisualStyle::TurretBolt
+		    ? FLinearColor(1.0f, 0.28f, 0.015f)
+		    : (Request.SourceFaction == ELSFaction::Ally ? FLinearColor(0.08f, 0.55f, 1.0f)
+		                                             : FLinearColor(0.95f, 0.12f, 0.05f));
 		FlightMaterialInstance->SetVectorParameterValue(TEXT("TeamColor"), Color);
 		Shaft->SetMaterial(0, FlightMaterialInstance);
 		Tip->SetMaterial(0, FlightMaterialInstance);
@@ -226,7 +263,7 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	else
 	{
 		FHitResult Hit;
-		if (FindFirstDamageableHit(Start, End, Hit))
+		if (FindFirstHit(Start, End, Hit))
 		{
 			ResolveHit(Hit);
 			return;
@@ -250,7 +287,7 @@ FLSDamageRequest ALSBasicProjectile::MakeHitRequest() const
 	return Request;
 }
 
-bool ALSBasicProjectile::FindFirstDamageableHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
+bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const
 {
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
@@ -260,6 +297,7 @@ bool ALSBasicProjectile::FindFirstDamageableHit(const FVector& Start, const FVec
 	if (Request.SourceActor)
 		Query.AddIgnoredActor(Request.SourceActor);
 	bool bSkipped;
+	bool bHasDamageHit = false;
 	do
 	{
 		bSkipped = false;
@@ -269,6 +307,13 @@ bool ALSBasicProjectile::FindFirstDamageableHit(const FVector& Start, const FVec
 		Hits.Sort([](const FHitResult& A, const FHitResult& B) { return A.Time < B.Time; });
 		for (const FHitResult& Hit : Hits)
 		{
+			if (bStopsAtWorldGeometry && IsValid(Hit.GetComponent()) &&
+				Hit.GetComponent()->GetCollisionResponseToChannel(LSCollisionChannels::ObstacleProjectile) == ECR_Ignore)
+			{
+				Query.AddIgnoredComponent(Hit.GetComponent());
+				bSkipped = true;
+				continue;
+			}
 			AActor* Target = Hit.GetActor();
 			if (!IsValid(Target))
 				continue;
@@ -278,13 +323,37 @@ bool ALSBasicProjectile::FindFirstDamageableHit(const FVector& Start, const FVec
 			    ULSHealthComponent::EvaluateDamagePolicy(Request, Target) == ELSApplyDamageStatus::Applied)
 			{
 				OutHit = Hit;
-				return true;
+				bHasDamageHit = true;
+				break;
 			}
 			Query.AddIgnoredActor(Target);
 			bSkipped = true;
 		}
-	} while (bSkipped);
-	return false;
+	} while (bSkipped && !bHasDamageHit);
+	if (!bStopsAtWorldGeometry)
+		return bHasDamageHit;
+
+	FCollisionQueryParams GeometryQuery(SCENE_QUERY_STAT(LSBasicProjectileCover), false, this);
+	GeometryQuery.bFindInitialOverlaps = true;
+	if (OriginalSource.IsValid())
+		GeometryQuery.AddIgnoredActor(OriginalSource.Get());
+	FHitResult GeometryHit;
+	while (GetWorld()->SweepSingleByChannel(GeometryHit, Start, End, FQuat::Identity,
+		LSCollisionChannels::ObstacleProjectile, FCollisionShape::MakeSphere(Collision->GetScaledSphereRadius()),
+		GeometryQuery) && (GeometryHit.bBlockingHit || GeometryHit.bStartPenetrating))
+	{
+		AActor* Actor = GeometryHit.GetActor();
+		// 전투 몸체의 통과·명중은 위의 피해 정책이 정한다. 같은 진영과 시체를 지형으로 다시 막지 않는다.
+		if (IsValid(Actor) && Cast<ILSFactionInterface>(Actor) && Actor->FindComponentByClass<ULSHealthComponent>())
+		{
+			GeometryQuery.AddIgnoredActor(Actor);
+			continue;
+		}
+		if (!bHasDamageHit || GeometryHit.Time <= OutHit.Time)
+			OutHit = GeometryHit;
+		return true;
+	}
+	return bHasDamageHit;
 }
 
 void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
@@ -310,6 +379,10 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 	{
 		FLSDamageRequest Request = MakeHitRequest();
 		Request.DamageCauser = this;
+		Request.bHasImpactLocation = true;
+		Request.ImpactLocation = Hit.ImpactPoint;
+		Request.bHasIncomingDirection = true;
+		Request.IncomingDirection = FlightVelocity.GetSafeNormal();
 		const FLSApplyDamageResult Result = Health->ApplyDamage(Request);
 		if (IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown &&
 		    IsCurrentFlight(ShotSerial) && bResolved && Result.AppliedDamage > 0)
@@ -359,6 +432,9 @@ void ALSBasicProjectile::ResetForPool()
 	bLaunched = false;
 	bResolved = false;
 	bHitsFirstBlocking = false;
+	bStopsAtWorldGeometry = false;
+	FlightOrigin = FVector::ZeroVector;
+	VisualStyle = ELSProjectileVisualStyle::Arrow;
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	SetOwner(nullptr);
 	SetInstigator(nullptr);

@@ -2,10 +2,19 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Combat/LSFaction.h"
 #include "LSBasicAttackComponent.generated.h"
 
 class ALSBasicProjectile;
 class UMaterialInterface;
+
+UENUM(BlueprintType)
+enum class ELSProjectileVisualStyle : uint8
+{
+	Arrow,
+	TurretBolt,
+	BallistaBolt
+};
 
 USTRUCT(BlueprintType)
 struct LANDSHIP_API FLSProjectileAttackSettings
@@ -25,6 +34,8 @@ struct LANDSHIP_API FLSProjectileAttackSettings
 	float Radius = 6.0f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile")
 	TObjectPtr<UMaterialInterface> Material;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Projectile")
+	ELSProjectileVisualStyle VisualStyle = ELSProjectileVisualStyle::Arrow;
 };
 
 USTRUCT(BlueprintType)
@@ -58,6 +69,14 @@ struct LANDSHIP_API FLSAttackExecution
 	/** 이 공격 컴포넌트 안에서 증가한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "Attack")
 	int64 ExecutionId = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	double TimestampSeconds = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	bool bHasSourceFaction = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	ELSFaction SourceFaction = ELSFaction::Ally;
+	UPROPERTY(BlueprintReadOnly, Category = "Attack")
+	FVector Direction = FVector::ZeroVector;
 };
 
 DECLARE_DELEGATE_RetVal(AActor*, FLSResolveAttackTarget);
@@ -96,6 +115,11 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	{
 		return ProjectileSettings;
 	}
+	/** 후보 액터 중심에서 목표까지 발사 경로를 검사한다. 사거리·목표 자격·쿨타임은 판정하지 않는다.
+	 * 준비된 근접 공격은 유효한 입력에 true다. 투사체는 설정 반경과 기존 피해 정책으로 몸체·지형을 검사한다.
+	 * 상대 Pawn은 이동 계획에서 제외하지만, 오폭이 허용된 같은 진영 Pawn은 경로를 막는다.
+	 * 실제 발사체의 몸체 명중·오폭 규칙은 유지되므로 이 결과가 명중을 보장하지 않는다. */
+	bool HasClearAttackPathFromLocation(const FVector& SourceLocation, const AActor* Target) const;
 
 	/** 사거리 밖 대상도 지정할 수 있으며 사거리 안에 들어오면 공격한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")

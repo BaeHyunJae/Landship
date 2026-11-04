@@ -2,6 +2,7 @@
 
 #include "GameFramework/Actor.h"
 #include "Combat/LSHealthTypes.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "LSBasicProjectile.generated.h"
 
 class USphereComponent;
@@ -36,15 +37,28 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	/** 풀에서 대여를 소비한 뒤 호출한다. 파생 클래스는 추가 작업을 취소하고 Super를 호출해야 한다. */
 	virtual bool DeactivateForPool(ULSProjectilePoolSubsystem* Pool, uint64 Serial);
 	uint64 GetActivationSerial() const { return ActivationSerial; }
+	/** Deferred 생성 중에만 시각 형태를 정한다. 충돌과 비행 수치는 바꾸지 않는다. */
+	void SetVisualStyle(ELSProjectileVisualStyle Style);
+	ELSProjectileVisualStyle GetVisualStyle() const { return VisualStyle; }
+	bool IsInFlight() const { return bLaunched && !bResolved && !IsActorBeingDestroyed(); }
+	FVector GetFlightOrigin() const { return FlightOrigin; }
+	FVector GetFlightDirection() const { return FlightVelocity.GetSafeNormal(); }
+	float GetRemainingFlightTime() const { return RemainingFlightTime; }
+	bool GetFlightFaction(ELSFaction& OutFaction) const
+	{
+		if (!ShotRequest.bHasSourceFaction) return false;
+		OutFaction = ShotRequest.SourceFaction;
+		return true;
+	}
 	virtual void Tick(float DeltaSeconds) override;
 	virtual FVector GetVelocity() const override
 	{
 		return FlightVelocity;
 	}
-	/** 일반 생성은 deferred 중, 풀 대여는 활성화 뒤 한 번 호출한다. 비행 중 목표를 추적하지 않는다. */
+	/** 일반 생성은 deferred 중, 풀 대여는 활성화 뒤 한 번 호출한다. 비유도 비행하며 실제 지형에서 멈춘다. */
 	bool Launch(const FLSDamageRequest& Request, AActor* Target, const FVector& Direction, float Speed, float Radius,
 	            float Lifetime, UMaterialInterface* Material = nullptr);
-	/** 발리스타: 발사자·지형을 통과한다. 같은 진영은 오폭 금지 시 통과하며 경로의 첫 피해 허용 대상에 명중한다. */
+	/** 발리스타: 발사자는 통과하고 첫 피해 허용 몸체 또는 실제 지형에서 멈춘다. 같은 진영은 오폭 금지 시 통과한다. */
 	bool LaunchInDirection(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                      float Lifetime, UMaterialInterface* Material = nullptr);
 	/** 발사자는 제외하고 지형과 같은 진영을 포함한 첫 실제 몸체에서 멈춘다. 피해 허용 여부는 공통 체력 정책을 따른다. */
@@ -67,7 +81,7 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	void ResolveHit(const FHitResult& Hit);
 	bool InitializeFlight(const FLSDamageRequest& Request, const FVector& Direction, float Speed, float Radius,
 	                      float Lifetime, UMaterialInterface* Material);
-	bool FindFirstDamageableHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
+	bool FindFirstHit(const FVector& Start, const FVector& End, FHitResult& OutHit) const;
 	FLSDamageRequest MakeHitRequest() const;
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Projectile")
 	TObjectPtr<USphereComponent> Collision;
@@ -84,6 +98,8 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	uint64 SourceLifeSerial = 0;
 	bool bHasSourceLife = false;
 	FVector FlightVelocity = FVector::ZeroVector;
+	FVector FlightOrigin = FVector::ZeroVector;
+	ELSProjectileVisualStyle VisualStyle = ELSProjectileVisualStyle::Arrow;
 	float RemainingFlightTime = 0;
 	bool bLaunched = false;
 	bool bResolved = false;
@@ -96,4 +112,5 @@ class LANDSHIP_API ALSBasicProjectile : public AActor
 	TObjectPtr<UMaterialInterface> FlightMaterial;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FlightMaterialInstance;
+	bool bStopsAtWorldGeometry = false;
 };

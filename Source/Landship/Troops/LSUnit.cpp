@@ -80,6 +80,49 @@ ALSUnit::ALSUnit(const FObjectInitializer& ObjectInitializer)
 	GetCharacterMovement()->AvoidanceConsiderationRadius = 600.0f;
 }
 
+void ALSUnit::StageForProduction()
+{
+	check(!HasActorBegunPlay() && !IsActorInitialized());
+	bGameplayStaged = true;
+	AutoPossessAI = EAutoPossessAI::Disabled;
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (Primitive->GetGenerateOverlapEvents()) ProductionOverlapComponents.Add(Primitive);
+		Primitive->SetGenerateOverlapEvents(false);
+	}
+	Vision->SetParticipationEnabled(false);
+	Orders->PrimaryComponentTick.bStartWithTickEnabled = false;
+	Orders->SetComponentTickEnabled(false);
+	GetCharacterMovement()->PrimaryComponentTick.bStartWithTickEnabled = false;
+	GetCharacterMovement()->SetComponentTickEnabled(false);
+	// 아직 CharacterOwner가 연결되기 전이므로 등록용 설정만 끈다. SetAvoidanceEnabled는 등록 이후에만 쓴다.
+	GetCharacterMovement()->bUseRVOAvoidance = false;
+}
+
+void ALSUnit::ReleaseProductionStaging()
+{
+	check(bGameplayStaged);
+	bGameplayStaged = false;
+}
+
+void ALSUnit::ActivateProducedUnit()
+{
+	check(!bGameplayStaged);
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	for (const TWeakObjectPtr<UPrimitiveComponent>& Primitive : ProductionOverlapComponents)
+		if (Primitive.IsValid()) Primitive->SetGenerateOverlapEvents(true);
+	ProductionOverlapComponents.Reset();
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	GetCharacterMovement()->SetAvoidanceEnabled(true);
+	GetCharacterMovement()->SetComponentTickEnabled(true);
+	Orders->SetComponentTickEnabled(true);
+	Vision->SetParticipationEnabled(true);
+}
+
 void ALSUnit::BeginPlay()
 {
 	// 소유 컴포넌트와 Blueprint의 BeginPlay보다 먼저 조회 결과를 확정한다.
@@ -223,7 +266,11 @@ void ALSUnit::Restart()
 		return;
 	}
 	FLSHealthSnapshot Snapshot;
-	if (Health->GetInitializationState() == ELSHealthInitializationState::Failed
+	if (bGameplayStaged)
+	{
+		StopCombatMovement();
+	}
+	else if (Health->GetInitializationState() == ELSHealthInitializationState::Failed
 		|| (Health->TryGetHealth(Snapshot) && Snapshot.bIsDead))
 	{
 		// 재빙의의 Restart가 기본 이동 모드를 복원한다. 시체의 물리는 유지하고 이동만 다시 막는다.

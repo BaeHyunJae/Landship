@@ -1,6 +1,7 @@
 #include "Controls/LSCommandCardComponent.h"
 #include "Controls/LSPlayerController.h"
 #include "Controls/LSSelectableComponent.h"
+#include "Castle/LSCastleCommandProviderComponent.h"
 #include "Match/LSBattleOutcomePolicy.h"
 
 TArray<AActor*> ULSCommandCardComponent::GetActiveActors()
@@ -109,6 +110,14 @@ TArray<FLSCommandCell> ULSCommandCardComponent::BuildCard()
 		if (Cells[Index].Entry.Hotkey.IsValid())
 		{
 			const FKey Key = Cells[Index].Entry.Hotkey;
+			const bool bCastleWeaponKey = Key == EKeys::Q || Key == EKeys::W || Key == EKeys::E;
+			const int32 WeaponIndex = Key == EKeys::Q ? 0 : Key == EKeys::W ? 1 : 2;
+			const bool bOwnCastleWeapon = bCastleWeaponKey &&
+				Cells[Index].Provider.IsValid() && Cells[Index].Provider->IsA<ULSCastleCommandProviderComponent>() &&
+				Index == 5 + WeaponIndex &&
+				Cells[Index].Entry.Id == FName(*FString::Printf(TEXT("CastleWeapon%d"), WeaponIndex));
+			if (bCastleWeaponKey && !bOwnCastleWeapon)
+				Conflicts.Add(Index);
 			if (Key == EKeys::Tab || Key == EKeys::Escape || Key == EKeys::Home || Key.IsModifierKey() ||
 			    Key == EKeys::Left || Key == EKeys::Right || Key == EKeys::Up || Key == EKeys::Down ||
 			    Key.IsMouseButton() || Key.IsGamepadKey() || Key.IsAxis1D() || Key.IsAxis2D() || Key.IsAxis3D() ||

@@ -75,6 +75,20 @@ struct LANDSHIP_API FLSDamageRequest
 	/** 보관 여부가 참일 때만 의미가 있다. SourceActor를 바꿔도 갱신되지 않으며, 직접 요청은 유효한 주체의 진영을 조회한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	ELSFaction SourceFaction = ELSFaction::Ally;
+
+	/** 공격을 실행한 위치를 명시한 경우에만 참이다. 수신자가 현재 주체 위치로 대체하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasAttackOrigin = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector AttackOrigin = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasImpactLocation = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector ImpactLocation = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasIncomingDirection = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector IncomingDirection = FVector::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
@@ -108,10 +122,46 @@ struct LANDSHIP_API FLSDamageResult
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	float CurrentHealth = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	float PreviousHealth = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	float MaxHealth = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	TWeakObjectPtr<AActor> Receiver;
+	/** 피해가 확정됐을 때 수신 액터의 숨김 상태다. 지연 알림 시점의 상태로 갱신하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bReceiverHiddenAtCommit = false;
+	/** 이 체력 컴포넌트의 수명 동안 고정되며 다른 컴포넌트에 재사용하지 않는 기록 키다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	int64 ReceiverId = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	double TimestampSeconds = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasSourceFaction = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	ELSFaction SourceFaction = ELSFaction::Ally;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasAttackOrigin = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector AttackOrigin = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasImpactLocation = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector ImpactLocation = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	bool bHasIncomingDirection = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	FVector IncomingDirection = FVector::ZeroVector;
+
 	/** 피해 시점에 이미 제거된 주체는 nullptr이다. 알림 중에도 제거될 수 있으므로 사용 전 유효성을 확인한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	TObjectPtr<AActor> SourceActor = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Damage")
 	TObjectPtr<AActor> DamageCauser = nullptr;
+	/** 지연 알림·최근 기록은 강한 레거시 참조 대신 이 두 참조만 보관한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	TWeakObjectPtr<AActor> Source;
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	TWeakObjectPtr<AActor> Causer;
 };

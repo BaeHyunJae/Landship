@@ -1,7 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Obstacles/LSMine.h"
 #include "Obstacles/LSTurret.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Enemies/LSBattlefieldSetup.h"
@@ -49,7 +51,7 @@ bool FLSObstacleOutcomeIntegrationTest::RunTest(const FString& Parameters)
  UWorld* World = Play.GetTestWorld();
  World->GetWorldSettings()->DefaultGameMode = ALSGameMode::StaticClass();
  ALSBattlefieldSetup* Setup = SpawnObstacleOutcome<ALSBattlefieldSetup>(World, FVector::ZeroVector);
- ALSMobileCastle* Castle = SpawnObstacleOutcome<ALSMobileCastle>(World, FVector(10000, 0, 142));
+ ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 142));
  ALSEnemyOutpost* Core = SpawnObstacleOutcome<ALSEnemyOutpost>(World, FVector(0, 0, 100));
  ALSTroopUnit* Target = SpawnObstacleOutcome<ALSTroopUnit>(World, FVector(20000, 0, 88));
  ALSTurret* Existing = SpawnObstacleOutcome<ALSTurret>(World, FVector(20500, 0, 120));
@@ -64,7 +66,7 @@ bool FLSObstacleOutcomeIntegrationTest::RunTest(const FString& Parameters)
  if (!TestNotNull(TEXT("Real outcome GameState"), State) ||
   !TestTrue(TEXT("Explicit battlefield setup enables real authority"), State->IsBattleOutcomeEnabled())) return false;
  Core->Behavior->SetComponentTickEnabled(false);
- Castle->GetCharacterMovement()->DisableMovement(); Target->GetCharacterMovement()->DisableMovement();
+ Castle->GetMovementComponent()->Deactivate(); Target->GetCharacterMovement()->DisableMovement();
  ULSBasicAttackComponent* ExistingAttack = Existing->FindComponentByClass<ULSBasicAttackComponent>();
  if (!TestNotNull(TEXT("Existing real turret attack component"), ExistingAttack)) return false;
  TestTrue(TEXT("Existing turret can attack before outcome"), ExistingAttack->StartAttack(Target));

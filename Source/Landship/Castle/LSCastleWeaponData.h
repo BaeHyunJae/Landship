@@ -100,4 +100,6 @@ class LANDSHIP_API ULSCastleWeaponData : public UDataAsset
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 	static bool AreSettingsValid(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings);
+	/** 대포 형상의 전체 비행 분할 수를 검사한다. 계산량 상한을 넘으면 false이며 출력은 성공할 때만 쓴다. */
+	static bool TryGetCannonArcSteps(const FLSCastleWeaponSettings& Settings, int32& OutSteps);
 };

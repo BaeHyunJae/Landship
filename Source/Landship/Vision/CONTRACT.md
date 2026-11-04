@@ -14,6 +14,7 @@
   - `HasPendingDiscoveryCaption()`은 최초 발견 안내를 아직 표시하지 않았는지 반환한다. 안내를 실제로 화면에 표시한 뒤에만 `MarkDiscoveryCaptionDisplayed()`를 불러 완료로 기록한다.
   - `OnSnapshotCommittedEvent`는 새 시야 스냅샷이 확정될 때, `OnFirstEnemyDiscoveredEvent`는 최초 적 발견 때 발생한다. 늦게 연결하는 쪽은 `HasPendingDiscoveryCaption()`으로 현재 상태를 조회한다.
 - `ULSVisionParticipantComponent`를 액터에 추가해 시야 역할을 명시한다. 일반 액터와 투사체는 기본적으로 시야를 제공하지 않는다.
+  - `SetParticipationEnabled(false)`는 등록 전후에 시야 참여를 끈다. 비활성 상태로 시작한 액터는 등록하지 않아 시야·마커·최초 발견에 영향을 주지 않는다. 다시 켜면 그때의 가시 상태를 기준으로 등록한다. 생산 준비 중 임시로 숨긴 상태를 영구적인 원래 가시 상태로 보관하지 않는다.
   - `bProvidesSight`: 시야를 제공한다. 아군 병력(`ALSUnit`)과 성(`ALSCastle`, `ALSMobileCastle`)은 켜져 있고, 시야 반경은 능력치 초기화에서 전달된다. `SetSightRadius()`는 개발 검증용이다.
   - `bTriggersEnemyDiscovery`: 적 진영 액터가 보이면 최초 발견 후보로 등록한다. 병력, 성, `ALSOutpost`, 터렛은 켜져 있다.
   - `bConcealedOutsideSight`: 기본 켬. 아군이 아닌 액터는 시야 밖에서 숨긴다. 숨길 때 부착된 시각 액터도 함께 처리한다.

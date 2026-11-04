@@ -5,7 +5,9 @@
 #include "Navigation/LSMineAvoidance.h"
 #include "Navigation/LSMineAwareMovementComponent.h"
 #include "Troops/LSTroopUnit.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "GameFramework/FloatingPawnMovement.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Castle/LSCastleProjectile.h"
 #include "Controls/LSOrderComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -127,21 +129,23 @@ ALSTroopUnit* ALSObstacleRuntimeProbe::SpawnTroop(const FVector& Position, bool 
 	Actor->BasicAttack->StopAttack();
 	return Actor;
 }
-ALSMobileCastle* ALSObstacleRuntimeProbe::SpawnCastle(const FVector& Position)
+ALSCastle* ALSObstacleRuntimeProbe::SpawnCastle(const FVector& Position)
 {
-	ALSMobileCastle* Actor = Spawn<ALSMobileCastle>(Position);
+	ALSCastle* Actor = LSCastleTestFixture::Spawn(GetWorld(), Position);
 	if (Actor)
 	{
 		Actor->Vision->SetSightRadius(2000);
+		Owned.Add(Actor);
 	}
 	return Actor;
 }
-bool ALSObstacleRuntimeProbe::Move(ALSUnit* Unit, const FVector& Destination)
+bool ALSObstacleRuntimeProbe::Move(AActor* Unit, const FVector& Destination)
 {
 	FLSOrder Order;
 	Order.Kind = ELSOrderKind::Move;
 	Order.Destination = Destination;
-	return Unit && Unit->Orders->SubmitOrder(Order);
+	ULSOrderComponent* Orders = Unit ? Unit->FindComponentByClass<ULSOrderComponent>() : nullptr;
+	return Orders && Orders->SubmitOrder(Order);
 }
 void ALSObstacleRuntimeProbe::DiagnoseCorridor()
 {
@@ -189,7 +193,7 @@ void ALSObstacleRuntimeProbe::DiagnoseCorridor()
 				"goalProjected=%d:%s freshValid=%d freshPartial=%d freshPoints=%s activeValid=%d activePartial=%d "
 				"activePoints=%s forwardBlocked=%d blocker=%s normal=%s barrierLive=%d"),
 		   Phase, PhaseTime, *Position.ToCompactString(), *Castle->GetVelocity().ToCompactString(),
-		   Castle->GetVelocity().Size2D(), Castle->GetCharacterMovement()->MaxWalkSpeed, *Goal.ToCompactString(),
+		   Castle->GetVelocity().Size2D(), CastChecked<UFloatingPawnMovement>(Castle->GetMovementComponent())->MaxSpeed, *Goal.ToCompactString(),
 		   static_cast<int32>(Castle->Orders->GetOrderKind()), Castle->Orders->DidLastMovementSucceed(),
 		   static_cast<int32>(Castle->Orders->GetLastFailure()),
 		   Following ? static_cast<int32>(Following->GetStatus()) : -1,
@@ -445,7 +449,7 @@ void ALSObstacleRuntimeProbe::Tick(float DeltaSeconds)
 			Troop->Orders->GetOrderKind() == ELSOrderKind::Disarm && Mine->HasDisarmWorker())
 		{
 			Check(WorkStarted > 0, TEXT("zero-knockback cannon starts after actual Disarm work progressed"));
-			ALSMobileCastle* Source = SpawnCastle(FVector(-1000, -2400, 142));
+			ALSCastle* Source = SpawnCastle(FVector(-1000, -2400, 142));
 			if (!Source)
 			{
 				Check(false, TEXT("zero-knockback cannon friendly source spawned"));
@@ -577,7 +581,7 @@ void ALSObstacleRuntimeProbe::Tick(float DeltaSeconds)
 			AAIController* AI = Castle.IsValid() ? Cast<AAIController>(Castle->GetController()) : nullptr;
 			const UPathFollowingComponent* Following = AI ? AI->GetPathFollowingComponent() : nullptr;
 			const FNavPathSharedPtr Path = Following ? Following->GetPath() : FNavPathSharedPtr();
-			const float Speed = Castle.IsValid() ? Castle->GetCharacterMovement()->MaxWalkSpeed : 0;
+			const float Speed = Castle.IsValid() ? CastChecked<UFloatingPawnMovement>(Castle->GetMovementComponent())->MaxSpeed : 0;
 			if (!bAccepted || !Path.IsValid() || !Path->IsValid() || Path->IsPartial() || Speed <= 0)
 			{
 				Check(false, TEXT("corridor accepted move has a complete selected path and positive speed"));

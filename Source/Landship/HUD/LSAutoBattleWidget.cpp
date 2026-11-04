@@ -1,7 +1,7 @@
 #include "HUD/LSAutoBattleWidget.h"
 #include "Controls/LSAutoBattleController.h"
 #include "Match/LSAutoBattleGameMode.h"
-#include "Castle/LSMobileCastle.h"
+#include "Match/LSAutoBattleCastle.h"
 #include "Combat/LSHealthComponent.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
@@ -39,7 +39,7 @@ FString FormationCost(const TArray<FLSAutoBattlePlacement>& Formation, const ALS
 	}
 	return FText::AsNumber(Total).ToString();
 }
-FString CastleHealth(const ALSMobileCastle* Castle)
+FString CastleHealth(const ALSAutoBattleCastle* Castle)
 {
 	FLSHealthSnapshot Health;
 	return IsValid(Castle) && Castle->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health)

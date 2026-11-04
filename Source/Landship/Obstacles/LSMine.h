@@ -4,6 +4,7 @@
 #include "LSMine.generated.h"
 class USphereComponent;
 class UMaterialInstanceDynamic;
+class ALSMine;
 UENUM(BlueprintType)
 enum class ELSMineState : uint8
 {
@@ -20,12 +21,23 @@ enum class ELSMineTriggerCause : uint8
 	DirectDamage,
 	Chain
 };
+/** 폭발이 실제 시작된 시점의 기록이다. 지뢰가 제거돼도 다음 틱 알림은 유지된다. */
+struct LANDSHIP_API FLSMineExplosion
+{
+	TWeakObjectPtr<ALSMine> Mine;
+	uint32 MineId = 0;
+	FVector Origin = FVector::ZeroVector;
+	double TimestampSeconds = 0;
+};
+DECLARE_MULTICAST_DELEGATE_OneParam(FLSOnMineExploded, const FLSMineExplosion&);
+
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSMine : public ALSPathObstacle
 {
 	GENERATED_BODY()
   public:
 	ALSMine();
+	FLSOnMineExploded OnMineExploded;
 	FVector GetTriggerCenter() const;
 	float GetTriggerRadius() const;
 	float GetExplosionRadius() const { return ExplosionRadius; }

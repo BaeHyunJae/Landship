@@ -104,7 +104,7 @@ bool FLSProjectileDelayedHitTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSProjectileObstacleTest, "Landship.Combat.Projectile.IgnoresObstacles",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSProjectileObstacleTest, "Landship.Combat.Projectile.BlocksPhysicalCover",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FLSProjectileObstacleTest::RunTest(const FString& Parameters)
@@ -145,9 +145,9 @@ bool FLSProjectileObstacleTest::RunTest(const FString& Parameters)
 	TWeakObjectPtr<ALSBasicProjectile> Shot = FindShot(World);
 	// 월드의 최대 DeltaTime 제한과 무관하게 적까지 도달할 비행 시간을 진행한다.
 	AdvanceProjectileWorld(World, 0.8f);
-	TestEqual(TEXT("지형·장애물·장식물을 통과해 뒤의 적에게 피해 적용"), Enemy->GetCurrentHealth(), 90.0f);
-	TestEqual(TEXT("장애물 뒤 실제 전투 대상에 한 번 명중"), Enemy->HitsReceived, 1);
-	TestFalse(TEXT("장애물이 아닌 적에게 명중한 후 투사체 제거"), Shot.IsValid());
+	TestEqual(TEXT("실제 장애물 뒤의 적은 피해를 받지 않음"), Enemy->GetCurrentHealth(), 100.0f);
+	TestEqual(TEXT("장애물 뒤의 적에게 명중 알림 없음"), Enemy->HitsReceived, 0);
+	TestFalse(TEXT("첫 실제 장애물에서 투사체 제거"), Shot.IsValid());
 	TestWorld.ForwardErrorMessages(this);
 	return true;
 }

@@ -61,6 +61,8 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 		return TroopMarker;
 	}
 	static FName GetStatsRowName(ELSTroopType Type);
+	/** 생성 시 적용하는 병종별 캡슐 반경과 반높이(cm)를 반환한다. 생산 배치도 같은 몸체를 사용한다. */
+	static void GetCapsuleDimensions(ELSTroopType Type, float& OutRadius, float& OutHalfHeight);
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* Property) const override;
@@ -68,10 +70,12 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   protected:
 	virtual void BeginPlay() override;
+	virtual void ActivateProducedUnit() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
   private:
+	friend class ULSTroopProductionComponent;
 	void RefreshDefinition();
 	void InitializeCombatBehavior();
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Behavior")

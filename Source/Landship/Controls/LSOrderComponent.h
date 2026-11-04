@@ -3,10 +3,13 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "AITypes.h"
+#include "NavigationPath.h"
 #include "LSOrderComponent.generated.h"
 
 class ULSBasicAttackComponent;
 class ALSMine;
+class ALSBarricade;
+class ALSUnit;
 struct FLSDamageResult;
 struct FPathFollowingResult;
 
@@ -28,7 +31,8 @@ enum class ELSOrderFailure : uint8
 	Unavailable,
 	InvalidTarget,
 	Unreachable,
-	QueueFull
+	QueueFull,
+	BlockedByBarricade
 };
 
 USTRUCT(BlueprintType)
@@ -91,6 +95,9 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	{
 		return ActiveOrder.Destination;
 	}
+	/** 생산·양보용 통과 구간을 cm 단위 거리까지 반환한다. 선회 이동 성의 방향 전환·가까운 정지 경계에서는 예상 제동 구간도 포함한다. */
+	bool GetPlannedMovementPath(TArray<FVector>& OutPoints, float MaxDistance = MAX_flt) const;
+	bool IsYieldingToCastle() const { return bYieldingToCastle; }
 	bool DidLastMovementSucceed() const
 	{
 		return bLastMovementSucceeded;
@@ -99,6 +106,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	{
 		return LastFailure;
 	}
+	ALSBarricade* GetBlockingBarricade() const;
 	static TArray<FVector> MakeFormation(const FVector& Center, int32 Count, float Spacing);
 
   protected:
@@ -118,9 +126,34 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	float TargetRepathDistance = 50.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders", meta = (ClampMin = "0.01", Units = "s"))
 	float MinAttackRepathInterval = 0.05f;
+	/** 성의 현재 위치부터 양보를 미리 판단할 이동 경로 길이(cm). */
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Yield", meta = (ClampMin = "0", Units = "cm"))
+	float YieldLookAhead = 1200.0f;
+	/** 성과 병력의 충돌 반경에 더할 양보 여유(cm). */
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Yield", meta = (ClampMin = "1", Units = "cm"))
+	float YieldClearance = 60.0f;
+	/** 같은 진로에서 안전한 양보 위치를 다시 찾는 최소 간격(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Yield", meta = (ClampMin = "0.05", Units = "s"))
+	float YieldRetryInterval = 0.5f;
+	/** 성의 진로와 주변 양보 이동이 안정된 상태에서 허용할 양보 탐색 횟수. */
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Yield", meta = (ClampMin = "1"))
+	int32 MaxYieldAttempts = 3;
 
   private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FLSIdleYieldCrowdedShoulderEscapeTest;
+	friend class FLSIdleYieldForwardEscapeTest;
+#endif
+	friend class FLSIdleYieldContactEscapeTest;
+	friend class FLSWallFiringPositionTest;
+	friend class FLSCastleBrakingCorridorTest;
+	friend struct FLSEnemyFacilityAttackTestAccess;
 	void UpdateOrders(float DeltaTime);
+	void UpdateIdleYield();
+	void CancelIdleYield();
+	bool IsIdleYieldPathClear(const TArray<FVector>& BodyCenters) const;
+	float GetIdleYieldAlongOffset(const FVector& Closest, const FVector& Direction, const FVector& Side, float CorridorRadius, bool& OutNearbyYielding) const;
+	bool IsWaitingFriendlyBody(const AActor* Candidate) const;
 	void RequestOrderUpdate();
 	void SetEngagementTarget(AActor* Target);
 	UFUNCTION()
@@ -135,11 +168,12 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	bool UsesMineAvoidance() const;
 	void SetMineAvoidance(bool bEnabled);
 	void StopForMine();
-	bool ResolveDestination(const FVector& Goal, FVector& OutDestination) const;
+	bool ResolveDestination(const FVector& Goal, FVector& OutDestination, FNavPathSharedPtr* OutPath = nullptr, bool* OutFullPathFailed = nullptr) const;
+	ALSBarricade* FindBlockingBarricade(const FVector& Goal) const;
 	bool GetNavigationOriginHeight(double& OutHeight) const;
 	bool ResolveAttackDestination(AActor* Target, FVector& OutDestination, bool bAvoidMines,
 	                              bool* OutMineBlocked = nullptr) const;
-	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const;
+	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder);
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
 	bool MoveTo(const FVector& Goal, bool bAttackApproach = false);
 	void StopMovement();
@@ -177,7 +211,15 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	bool bMovementCompleted = false;
 	bool bLastMovementSucceeded = false;
 	bool bKnockbackActive = false;
+	bool bYieldingToCastle = false;
+	FVector YieldDestination = FVector::ZeroVector;
+	FVector YieldCastleOrigin = FVector::ZeroVector;
+	FVector YieldCastleGoal = FVector::ZeroVector;
+	int32 YieldAttempts = 0;
+	bool bYieldSpaceChanging = false;
+	double NextYieldTime = 0;
 	double KnockbackResumeAfter = 0;
+	TWeakObjectPtr<ALSBarricade> BlockingBarricade;
 	ELSOrderFailure LastFailure = ELSOrderFailure::None;
 	uint64 OrderLifeSerial = 0;
 };
