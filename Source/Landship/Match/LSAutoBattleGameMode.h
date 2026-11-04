@@ -139,7 +139,7 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	void ReleaseUnitActor(ALSUnit* Unit);
 	void ReleaseUnitController(AAIController* Controller);
 	void AutoTick();
-	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents);
+	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents, const TArray<ALSUnit*>& Allies);
 	void FireCastle(ALSMobileCastle* Castle, ELSCastleWeapon Weapon, const TArray<ALSUnit*>& Opponents);
 	void CollectOutcome(UWorld* World, ELevelTick TickType, float DeltaSeconds);
 	void OnActorSpawned(AActor* Actor);

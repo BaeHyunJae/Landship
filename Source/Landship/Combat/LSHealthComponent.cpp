@@ -17,6 +17,7 @@ bool ULSHealthComponent::ResetForPool()
 		return false;
 	OnDamagedEvent.Clear();
 	OnDiedEvent.Clear();
+	OnHealedEvent.Clear();
 	PrepareDeathEvent.Unbind();
 	Health = FLSHealthSnapshot();
 	InitializationState = ELSHealthInitializationState::NotAttempted;
@@ -98,6 +99,20 @@ bool ULSHealthComponent::TryGetHealth(FLSHealthSnapshot& OutHealth) const
 	return true;
 }
 
+float ULSHealthComponent::RestoreHealth(float Amount)
+{
+	if (!IsValid(this) || !IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown ||
+	    InitializationState != ELSHealthInitializationState::Ready || Health.bIsDead || bProcessingDamage ||
+	    !FMath::IsFinite(Amount) || Amount <= 0)
+		return 0;
+	const float Applied = FMath::Min(Amount, Health.MaxHealth - Health.CurrentHealth);
+	if (Applied <= 0)
+		return 0;
+	TGuardValue<bool> ChangeGuard(bProcessingDamage, true);
+	Health.CurrentHealth += Applied;
+	OnHealedEvent.Broadcast(Applied, Health.CurrentHealth);
+	return Applied;
+}
 
 
 

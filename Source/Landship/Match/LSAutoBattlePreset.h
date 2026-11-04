@@ -5,10 +5,10 @@
 /** 전투 중 액터 상태가 아닌 준비 편성만 저장한다. ID는 로드 때 새로 부여한다. */
 struct LANDSHIP_API FLSAutoBattlePreset
 {
-	int32 Version = 1;
+	int32 Version = 2;
 	int32 Budget = 1000;
 	int32 PopulationLimit = 100;
-	TArray<int32> UnitCosts = {40, 60, 90};
+	TArray<int32> UnitCosts = {40, 60, 90, 80};
 	FVector AllyCastle = FVector::ZeroVector;
 	FVector EnemyCastle = FVector::ZeroVector;
 	ELSCastleWeapon AllyWeapon = ELSCastleWeapon::Cannon;

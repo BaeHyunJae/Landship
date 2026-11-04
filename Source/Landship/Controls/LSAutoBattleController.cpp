@@ -317,7 +317,7 @@ void ALSAutoBattleController::LeftClick()
 
 void ALSAutoBattleController::ChooseTroop(ELSTroopType Type)
 {
-	if (static_cast<uint8>(Type) > 2)
+	if (ALSTroopUnit::GetStatsRowName(Type).IsNone())
 	{
 		return;
 	}

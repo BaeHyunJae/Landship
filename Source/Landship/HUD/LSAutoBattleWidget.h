@@ -21,9 +21,11 @@ class LANDSHIP_API ULSAutoBattleWidget : public UUserWidget
 
   private:
 	void SetLabel(const TCHAR* Name, const FString& Text);
+	void EnsureMedicButton();
 	UFUNCTION() void Spear();
 	UFUNCTION() void Archer();
 	UFUNCTION() void Cavalry();
+	UFUNCTION() void Medic();
 	UFUNCTION() void Castle();
 	UFUNCTION() void Cannon();
 	UFUNCTION() void Shotgun();

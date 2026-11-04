@@ -94,9 +94,10 @@ bool ULSAutoBattleEditorLibrary::CreateAutoBattleWidget()
 		B->SetContent(Text);
 		Place(B, Position, Size);
 	};
-	Button(TEXT("Spear"), TEXT("창병"), FVector2D(18, 238), FVector2D(96, 42));
-	Button(TEXT("Archer"), TEXT("궁병"), FVector2D(120, 238), FVector2D(96, 42));
-	Button(TEXT("Cavalry"), TEXT("기마병"), FVector2D(222, 238), FVector2D(96, 42));
+	Button(TEXT("Spear"), TEXT("창병"), FVector2D(18, 238), FVector2D(72, 42));
+	Button(TEXT("Archer"), TEXT("궁병"), FVector2D(94, 238), FVector2D(72, 42));
+	Button(TEXT("Cavalry"), TEXT("기마병"), FVector2D(170, 238), FVector2D(72, 42));
+	Button(TEXT("Medic"), TEXT("의무병"), FVector2D(246, 238), FVector2D(72, 42));
 	Button(TEXT("Castle"), TEXT("성 위치 배치"), FVector2D(18, 288), FVector2D(300, 38));
 	Place(Label(TEXT("WeaponTitle"), TEXT("2. 성 자동 무장"), 15), FVector2D(18, 348), FVector2D(300, 28));
 	Button(TEXT("Cannon"), TEXT("일반 대포"), FVector2D(18, 386), FVector2D(96, 42));

@@ -3,6 +3,7 @@
 #include "Troops/LSCavalryComponent.h"
 #include "Troops/LSSpearmanComponent.h"
 #include "Troops/LSArcherComponent.h"
+#include "Troops/LSMedicComponent.h"
 #include "Troops/LSTroopPoolSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
@@ -33,6 +34,7 @@ ALSTroopUnit::ALSTroopUnit()
 	CombatBehaviorClasses.Add(ELSTroopType::Cavalry, ULSCavalryComponent::StaticClass());
 	CombatBehaviorClasses.Add(ELSTroopType::Spearman, ULSSpearmanComponent::StaticClass());
 	CombatBehaviorClasses.Add(ELSTroopType::Archer, ULSArcherComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Medic, ULSMedicComponent::StaticClass());
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
@@ -96,6 +98,8 @@ FName ALSTroopUnit::GetStatsRowName(ELSTroopType Type)
 		return TEXT("Archer");
 	case ELSTroopType::Cavalry:
 		return TEXT("Cavalry");
+	case ELSTroopType::Medic:
+		return TEXT("Medic");
 	default:
 		return NAME_None;
 	}
@@ -124,7 +128,7 @@ void ALSTroopUnit::RefreshDefinition()
 	StatsRow.DataTable = TroopStatsTable.LoadSynchronous();
 	StatsRow.RowName = GetStatsRowName(TroopType);
 	Selection->SelectionType = StatsRow.RowName;
-	const TCHAR* GroupNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
+	const TCHAR* GroupNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병")};
 	if (static_cast<uint8>(TroopType) < UE_ARRAY_COUNT(GroupNames))
 	{
 		Selection->CommandGroupName = FText::FromString(GroupNames[static_cast<uint8>(TroopType)]);
@@ -144,6 +148,10 @@ void ALSTroopUnit::RefreshDefinition()
 	case ELSTroopType::Cavalry:
 		Shape = CavalryShape;
 		Scale = FVector(0.4f);
+		break;
+	case ELSTroopType::Medic:
+		Shape = SpearShape;
+		Scale = FVector(0.18f, 0.18f, 0.55f);
 		break;
 	}
 	TroopMarker->SetStaticMesh(Shape);

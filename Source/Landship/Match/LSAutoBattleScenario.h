@@ -25,6 +25,8 @@ class LANDSHIP_API ALSAutoBattleScenario : public AActor
 	GENERATED_BODY()
   public:
 	ALSAutoBattleScenario();
+	virtual void PostLoad() override;
+	static int32 GetDefaultUnitCost(ELSTroopType Type);
 	FString GetConfigurationError() const;
 	/** 에디터 월드에서만 실행한다. 실패하면 EnemyFormation을 바꾸지 않는다. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Enemy Placement Tool",

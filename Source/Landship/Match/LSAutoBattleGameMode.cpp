@@ -176,7 +176,7 @@ bool ALSAutoBattleGameMode::ResolveGround(const FVector& Ground, float Radius, f
 bool ALSAutoBattleGameMode::CanPlace(ELSTroopType Type, const FVector& Ground, int32 IgnoreId, FVector& OutGround,
                                      ELSFaction Faction) const
 {
-	if (static_cast<uint8>(Type) > 2 || (Faction != ELSFaction::Ally && Faction != ELSFaction::Enemy))
+	if (ALSTroopUnit::GetStatsRowName(Type).IsNone() || (Faction != ELSFaction::Ally && Faction != ELSFaction::Enemy))
 	{
 		return false;
 	}
@@ -682,7 +682,8 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::RetryBattle(bool bKeepFormation)
 	return ELSAutoBattleRequest::Success;
 }
 
-void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents)
+void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents,
+    const TArray<ALSUnit*>& Allies)
 {
 	ALSUnit* Unit = Agent.Unit.Get();
 	if (!ULSCombatTargetLibrary::IsCombatAlive(Unit))
@@ -695,7 +696,9 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 		return;
 	}
 	ALSUnit* Target = Agent.Target.Get();
-	if (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target))
+	ALSTroopUnit* TroopUnit = Cast<ALSTroopUnit>(Unit);
+	const bool bSupport = TroopUnit && TroopUnit->CombatBehavior && TroopUnit->CombatBehavior->IsSupportBehavior();
+	if (!bSupport && !ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target))
 	{
 		Target = nullptr;
 		double Best = TNumericLimits<double>::Max();
@@ -711,7 +714,7 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 		Agent.Target = Target;
 		Agent.NextRepath = 0;
 	}
-	if (!Target)
+	if (!Target && !bSupport)
 	{
 		Unit->BasicAttack->StopAttack();
 		return;
@@ -730,15 +733,28 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 		{
 			return;
 		}
-		Directive = Troop->CombatBehavior->EvaluateEngagement(Target, Opponents);
+		Directive = Troop->CombatBehavior->EvaluateEngagement(Target, bSupport ? Allies : Opponents);
 	}
 	Target = Cast<ALSUnit>(Directive.Target);
-	if (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target))
+	const bool bValidTarget = bSupport ? ULSCombatTargetLibrary::IsCombatAlive(Target) &&
+	    Target != Unit && Target->GetFaction() == Unit->GetFaction() :
+	    ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target);
+	if (!bValidTarget)
 	{
 		Unit->BasicAttack->StopAttack();
+		if (bSupport)
+			AI->StopMovement();
 		return;
 	}
-	const bool bMelee = !Unit->IsA<ALSMobileCastle>() && !Unit->BasicAttack->GetProjectileSettings().ProjectileClass;
+	if (bSupport)
+	{
+		Unit->BasicAttack->StopAttack();
+		if (Agent.Target.Get() != Target)
+			Agent.NextRepath = 0;
+		Agent.Target = Target;
+	}
+	const bool bMelee = !bSupport && !Unit->IsA<ALSMobileCastle>() &&
+	    !Unit->BasicAttack->GetProjectileSettings().ProjectileClass;
 	FLSMeleeApproachResult MeleePlan;
 	if (bMelee && !Directive.bHoldPosition && !Directive.bSuppressBasicAttack)
 	{
@@ -940,7 +956,8 @@ void ALSAutoBattleGameMode::AutoTick()
 	{
 		if (Agent.Unit.IsValid())
 		{
-			UpdateAgent(Agent, Agent.Unit->GetFaction() == ELSFaction::Ally ? Enemies : Allies);
+			const bool bAlly = Agent.Unit->GetFaction() == ELSFaction::Ally;
+			UpdateAgent(Agent, bAlly ? Enemies : Allies, bAlly ? Allies : Enemies);
 		}
 	}
 	FireCastle(AllyCastle, SelectedWeapon, Enemies);
@@ -1095,7 +1112,7 @@ FLSAutoBattlePreset ALSAutoBattleGameMode::GetPreset() const
 	P.Budget = Scenario->Budget;
 	P.PopulationLimit = Scenario->PopulationLimit;
 	P.UnitCosts.Reset();
-	for (int32 I = 0; I < 3; ++I)
+	for (int32 I = 0; I < ALSTroopUnit::GetTroopTypeCount(); ++I)
 	{
 		P.UnitCosts.Add(Scenario->UnitCosts.FindRef(static_cast<ELSTroopType>(I)));
 	}
@@ -1260,7 +1277,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 	Scenario->EnemyWeapon = P.EnemyWeapon;
 	Scenario->Budget = P.Budget;
 	Scenario->PopulationLimit = P.PopulationLimit;
-	for (int32 I = 0; I < 3; ++I)
+	for (int32 I = 0; I < ALSTroopUnit::GetTroopTypeCount(); ++I)
 	{
 		Scenario->UnitCosts.Add(static_cast<ELSTroopType>(I), P.UnitCosts[I]);
 	}

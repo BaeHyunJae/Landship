@@ -27,9 +27,9 @@ void ALSAutoBattleEnemyMarker::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 #if WITH_EDITOR
 	const TCHAR* Shapes[] = {TEXT("/Engine/BasicShapes/Cube.Cube"), TEXT("/Engine/BasicShapes/Cone.Cone"),
-	                         TEXT("/Engine/BasicShapes/Sphere.Sphere")};
+	                         TEXT("/Engine/BasicShapes/Sphere.Sphere"), TEXT("/Engine/BasicShapes/Cylinder.Cylinder")};
 	const uint8 Index = static_cast<uint8>(TroopType);
-	if (Index > 2)
+	if (Index >= UE_ARRAY_COUNT(Shapes))
 	{
 		Label->SetText(FText::FromString(TEXT("INVALID TYPE")));
 		return;

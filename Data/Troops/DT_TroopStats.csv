@@ -2,4 +2,5 @@ Name,Health,AttackPower,AttackInterval,AttackRange,DetectionRange,VisionRadius,M
 Spearman,120,12,1,150,1000,1400,300
 Archer,120,15,1,1200,1400,1600,300
 Cavalry,120,18,1,200,1000,1400,600
+Medic,100,0,1,0,1000,1400,300
 MobileCastle,1000,0,1,0,0,1600,200

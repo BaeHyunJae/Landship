@@ -12,7 +12,11 @@
 ALSAutoBattleScenario::ALSAutoBattleScenario()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	UnitCosts = {{ELSTroopType::Spearman, 40}, {ELSTroopType::Archer, 60}, {ELSTroopType::Cavalry, 90}};
+	for (int32 Index = 0; Index < ALSTroopUnit::GetTroopTypeCount(); ++Index)
+	{
+		const ELSTroopType Type = static_cast<ELSTroopType>(Index);
+		UnitCosts.Add(Type, GetDefaultUnitCost(Type));
+	}
 	for (int32 Index = 0; Index < 6; ++Index)
 	{
 		FLSAutoBattlePlacement Unit;
@@ -20,6 +24,26 @@ ALSAutoBattleScenario::ALSAutoBattleScenario()
 		Unit.Position = FVector(Index < 3 ? 700 : 1100, (Index % 3 - 1) * 360, 0);
 		EnemyFormation.Add(Unit);
 	}
+}
+
+int32 ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType Type)
+{
+	switch (Type)
+	{
+	case ELSTroopType::Spearman: return 40;
+	case ELSTroopType::Archer: return 60;
+	case ELSTroopType::Cavalry: return 90;
+	case ELSTroopType::Medic: return 80;
+	default: return 0;
+	}
+}
+
+void ALSAutoBattleScenario::PostLoad()
+{
+	Super::PostLoad();
+	// 세 병종만 저장한 기존 개인 맵을 새 병종 목록으로 이행한다. 기존 비용은 보존한다.
+	if (!UnitCosts.Contains(ELSTroopType::Medic))
+		UnitCosts.Add(ELSTroopType::Medic, GetDefaultUnitCost(ELSTroopType::Medic));
 }
 
 FString ALSAutoBattleScenario::GetConfigurationError() const
@@ -41,12 +65,12 @@ FString ALSAutoBattleScenario::GetConfigurationError() const
 	{
 		return TEXT("배치 구역 또는 성 위치가 전장 경계를 벗어납니다.");
 	}
-	for (int32 Index = 0; Index < 3; ++Index)
+	for (int32 Index = 0; Index < ALSTroopUnit::GetTroopTypeCount(); ++Index)
 	{
 		const int32* Cost = UnitCosts.Find(static_cast<ELSTroopType>(Index));
 		if (!Cost || *Cost < 1)
 		{
-			return TEXT("세 병종의 양수 비용이 필요합니다.");
+			return TEXT("모든 병종의 양수 비용이 필요합니다.");
 		}
 	}
 	if (static_cast<uint8>(EnemyWeapon) > 2)
@@ -55,7 +79,7 @@ FString ALSAutoBattleScenario::GetConfigurationError() const
 	}
 	for (const FLSAutoBattlePlacement& Unit : EnemyFormation)
 	{
-		if (static_cast<uint8>(Unit.Type) > 2 || Unit.Position.ContainsNaN() ||
+		if (ALSTroopUnit::GetStatsRowName(Unit.Type).IsNone() || Unit.Position.ContainsNaN() ||
 		    !Bounds.IsInsideOrOn(FVector2D(Unit.Position)))
 		{
 			return TEXT("적 병종 또는 위치가 잘못되었습니다.");
@@ -92,7 +116,7 @@ float EnemyRadius(ELSTroopType Type)
 }
 bool ResolveEnemyGround(ALSAutoBattleScenario* Scenario, ELSTroopType Type, const FVector& Input, FVector& Ground)
 {
-	if (static_cast<uint8>(Type) > 2 || Input.ContainsNaN())
+	if (ALSTroopUnit::GetStatsRowName(Type).IsNone() || Input.ContainsNaN())
 	{
 		return false;
 	}
@@ -203,7 +227,7 @@ void ALSAutoBattleScenario::AddEnemyMarker()
 		PlacementToolStatus = TEXT("먼저 Load Saved Formation으로 기존 편성을 불러오세요.");
 		return;
 	}
-	if (Markers.Num() >= 100 || static_cast<uint8>(PlacementTroopType) > 2)
+	if (Markers.Num() >= 100 || ALSTroopUnit::GetStatsRowName(PlacementTroopType).IsNone())
 	{
 		PlacementToolStatus = TEXT("적 상한 또는 병종을 확인하세요.");
 		return;

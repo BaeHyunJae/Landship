@@ -9,6 +9,7 @@
 DECLARE_DELEGATE(FLSPrepareCombatDeath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDamageApplied, const FLSDamageResult&, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDeath, const FLSDamageResult&, Damage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLSOnCombatHealed, float, AppliedHealing, float, CurrentHealth);
 
 /** 세 대상이 공유하는 체력 상태와 피해 처리다. 대상별 사망 처리는 네이티브 훅에 맡긴다. */
 UCLASS(ClassGroup = (Landship))
@@ -39,6 +40,11 @@ public:
 	/** 체력 변경의 공통 진입점이다. UE TakeDamage에 자동 연결되지 않는다. 알림 중 재진입해도 반환값은 이 요청의 결과다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	FLSApplyDamageResult ApplyDamage(const FLSDamageRequest& Request);
+	/** 준비된 생존 대상만 최대 체력까지 회복한다. 잘못된 값·체력 알림 중·사망은 0을 반환한다. */
+	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
+	float RestoreHealth(float Amount);
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Health")
+	FLSOnCombatHealed OnHealedEvent;
 
 	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영을 보존한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")

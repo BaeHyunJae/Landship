@@ -4,6 +4,9 @@
 #include "Castle/LSMobileCastle.h"
 #include "Combat/LSHealthComponent.h"
 #include "Components/Button.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/SpinBox.h"
@@ -48,6 +51,7 @@ FString CastleHealth(const ALSMobileCastle* Castle)
 void ULSAutoBattleWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	EnsureMedicButton();
 	SetLabel(TEXT("SaveNewPresetLabel"), TEXT("새 이름 저장"));
 	SetLabel(TEXT("OverwritePresetLabel"), TEXT("이름 덮어쓰기"));
 	SetLabel(TEXT("Help"), TEXT("우클릭 유지: 회전 + WASD / Q·E 상하\n가운데 드래그: 화면 이동\n휠: 앞뒤 · 우클릭+휠: "
@@ -58,6 +62,7 @@ void ULSAutoBattleWidget::NativeOnInitialized()
 	LS_BIND_BUTTON("Spear", Spear)
 	LS_BIND_BUTTON("Archer", Archer)
 	LS_BIND_BUTTON("Cavalry", Cavalry)
+	LS_BIND_BUTTON("Medic", Medic)
 	LS_BIND_BUTTON("Castle", Castle)
 	LS_BIND_BUTTON("Cannon", Cannon)
 	LS_BIND_BUTTON("Shotgun", Shotgun)
@@ -77,6 +82,40 @@ void ULSAutoBattleWidget::NativeOnInitialized()
 	GetWorld()->GetTimerManager().SetTimer(StatusTimer, this, &ThisClass::RefreshState, 0.2f, true);
 	RefreshPresets();
 	RefreshState();
+}
+
+void ULSAutoBattleWidget::EnsureMedicButton()
+{
+	// 기존 개인 WBP를 다시 생성하지 않고 병종 행만 네 칸으로 확장한다.
+	UButton* SpearButton = Cast<UButton>(GetWidgetFromName(TEXT("Spear")));
+	UCanvasPanel* Canvas = SpearButton ? Cast<UCanvasPanel>(SpearButton->GetParent()) : nullptr;
+	if (!Canvas || !WidgetTree)
+		return;
+	if (!GetWidgetFromName(TEXT("Medic")))
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Medic"));
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MedicLabel"));
+		Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Label->SetText(FText::FromString(TEXT("의무병")));
+		Button->SetContent(Label);
+		Canvas->AddChildToCanvas(Button);
+	}
+	const TCHAR* Names[] = {TEXT("Spear"), TEXT("Archer"), TEXT("Cavalry"), TEXT("Medic")};
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
+	{
+		UWidget* Button = GetWidgetFromName(Names[Index]);
+		if (UCanvasPanelSlot* ButtonSlot = Button ? Cast<UCanvasPanelSlot>(Button->Slot) : nullptr)
+		{
+			ButtonSlot->SetPosition(FVector2D(18 + Index * 76, 238));
+			ButtonSlot->SetSize(FVector2D(72, 42));
+		}
+		if (UTextBlock* Label = Cast<UTextBlock>(GetWidgetFromName(*FString::Printf(TEXT("%sLabel"), Names[Index]))))
+		{
+			FSlateFontInfo Font = Label->GetFont();
+			Font.Size = 13;
+			Label->SetFont(Font);
+		}
+	}
 }
 
 void ULSAutoBattleWidget::SetLabel(const TCHAR* Name, const FString& Text)
@@ -116,10 +155,10 @@ void ULSAutoBattleWidget::RefreshState()
 	                         WeaponNames[static_cast<uint8>(Controller->GetEditingFaction() == ELSFaction::Ally
 	                                                            ? Mode->GetWeapon()
 	                                                            : Mode->GetScenario()->EnemyWeapon)]));
-	const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
-	const TCHAR* TroopButtons[] = {TEXT("Spear"), TEXT("Archer"), TEXT("Cavalry")};
+	const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병")};
+	const TCHAR* TroopButtons[] = {TEXT("Spear"), TEXT("Archer"), TEXT("Cavalry"), TEXT("Medic")};
 	const TCHAR* WeaponButtons[] = {TEXT("Cannon"), TEXT("Shotgun"), TEXT("Ballista")};
-	for (int32 Index = 0; Index < 3; ++Index)
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(TroopButtons); ++Index)
 	{
 		const int32* Cost =
 		    Mode->GetScenario() ? Mode->GetScenario()->UnitCosts.Find(static_cast<ELSTroopType>(Index)) : nullptr;
@@ -134,7 +173,7 @@ void ULSAutoBattleWidget::RefreshState()
 			                               ? FLinearColor(0.12f, 0.65f, 0.9f)
 			                               : FLinearColor(0.15f, 0.22f, 0.3f));
 		}
-		if (auto* Button = Cast<UButton>(GetWidgetFromName(WeaponButtons[Index])))
+		if (auto* Button = Cast<UButton>(Index < UE_ARRAY_COUNT(WeaponButtons) ? GetWidgetFromName(WeaponButtons[Index]) : nullptr))
 		{
 			Button->SetIsEnabled(bPreparing);
 			Button->SetBackgroundColor(static_cast<uint8>(Controller->GetEditingFaction() == ELSFaction::Ally
@@ -277,6 +316,12 @@ void ULSAutoBattleWidget::Cavalry()
 	{
 		C->ChooseTroop(ELSTroopType::Cavalry);
 	}
+}
+
+void ULSAutoBattleWidget::Medic()
+{
+	if (auto* Controller = Cast<ALSAutoBattleController>(GetOwningPlayer()))
+		Controller->ChooseTroop(ELSTroopType::Medic);
 }
 void ULSAutoBattleWidget::Castle()
 {
