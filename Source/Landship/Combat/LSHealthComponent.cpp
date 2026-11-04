@@ -19,6 +19,8 @@ bool ULSHealthComponent::ResetForPool()
 	OnDiedEvent.Clear();
 	OnHealedEvent.Clear();
 	PrepareDeathEvent.Unbind();
+	ActiveHealer.Reset();
+	HealingClaimSerial = 0;
 	Health = FLSHealthSnapshot();
 	InitializationState = ELSHealthInitializationState::NotAttempted;
 	InitializationFailureReason.Reset();
@@ -114,10 +116,47 @@ float ULSHealthComponent::RestoreHealth(float Amount)
 	return Applied;
 }
 
+bool ULSHealthComponent::CanClaimHealing(const UActorComponent* Healer) const
+{
+	return IsValid(this) && IsValid(Healer) && IsValid(Healer->GetOwner()) &&
+	    !Healer->GetOwner()->IsActorBeingDestroyed() && Healer->GetWorld() == GetWorld() &&
+	    IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() &&
+	    GetWorld() && !GetWorld()->bIsTearingDown && InitializationState == ELSHealthInitializationState::Ready &&
+	    !Health.bIsDead && (!ActiveHealer.IsValid() || ActiveHealer.Get() == Healer);
+}
 
+uint64 ULSHealthComponent::TryClaimHealing(UActorComponent* Healer)
+{
+	if (!CanClaimHealing(Healer))
+		return 0;
+	if (ActiveHealer.Get() == Healer && HealingClaimSerial != 0)
+		return HealingClaimSerial;
+	if (++NextHealingClaimSerial == 0)
+		++NextHealingClaimSerial;
+	ActiveHealer = Healer;
+	HealingClaimSerial = NextHealingClaimSerial;
+	return HealingClaimSerial;
+}
 
+bool ULSHealthComponent::HasHealingClaim(const UActorComponent* Healer, uint64 Serial) const
+{
+	return Serial != 0 && Serial == HealingClaimSerial && ActiveHealer.Get() == Healer && CanClaimHealing(Healer);
+}
 
+void ULSHealthComponent::ReleaseHealingClaim(const UActorComponent* Healer, uint64 Serial)
+{
+	// 환자가 풀에서 새 생명으로 재사용된 뒤의 과거 반환도 현재 치유 권한을 지우지 않는다.
+	if (Serial != 0 && Serial == HealingClaimSerial && ActiveHealer.Get() == Healer)
+	{
+		ActiveHealer.Reset();
+		HealingClaimSerial = 0;
+	}
+}
 
+float ULSHealthComponent::RestoreClaimedHealth(UActorComponent* Healer, uint64 Serial, float Amount)
+{
+	return HasHealingClaim(Healer, Serial) ? RestoreHealth(Amount) : 0;
+}
 
 FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser)
 {

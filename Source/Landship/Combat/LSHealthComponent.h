@@ -43,6 +43,13 @@ public:
 	/** 준비된 생존 대상만 최대 체력까지 회복한다. 잘못된 값·체력 알림 중·사망은 0을 반환한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	float RestoreHealth(float Amount);
+	/** 지속 치유의 독점 권한이다. 활성 권한이 있으면 다른 컴포넌트는 획득하지 못한다. */
+	bool CanClaimHealing(const UActorComponent* Healer) const;
+	uint64 TryClaimHealing(UActorComponent* Healer);
+	bool HasHealingClaim(const UActorComponent* Healer, uint64 Serial) const;
+	void ReleaseHealingClaim(const UActorComponent* Healer, uint64 Serial);
+	/** 권한과 세대가 일치하는 치유만 적용한다. 일반 회복 API의 생존·최대 체력 규칙도 유지한다. */
+	float RestoreClaimedHealth(UActorComponent* Healer, uint64 Serial, float Amount);
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Health")
 	FLSOnCombatHealed OnHealedEvent;
 
@@ -90,5 +97,8 @@ private:
 
 	FLSPrepareCombatDeath PrepareDeathEvent;
 	bool bProcessingDamage = false;
-
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UActorComponent> ActiveHealer;
+	uint64 HealingClaimSerial = 0;
+	uint64 NextHealingClaimSerial = 0;
 };

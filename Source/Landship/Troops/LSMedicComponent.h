@@ -22,6 +22,23 @@ class LANDSHIP_API ULSMedicComponent : public ULSTroopCombatComponent
 	}
 	virtual FLSCombatDirective EvaluateEngagement(AActor* Target, const TArray<ALSUnit*>& Allies) override;
 	virtual void ResetForNewLife() override;
+	UFUNCTION(BlueprintPure, Category = "Medic|Mana")
+	float GetCurrentMana() const
+	{
+		return CurrentMana;
+	}
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Medic|Mana", meta = (ClampMin = "0.01"))
+	float MaxMana = 100;
+	UPROPERTY(EditDefaultsOnly, Category = "Medic|Mana", meta = (ClampMin = "0"))
+	float StartingMana = 50;
+	UPROPERTY(EditDefaultsOnly, Category = "Medic|Mana", meta = (ClampMin = "0"))
+	float ManaRegenerationPerSecond = 1;
+	/** 실제 회복한 HP당 소모량이다. 완치된 대상이나 실패한 회복에는 소모하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Medic|Mana", meta = (ClampMin = "0.001"))
+	float ManaPerHealth = 0.5f;
+	/** 마나 고갈 뒤 매 프레임 연결/해제가 반복되지 않도록 새 연결에 필요한 최소량이다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Medic|Mana", meta = (ClampMin = "0.01"))
+	float ManaToStartHealing = 5;
 	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "0.01"))
 	float HealingPerSecond = 24;
 	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "1", Units = "cm"))
@@ -37,7 +54,7 @@ class LANDSHIP_API ULSMedicComponent : public ULSTroopCombatComponent
 	virtual void TickSpecialAction(float DeltaTime) override;
 	virtual bool HasSpecialAction() const override
 	{
-		return Patient.IsValid();
+		return Patient.IsValid() || (ManaRegenerationPerSecond > 0 && CurrentMana < MaxMana);
 	}
 	virtual FString GetRestingLabel() const override;
 
@@ -45,6 +62,17 @@ class LANDSHIP_API ULSMedicComponent : public ULSTroopCombatComponent
 	bool IsPatientValid() const;
 	void SetPatient(ALSTroopUnit* Unit);
 	void HideBeam();
+	void ReleasePatient();
+	void ReleaseHealingConnection();
+	void UpdateManaLabel();
+	bool CanConnectHealing() const;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Medic|Mana",
+	          meta = (AllowPrivateAccess = "true"))
+	float CurrentMana = 0;
+	uint64 HealingClaimSerial = 0;
+	uint64 ManaLifeSerial = 0;
+	float LastDisplayedMana = -1;
+	bool bLastDisplayedBeam = false;
 	UPROPERTY(Transient)
 	TWeakObjectPtr<ALSTroopUnit> Patient;
 	uint64 PatientSerial = 0;

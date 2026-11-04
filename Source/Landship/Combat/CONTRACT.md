@@ -2,6 +2,7 @@
 
 ## 제공하는 것
 
+- 지속 치유는 `CanClaimHealing`과 `TryClaimHealing`으로 환자별 독점 권한을 확인·획득한다. 다른 컴포넌트가 보유한 활성 권한은 공유하지 않는다. `RestoreClaimedHealth(Healer, Serial, Amount)`는 해당 권한의 실제 회복량을 반환하고 `ReleaseHealingClaim`은 발급 세대가 일치할 때만 해제한다. 풀 초기화는 활성 권한을 지우되 발급 번호를 되돌리지 않아 이전 생명의 해제가 새 권한에 적용되지 않는다. 일반 `RestoreHealth`는 별도 즉시 회복용으로 유지한다.
 
 - `ULSHealthComponent::RestoreHealth(Amount)`는 준비된 생존 대상의 최대 체력 이내 실제 회복량을 반환한다. 잘못된 입력·사망·체력 알림 처리 중에는 0이다. `OnHealedEvent(AppliedHealing, CurrentHealth)`는 회복량이 양수일 때만 발생하며 회복은 피격·사망 알림을 발생시키지 않는다. 풀 정리에서는 회복 구독도 해제한다.
 
