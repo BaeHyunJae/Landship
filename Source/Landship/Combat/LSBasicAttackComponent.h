@@ -112,6 +112,11 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
 	float GetCooldownRemaining() const;
+	/** 기존 대기시간을 줄이지 않고 다음 공격을 지정한 초만큼 늦춘다. 잘못된 입력은 거부한다. */
+	bool DelayNextAttack(float Seconds);
+	/** 출처별 공격 간격 배율이다. 1은 해당 출처 제거, 1보다 크면 느려진다. 대기 중 공격 진행률을 보존하며
+	 * 경직으로 보류된 시간은 단축하지 않는다. 실행 준비 전의 추가와 종료 후의 추가는 거부한다. */
+	bool SetAttackIntervalMultiplier(FName Source, float Multiplier);
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Attack")
 	FLSBasicAttackSettings GetAttackSettings() const
@@ -171,6 +176,8 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	FLSProjectileAttackSettings ProjectileSettings;
 	FTimerHandle AttackTimer;
 	double NextAttackTime = 0.0;
+	double AttackBlockedUntil = 0.0;
+	TMap<FName, float> IntervalMultipliers;
 	bool bConfigured = false;
 	bool bHasPendingSettings = false;
 	float EffectiveInterval = 0.0f;

@@ -713,11 +713,7 @@ void ULSOrderComponent::UpdateOrders(float DeltaTime)
 	}
 	if (bKnockbackActive)
 	{
-		const ACharacter* Character = Cast<ACharacter>(GetOwner());
-		if (Character &&
-		    (Character->GetCharacterMovement()->IsFalling() || GetWorld()->GetTimeSeconds() < KnockbackResumeAfter))
-			return;
-		bKnockbackActive = false;
+		if (!TryCompleteKnockback()) return;
 		const FLSOrder ResumeOrder = ActiveOrder;
 		BeginOrder(ResumeOrder);
 	}
@@ -1047,6 +1043,16 @@ void ULSOrderComponent::SetEngagementTarget(AActor* Target)
 void ULSOrderComponent::OnEngagedTargetDied(const FLSDamageResult& Damage)
 {
 	RequestOrderUpdate();
+}
+
+bool ULSOrderComponent::TryCompleteKnockback()
+{
+	if (!bKnockbackActive) return true;
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (!GetWorld() || (Character && Character->GetCharacterMovement()->IsFalling()) ||
+	    GetWorld()->GetTimeSeconds() < KnockbackResumeAfter) return false;
+	bKnockbackActive = false;
+	return true;
 }
 
 void ULSOrderComponent::OnOwnerMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)

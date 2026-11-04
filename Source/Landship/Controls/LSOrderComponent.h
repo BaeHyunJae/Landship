@@ -56,6 +56,8 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	bool SubmitOrder(const FLSOrder& Order, bool bQueue = false);
 	/** 현재 명령과 예약은 보존하고, 넉백 착지 뒤 실행을 재개한다. */
 	bool ApplyKnockback(const FVector& Velocity);
+	/** 낙하와 최소 보류 시간이 끝났으면 넉백 표시만 해제한다. 이동·명령은 실행하지 않는다. */
+	bool TryCompleteKnockback();
 	bool IsKnockedBack() const
 	{
 		return bKnockbackActive;

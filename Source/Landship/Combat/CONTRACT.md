@@ -2,6 +2,8 @@
 
 ## 제공하는 것
 
+- `SetAttackIntervalMultiplier(Source, Multiplier)`는 병력별 출처를 구분해 공격 간격 배율을 적용한다. 1은 해당 출처 제거이며 같은 출처의 재적용은 중첩하지 않는다. 월드 공격속도 배율과 함께 계산하고 대기 중 공격 진행률을 보존한다. `DelayNextAttack`의 경직 보류는 별도로 유지해 배율 해제로 단축하지 않는다.
+
 - `ULSBasicAttackComponent`는 공격 간격 관리와 즉시 피해 또는 투사체 발사를 맡는다. 접근 이동은 맡지 않는다.
 - `ConfigureAttack(FLSBasicAttackSettings)`는 피해·간격·사거리를 받아 유효한 값만 적용하고 성공 여부를 반환한다. 받는 간격은 원본이며 `GetAttackSettings()`도 원본을 반환한다. 실제 간격은 월드의 공격 속도 배율로 한 번 나눈 값이고 `GetEffectiveAttackInterval()`로 조회한다. 같은 설정을 다시 적용해도 진행 중인 쿨타임과 다음 검사 시각을 초기화하지 않는다. 소유자의 수치 읽기와 체력 준비에 성공한 뒤 호출한다.
 - 플레이 시작 전의 `ConfigureAttack`은 원본만 준비하므로 성공해도 실행 준비 완료가 아니다. `BeginPlay`에서 월드 배율을 조회한 뒤 `IsConfigured()`가 정해진다. 플레이 중 호출에서 배율을 얻지 못하거나 계산 결과가 0 이하이거나 유한하지 않으면 실패를 반환한다. 1배 대체값이나 자동 재시도는 없다.
@@ -9,6 +11,7 @@
 - `StartAttack(AActor*)`는 지정 대상을 유지하고 사거리 안에 들어오면 공격한다. 사거리 밖 대상도 지정할 수 있다.
 - `StartAutoAttack()`은 사거리 안의 가장 가까운 상대 진영 대상을 자동으로 고른다.
 - `StopAttack()`은 타이머와 대상을 정리한다. 남은 쿨타임은 초기화하지 않는다.
+- `DelayNextAttack(Seconds)`는 현재 시각부터 지정한 초 동안 다음 공격을 보류하며 기존 대기시간을 줄이지 않는다. 음수·유한하지 않은 입력·월드 부재·전투 종료는 false이며 변경하지 않는다. 공격 중단·재시작으로 보류를 우회하지 않는다.
 - 사거리는 양측 충돌 원통 외곽 사이의 거리다(`ULSCombatTargetLibrary::GetAttackDistance`). 첫 공격은 준비되면 즉시 적용하고 이후 실제 간격을 지킨다. 중단·대상 변경·설정 변경으로 쿨타임을 우회하지 않는다. 긴 프레임에서 밀린 공격을 몰아 적용하지 않으며, 프레임보다 빠른 공격 빈도는 보장하지 않는다.
 - `OnAttackPerformed(Target, AppliedDamage)`는 실제 감소량이 양수이고 공격자 수명이 유효할 때 공격자 측 연출용으로 발생한다. 투사체 공격에서는 발사가 아니라 명중 뒤에 발생하며 `Target`은 실제 피해를 받은 대상으로, 같은 진영이나 최초 지정 목표 외의 적도 포함한다. 공통 피격·사망 알림을 대신하지 않는다. `OnProjectileLaunched(Projectile)`는 투사체 발사 직후 발생한다.
 - `ULSBasicAttackTuningSubsystem::TryGetBasicAttackSpeedMultiplier(float&)`는 플레이 시작 때 확정한 배율을 반환한다. 배율의 원본은 프로젝트 설정 '기본 공격 속도 배율'(`ULSCombatDeveloperSettings`)이며 유한한 양수만 쓴다. 플레이 중에 바꾼 값은 다음 플레이부터 반영한다. 플레이 중에 생성한 병력·적·거점도 같은 월드의 배율을 쓴다.

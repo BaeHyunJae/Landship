@@ -4,6 +4,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "LSTroopUnit.generated.h"
 
+class ULSTroopCombatComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
@@ -28,6 +29,12 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   public:
 	ALSTroopUnit();
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Troops")
+	TObjectPtr<ULSTroopCombatComponent> CombatBehavior;
+	void SetTacticalLabel(const FString& State);
+	void SetLanceLowered(bool bLowered);
+	UPROPERTY(VisibleAnywhere, Category = "Landship|Troops")
+	TObjectPtr<UStaticMeshComponent> Lance;
 	virtual void OnConstruction(const FTransform& Transform) override;
 	UFUNCTION(BlueprintPure, Category = "Landship|Troops")
 	ELSTroopType GetTroopType() const
@@ -54,6 +61,9 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   private:
 	void RefreshDefinition();
+	void InitializeCombatBehavior();
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Behavior")
+	TMap<ELSTroopType, TSubclassOf<ULSTroopCombatComponent>> CombatBehaviorClasses;
 	void InitializeAnimations();
 	void PlayIdleAnimation();
 	void RestoreMarkerColor();

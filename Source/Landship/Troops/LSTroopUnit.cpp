@@ -1,4 +1,8 @@
 #include "Troops/LSTroopUnit.h"
+#include "Troops/LSTroopCombatComponent.h"
+#include "Troops/LSCavalryComponent.h"
+#include "Troops/LSSpearmanComponent.h"
+#include "Troops/LSArcherComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -19,6 +23,9 @@
 
 ALSTroopUnit::ALSTroopUnit()
 {
+	CombatBehaviorClasses.Add(ELSTroopType::Cavalry, ULSCavalryComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Spearman, ULSSpearmanComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Archer, ULSArcherComponent::StaticClass());
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
@@ -37,6 +44,14 @@ ALSTroopUnit::ALSTroopUnit()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cone(TEXT("/Engine/BasicShapes/Cone.Cone"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	Lance = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Lance"));
+	Lance->SetupAttachment(RootComponent);
+	Lance->SetStaticMesh(Cube.Object);
+	Lance->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Lance->SetCanEverAffectNavigation(false);
+	Lance->SetRelativeScale3D(FVector(2.2, 0.045, 0.045));
+	Lance->SetRelativeLocation(FVector(70, 45, 30));
+	Lance->SetRelativeRotation(FRotator(55, 0, 0));
 	SpearShape = Cube.Object;
 	ArcherShape = Cone.Object;
 	CavalryShape = Sphere.Object;
@@ -98,12 +113,15 @@ void ALSTroopUnit::OnConstruction(const FTransform& Transform)
 
 void ALSTroopUnit::RefreshDefinition()
 {
+	Lance->SetVisibility(TroopType == ELSTroopType::Cavalry);
 	StatsRow.DataTable = TroopStatsTable.LoadSynchronous();
 	StatsRow.RowName = GetStatsRowName(TroopType);
 	Selection->SelectionType = StatsRow.RowName;
 	const TCHAR* GroupNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
 	if (static_cast<uint8>(TroopType) < UE_ARRAY_COUNT(GroupNames))
+	{
 		Selection->CommandGroupName = FText::FromString(GroupNames[static_cast<uint8>(TroopType)]);
+	}
 	UStaticMesh* Shape = nullptr;
 	FVector Scale = FVector::OneVector;
 	switch (TroopType)
@@ -149,6 +167,7 @@ void ALSTroopUnit::BeginPlay()
 	// 부모의 체력·공격·이동 초기화 전에 최종 병종의 데이터 행을 확정한다.
 	RefreshDefinition();
 	Super::BeginPlay();
+	InitializeCombatBehavior();
 	Health->OnDiedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDied);
 	Health->OnDamagedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDamaged);
 	InitializeAnimations();
@@ -157,7 +176,9 @@ void ALSTroopUnit::BeginPlay()
 void ALSTroopUnit::InitializeAnimations()
 {
 	if (!ULSCombatTargetLibrary::IsCombatAlive(this))
+	{
 		return;
+	}
 	const bool bArcher = TroopType == ELSTroopType::Archer;
 	UAnimSequence* Idle = (bArcher ? ArcherIdleAnimation : MeleeIdleAnimation).LoadSynchronous();
 	UAnimSequence* Attack = (bArcher ? ArcherAttackAnimation : MeleeAttackAnimation).LoadSynchronous();
@@ -197,14 +218,18 @@ void ALSTroopUnit::Tick(float DeltaSeconds)
 	// 명령 실행부를 구독하지 않아도 직접 StopAttack·표적 교체를 같은 표현 규칙으로 처리한다.
 	if (!VisualAttackTarget.IsValid() || BasicAttack->GetAttackTarget() != VisualAttackTarget.Get() ||
 	    !ULSCombatTargetLibrary::IsCombatAlive(VisualAttackTarget.Get()))
+	{
 		PlayIdleAnimation();
+	}
 }
 
 void ALSTroopUnit::OnTroopDamaged(const FLSDamageResult& Damage)
 {
 	if (!MarkerMaterial || !ULSCombatTargetLibrary::IsCombatAlive(this) || !FMath::IsFinite(HitFlashDuration) ||
 	    HitFlashDuration <= 0)
+	{
 		return;
+	}
 	MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), HitFlashColor);
 	GetWorldTimerManager().SetTimer(HitFlashTimer, this, &ALSTroopUnit::RestoreMarkerColor, HitFlashDuration, false);
 }
@@ -212,26 +237,36 @@ void ALSTroopUnit::OnTroopDamaged(const FLSDamageResult& Damage)
 void ALSTroopUnit::RestoreMarkerColor()
 {
 	if (MarkerMaterial)
+	{
 		MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), MarkerColor);
+	}
 }
 
 void ALSTroopUnit::OnTroopAttackExecuted(const FLSAttackExecution& Execution)
 {
 	if (Execution.Source.Get() != this || !ActiveAttackAnimation || !ULSCombatTargetLibrary::IsCombatAlive(this) ||
 	    GetMesh()->IsSimulatingPhysics())
+	{
 		return;
+	}
 	// 피해와 투사체 발사는 기존 전투 코드가 소유한다. 애니메이션은 확정된 공격만 표현한다.
 	const float Interval = BasicAttack->GetEffectiveAttackInterval();
 	const float Length = ActiveAttackAnimation->GetPlayLength() / ActiveAttackAnimation->RateScale;
 	if (!FMath::IsFinite(Interval) || Interval <= 0 || !FMath::IsFinite(Length) || Length <= 0)
+	{
 		return;
+	}
 	const float PlayRate = FMath::Max(1.0f, Length / Interval);
 	if (!FMath::IsFinite(PlayRate))
+	{
 		return;
+	}
 	FVector Direction = Execution.TargetLocation - GetActorLocation();
 	Direction.Z = 0;
 	if (!Direction.IsNearlyZero())
+	{
 		SetActorRotation(Direction.Rotation());
+	}
 	VisualAttackTarget = Execution.Target;
 	SetActorTickEnabled(true);
 	GetWorldTimerManager().ClearTimer(AttackAnimationTimer);
@@ -253,6 +288,11 @@ void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ALSTroopUnit::OnTroopDied(const FLSDamageResult& Damage)
 {
+	if (CombatBehavior)
+	{
+		CombatBehavior->SetBattleEnabled(false);
+	}
+	Lance->SetVisibility(false);
 	SetActorTickEnabled(false);
 	VisualAttackTarget.Reset();
 	GetWorldTimerManager().ClearTimer(HitFlashTimer);
@@ -276,3 +316,27 @@ bool ALSTroopUnit::CanEditChange(const FProperty* Property) const
 	return Super::CanEditChange(Property);
 }
 #endif
+
+void ALSTroopUnit::SetTacticalLabel(const FString& State)
+{
+	TroopLabel->SetText(
+	    FText::FromString(GetStatsRowName(TroopType).ToString() + (State.IsEmpty() ? TEXT("") : TEXT(" / ") + State)));
+}
+
+void ALSTroopUnit::SetLanceLowered(bool bLowered)
+{
+	Lance->SetRelativeRotation(FRotator(bLowered ? 0 : 55, 0, 0));
+}
+
+void ALSTroopUnit::InitializeCombatBehavior()
+{
+	const TSubclassOf<ULSTroopCombatComponent>* BehaviorClass = CombatBehaviorClasses.Find(TroopType);
+	if (!BehaviorClass || !*BehaviorClass || (*BehaviorClass)->HasAnyClassFlags(CLASS_Abstract))
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s: 병종 전투 컴포넌트 클래스가 유효하지 않습니다."), *GetName());
+		return;
+	}
+	CombatBehavior = NewObject<ULSTroopCombatComponent>(this, *BehaviorClass, TEXT("TroopCombat"), RF_Transient);
+	AddInstanceComponent(CombatBehavior);
+	CombatBehavior->RegisterComponent();
+}
