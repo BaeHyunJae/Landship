@@ -1,6 +1,7 @@
 #include "Castle/Tests/LSHMHCastleWeaponsProbe.h"
 
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
@@ -98,11 +99,11 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 	ALSPlayerController* Controller = Cast<ALSPlayerController>(GetWorld()->GetFirstPlayerController());
 	if (Stage == 0 && StageTime > 1.5f)
 	{
-		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 		{
-			It->Orders->SetComponentTickEnabled(false);
-			It->BasicAttack->StopAttack();
-			if (ALSMobileCastle* Found = Cast<ALSMobileCastle>(*It))
+			if (auto* Orders = It->FindComponentByClass<ULSOrderComponent>()) Orders->SetComponentTickEnabled(false);
+			if (auto* Attack = It->FindComponentByClass<ULSBasicAttackComponent>()) Attack->StopAttack();
+			if (ALSCastle* Found = Cast<ALSCastle>(*It))
 			{
 				if (Found->GetFaction() == ELSFaction::Ally)
 					Castle = Found;
@@ -159,7 +160,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Check(Controller->GetAttackCommandMarker() == Enemies[0] && Controller->GetSelectedActors().Contains(Ally),
 		      TEXT("아군 선택을 유지하며 적 원형 표시"));
 		Controller->ApplySelection({Castle});
-		Check(!Castle->Orders->CanAttack() && !Castle->BasicAttack->IsConfigured(), TEXT("성의 기본 공격 제거"));
+		Check(!Castle->Orders->CanAttack() && !Castle->FindComponentByClass<ULSBasicAttackComponent>(), TEXT("성의 기본 공격 제거"));
 		Controller->ArmCastleWeapon(ELSCastleWeapon::Cannon);
 		Controller->CancelInput();
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) == 0, TEXT("조준 취소는 쿨타임 미소모"));
@@ -247,6 +248,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Controller->ArmCastleWeapon(ELSCastleWeapon::Ballista);
 		Check(Controller->ConfirmCastleWeapon(FVector(1000, 100, 0)) == ELSWeaponCastResult::Ready,
 		      TEXT("직선 발리스타 시전"));
+		BallistaCastTime = Elapsed;
 		Capture();
 		Stage = 3;
 		StageTime = 0;
@@ -273,7 +275,7 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Check(Castle->GetActorLocation().X > -700, TEXT("재현 순서의 첫 성 실제 이동"));
 		PostShotMoveStart = Castle->GetActorLocation();
 		Check(Controller->ArmCastleWeapon(ELSCastleWeapon::Shotgun) &&
-		          Controller->ConfirmCastleWeapon(FVector(1000, -800, 0)) == ELSWeaponCastResult::Ready,
+		          Controller->ConfirmCastleWeapon(Castle->GetActorLocation() + FVector(500, 0, 0)) == ELSWeaponCastResult::Ready,
 		      TEXT("이동한 위치에서 산탄 발사"));
 		Check(Controller->IssueSelectionOrder(ELSOrderKind::Move, FVector(-1000, -1200, 0), nullptr, false),
 		      TEXT("이동·산탄 이후 새 경로 접수"));
@@ -287,14 +289,15 @@ void ALSHMHCastleWeaponsProbe::Tick(float DeltaSeconds)
 		Castle->SetActorLocation(FVector(-800, -1100, 144));
 		Check(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Cannon) == 0 &&
 		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Shotgun) > 0 &&
-		          Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Ballista) > 0,
+		          FMath::IsNearlyEqual(Castle->Weapons->GetRemainingCooldown(ELSCastleWeapon::Ballista),
+		              FMath::Max(0.f, Castle->Weapons->FindSettings(ELSCastleWeapon::Ballista)->Cooldown - (Elapsed - BallistaCastTime)), .2f),
 		      TEXT("재발사한 산탄과 다른 무장의 독립 쿨타임"));
 		int32 Width, Height;
 		Controller->GetViewportSize(Width, Height);
 		const int32 Before = GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation();
 		Cast<ALSRTSHUD>(Controller->GetHUD())
 		    ->HandleClick(Cast<ALSRTSHUD>(Controller->GetHUD())->GetCommandCellRect(10).GetCenter());
-		Check(GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation() == Before + 1,
+		Check(GetWorld()->GetGameState<ALSGameState>()->GetCurrentPopulation() == Before + 2,
 		      TEXT("F1 생산 버튼은 기존 생산 기능 유지"));
 		UE_LOG(LogTemp, Display, TEXT("HMH_PROJECTILE_PRODUCTION result=%s before=%d after=%d"),
 		       *UEnum::GetValueAsString(Controller->GetLastProductionResult()), Before,

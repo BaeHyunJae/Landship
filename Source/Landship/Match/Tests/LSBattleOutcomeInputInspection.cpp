@@ -1,7 +1,7 @@
 #include "Match/Tests/LSBattleOutcomeInputInspection.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Castle/LSCastleProjectile.h"
 #include "Controls/LSOrderComponent.h"
@@ -56,13 +56,15 @@ FString ULSBattleOutcomeInputInspection::Snapshot(APlayerController* InControlle
 		(MinimapSide > 0 && Result.Intersect(Layout.Minimap));
 	TArray<FString> Selection, ActorStates;
 	for (AActor* Actor : Controller->GetSelectedActors()) Selection.Add(FString::Printf(TEXT("\"%s\""), *Actor->GetPathName().ReplaceCharWithEscapedChar()));
-	for (TActorIterator<ALSUnit> It(World); It; ++It)
+	for (TActorIterator<APawn> It(World); It; ++It)
 	{
+		ULSOrderComponent* Orders = It->FindComponentByClass<ULSOrderComponent>();
+		if (!Orders) continue;
 		FVector2D Screen = FVector2D::ZeroVector;
 		const bool bProjected = Controller->ProjectWorldLocationToScreen(It->GetActorLocation(), Screen);
 		const FVector P = It->GetActorLocation();
 		ActorStates.Add(FString::Printf(TEXT("{\"name\":\"%s\",\"position\":[%.3f,%.3f,%.3f],\"screen\":[%.3f,%.3f],\"projected\":%s,\"order\":%d,\"queue\":%d}"),
-			*It->GetPathName().ReplaceCharWithEscapedChar(), P.X, P.Y, P.Z, Screen.X, Screen.Y, bProjected ? TEXT("true") : TEXT("false"), static_cast<int32>(It->Orders->GetOrderKind()), It->Orders->GetQueuedCount()));
+			*It->GetPathName().ReplaceCharWithEscapedChar(), P.X, P.Y, P.Z, Screen.X, Screen.Y, bProjected ? TEXT("true") : TEXT("false"), static_cast<int32>(Orders->GetOrderKind()), Orders->GetQueuedCount()));
 	}
 	int32 Projectiles = 0;
 	for (TActorIterator<ALSBasicProjectile> It(World); It; ++It) ++Projectiles;

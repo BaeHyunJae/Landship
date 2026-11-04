@@ -8,7 +8,7 @@
 
 class ALSEnemyTroop;
 class ALSEnemyOutpost;
-class ALSMobileCastle;
+class ALSCastle;
 class ALSBasicAttackTestActor;
 
 /** 경계 보정과 밀집 진격은 별도 실행으로 관찰하여 기존 전투 검증과 격리한다. */
@@ -29,7 +29,7 @@ private:
 	void OnCastleDamaged(const FLSDamageResult& Damage);
 	UFUNCTION()
 	void OnExecuted(const FLSAttackExecution& Execution);
-	TWeakObjectPtr<ALSMobileCastle> Castle;
+	TWeakObjectPtr<ALSCastle> Castle;
 	TWeakObjectPtr<ALSEnemyOutpost> Core;
 	TWeakObjectPtr<ALSEnemyTroop> Guard;
 	TWeakObjectPtr<ALSBasicAttackTestActor> Opponent;

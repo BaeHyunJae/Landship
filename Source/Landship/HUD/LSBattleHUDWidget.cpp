@@ -1,5 +1,6 @@
 #include "HUD/LSBattleHUDWidget.h"
 #include "HUD/LSCommandButton.h"
+#include "Castle/LSCastle.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Troops/LSTroopUnit.h"
@@ -13,6 +14,7 @@
 #include "Controls/LSSelectableComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Enemies/LSBattlefieldStateSubsystem.h"
 #include "Match/LSGameState.h"
 #include "Match/LSBattleOutcomePolicy.h"
 #include "Vision/LSVisionSubsystem.h"
@@ -91,6 +93,8 @@ FText ULSBattleHUDWidget::GetCommandFailureText() const
 		return FText::GetEmpty();
 	switch (Orders->GetLastFailure())
 	{
+	case ELSOrderFailure::BlockedByBarricade:
+		return Text(TEXT("바리케이드로 경로 차단"));
 	case ELSOrderFailure::Unreachable:
 		return Text(TEXT("이동 가능한 경로를 찾지 못했습니다"));
 	case ELSOrderFailure::QueueFull:
@@ -104,6 +108,61 @@ FText ULSBattleHUDWidget::GetCommandFailureText() const
 	}
 }
 
+FText ULSBattleHUDWidget::GetCastleHealthText() const
+{
+	const auto* PC = Cast<ALSPlayerController>(GetOwningPlayer());
+	const auto* Castle = PC ? PC->GetConfiguredBattlefieldCastle() : nullptr;
+	const auto* Health = Castle ? Castle->FindComponentByClass<ULSHealthComponent>() : nullptr;
+	FLSHealthSnapshot Snapshot;
+	return Health && Health->TryGetHealth(Snapshot)
+	           ? Text(FString::Printf(TEXT("이동 성  |  체력 %.0f / %.0f%s"), Snapshot.CurrentHealth,
+	                                  Snapshot.MaxHealth, Snapshot.bIsDead ? TEXT(" · 파괴됨") : TEXT("")))
+	           : Text(TEXT("이동 성  |  상태 확인 불가"));
+}
+
+float ULSBattleHUDWidget::GetCastleHealthFraction() const
+{
+	const auto* PC = Cast<ALSPlayerController>(GetOwningPlayer());
+	const auto* Castle = PC ? PC->GetConfiguredBattlefieldCastle() : nullptr;
+	const auto* Health = Castle ? Castle->FindComponentByClass<ULSHealthComponent>() : nullptr;
+	FLSHealthSnapshot Snapshot;
+	return Health && Health->TryGetHealth(Snapshot) && Snapshot.MaxHealth > 0
+	           ? FMath::Clamp(Snapshot.CurrentHealth / Snapshot.MaxHealth, 0.0f, 1.0f) : 0;
+}
+
+FLSCastleWeaponHUDState ULSBattleHUDWidget::GetCastleWeaponStatus(ELSCastleWeapon Weapon) const
+{
+	FLSCastleWeaponHUDState Result;
+	const int32 Index = static_cast<int32>(Weapon);
+	const TCHAR* Names[] = {TEXT("Q  일반 대포"), TEXT("W  산탄"), TEXT("E  발리스타")};
+	if (Index < 0 || Index >= UE_ARRAY_COUNT(Names)) return Result;
+	Result.Title = Text(Names[Index]);
+	Result.Status = Text(TEXT("사용 불가"));
+	const auto* PC = Cast<ALSPlayerController>(GetOwningPlayer());
+	const auto* Castle = PC ? PC->GetConfiguredBattlefieldCastle() : nullptr;
+	if (!Castle) return Result;
+	const auto* Battlefield = GetWorld() ? GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>() : nullptr;
+	if (LSBattleOutcome::AreActionsStopped(GetWorld()) ||
+	    (!LSBattleOutcome::IsManaged(GetWorld()) && Battlefield && Battlefield->IsBattleEndedForEnemies()))
+	{
+		Result.Status = Text(TEXT("전투 종료"));
+		return Result;
+	}
+	FLSCastleWeaponState State;
+	if (!Castle->Weapons->GetWeaponState(Weapon, State)) return Result;
+	Result.Remaining = Castle->Weapons->GetRemainingCooldown(Weapon);
+	Result.Duration = Castle->Weapons->GetCooldownDuration(Weapon);
+	Result.bAvailable = PC->GetCastleWeaponSource() == Castle &&
+	                    Castle->Weapons->GetStatus(Weapon) == ELSWeaponCastResult::Ready;
+	FString Status = !State.bUnlocked ? TEXT("잠김") : !State.bEnabled ? TEXT("비활성")
+	    : PC->GetAimingCastle() == Castle && PC->GetPendingWeapon() == Weapon
+	        ? PC->GetLastWeaponResult() == ELSWeaponCastResult::OutOfRange ? TEXT("사거리 밖") : TEXT("조준 중")
+	    : Result.Remaining > 0 ? TEXT("재사용 대기") : Result.bAvailable ? TEXT("사용 가능") : TEXT("사용 불가");
+	if (Result.Remaining > 0) Status += FString::Printf(TEXT(" %.1f초"), Result.Remaining);
+	Result.Status = Text(Status);
+	return Result;
+}
+
 void ULSBattleHUDWidget::SetText(const TCHAR* Name, const FText& Value)
 {
 	if (auto* Label = Cast<UTextBlock>(GetWidgetFromName(Name)))
@@ -113,8 +172,26 @@ void ULSBattleHUDWidget::SetText(const TCHAR* Name, const FText& Value)
 void ULSBattleHUDWidget::RefreshState()
 {
 	const auto* PC = Cast<ALSPlayerController>(GetOwningPlayer());
+	if (UWidget* Panel = GetWidgetFromName(TEXT("CastleStatusPanel")))
+		Panel->SetVisibility(PC && PC->GetConfiguredBattlefieldCastle() ? ESlateVisibility::Visible
+		                                                            : ESlateVisibility::Collapsed);
 	if (!PC)
 		return;
+	SetText(TEXT("CastleHealthText"), GetCastleHealthText());
+	if (auto* Bar = Cast<UProgressBar>(GetWidgetFromName(TEXT("CastleHealthProgress"))))
+		Bar->SetPercent(GetCastleHealthFraction());
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const auto State = GetCastleWeaponStatus(static_cast<ELSCastleWeapon>(Index));
+		SetText(*FString::Printf(TEXT("CastleWeaponTitle%d"), Index), State.Title);
+		SetText(*FString::Printf(TEXT("CastleWeaponState%d"), Index), State.Status);
+		if (auto* Label = Cast<UTextBlock>(GetWidgetFromName(*FString::Printf(TEXT("CastleWeaponState%d"), Index))))
+			Label->SetColorAndOpacity(FSlateColor(State.bAvailable ? FLinearColor(0.45f, 1, 0.65f)
+			                                                       : FLinearColor(1, 0.77f, 0.35f)));
+		if (auto* Bar = Cast<UProgressBar>(GetWidgetFromName(*FString::Printf(TEXT("CastleWeaponProgress%d"), Index))))
+			Bar->SetPercent(State.Duration > 0 && State.Remaining > 0
+			    ? FMath::Clamp(1 - State.Remaining / State.Duration, 0.0f, 1.0f) : State.bAvailable ? 1 : 0);
+	}
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 	{
 		bDiscoveryVisible = false;
@@ -175,6 +252,18 @@ void ULSBattleHUDWidget::SetPanelLayout(const FBox2D& Info, const FBox2D& Comman
 				CanvasSlot->SetPosition(Boxes[Index].Min / DPI);
 				CanvasSlot->SetSize(Boxes[Index].GetSize() / DPI);
 			}
+}
+
+void ULSBattleHUDWidget::SetCastleStatusLayout(const FBox2D& Status)
+{
+	if (!Status.bIsValid) return;
+	if (UWidget* Panel = GetWidgetFromName(TEXT("CastleStatusPanel")))
+		if (auto* StatusSlot = Cast<UCanvasPanelSlot>(Panel->Slot))
+		{
+			const float DPI = UWidgetLayoutLibrary::GetViewportScale(this);
+			StatusSlot->SetPosition(Status.Min / DPI);
+			StatusSlot->SetSize(Status.GetSize() / DPI);
+		}
 }
 
 void ULSBattleHUDWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)

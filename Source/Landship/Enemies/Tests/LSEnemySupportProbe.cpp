@@ -3,7 +3,7 @@
 #include "Enemies/Tests/LSEnemySupportTestAccess.h"
 #include "Enemies/LSEnemyTroop.h"
 #include "Enemies/LSEnemyOutpost.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Engine/World.h"

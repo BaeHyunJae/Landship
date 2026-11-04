@@ -1,5 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
@@ -28,7 +30,7 @@ bool FLSMinimapCastleIntegrationTest::RunTest(const FString& Parameters)
 		UWorld* World = Fixture.GetTestWorld();
 		World->SpawnActor<ALSBattlefieldSettings>();
 		ALSPlayerController* Controller = World->SpawnActor<ALSPlayerController>();
-		ALSMobileCastle* Castle = World->SpawnActor<ALSMobileCastle>();
+		ALSCastle* Castle = LSCastleTestFixture::Spawn(World);
 		ALSBasicAttackTestActor* Enemy =
 		    World->SpawnActor<ALSBasicAttackTestActor>(FVector(400, 0, 0), FRotator::ZeroRotator);
 		Enemy->SetInitialFaction(ELSFaction::Enemy);

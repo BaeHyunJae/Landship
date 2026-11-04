@@ -1,4 +1,7 @@
 #include "Castle/LSCastle.h"
+#include "Castle/LSCastleCommandProviderComponent.h"
+#include "Castle/LSCastleWeaponComponent.h"
+#include "Navigation/LSCastleMovementComponent.h"
 #include "Match/LSBattleOutcomePolicy.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
@@ -15,7 +18,8 @@
 #include "UObject/UnrealType.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PawnMovementComponent.h"
-#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Logging/StructuredLog.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "NavigationSystem.h"
@@ -27,21 +31,29 @@ ALSCastle::ALSCastle()
 	PrimaryActorTick.bCanEverTick = false;
 	Selection = CreateDefaultSubobject<ULSSelectableComponent>(TEXT("Selection"));
 	Selection->Kind = ELSSelectionKind::Castle;
+	Selection->CommandGroupName = FText::FromString(TEXT("이동 성"));
+	CreateDefaultSubobject<ULSCastleCommandProviderComponent>(TEXT("CommandProvider"));
+	Weapons = CreateDefaultSubobject<ULSCastleWeaponComponent>(TEXT("Weapons"));
 	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
 	Vision = CreateDefaultSubobject<ULSVisionParticipantComponent>(TEXT("Vision"));
 	Vision->MarkerKind = ELSMinimapMarkerKind::Castle;
 	Vision->bTriggersEnemyDiscovery = true;
 	Vision->bProvidesSight = true;
 	Health = CreateDefaultSubobject<ULSHealthComponent>(TEXT("Health"));
-	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
+	Collision = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Collision"));
 	SetRootComponent(Collision);
-	Collision->SetBoxExtent(FVector(100.0f));
+	Collision->SetCapsuleSize(100.0f, 100.0f);
 	Collision->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	Collision->SetCollisionObjectType(LSCollisionChannels::Building);
 	Collision->SetCollisionResponseToChannel(LSCollisionChannels::ObstacleProjectile, ECR_Block);
 	Collision->SetCanEverAffectNavigation(false);
-	Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Movement"));
+	Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
+	Body->SetupAttachment(Collision);
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Body->SetCanEverAffectNavigation(false);
+	Movement = CreateDefaultSubobject<ULSCastleMovementComponent>(TEXT("Movement"));
 	Movement->SetUpdatedComponent(Collision);
+	Movement->GetNavMovementProperties()->bUpdateNavAgentWithOwnersCollision = false;
 	Movement->NavAgentProps.AgentRadius = 142.0f;
 	Movement->NavAgentProps.AgentHeight = 200.0f;
 	AIControllerClass = AAIController::StaticClass();
@@ -214,6 +226,11 @@ UPawnMovementComponent* ALSCastle::GetMovementComponent() const
 	return Movement;
 }
 
+FVector ALSCastle::GetNavAgentLocation() const
+{
+	return Collision->GetComponentLocation() - FVector(0, 0, Collision->GetScaledCapsuleHalfHeight());
+}
+
 bool ALSCastle::RequestMove(const FVector& Destination)
 {
 	AAIController* AI = Cast<AAIController>(GetController());
@@ -224,7 +241,8 @@ bool ALSCastle::RequestMove(const FVector& Destination)
 		return false;
 	}
 	FNavLocation Goal;
-	if (!Navigation->ProjectPointToNavigation(Destination, Goal, FVector(100.0f, 100.0f, 250.0f)))
+	const ANavigationData* NavData = Navigation->GetNavDataForProps(GetNavAgentPropertiesRef(), GetNavAgentLocation());
+	if (!NavData || !Navigation->ProjectPointToNavigation(Destination, Goal, FVector(100.0f, 100.0f, 250.0f), NavData))
 	{
 		return false;
 	}
@@ -235,7 +253,8 @@ bool ALSCastle::RequestMove(const FVector& Destination)
 	{
 		return false;
 	}
-	return AI->MoveToLocation(Goal.Location, AcceptanceRadius, true, true, false, false, nullptr, false) !=
+	const bool bStopOnOverlap = !CastChecked<ULSCastleMovementComponent>(Movement)->bTurnBeforeForward;
+	return AI->MoveToLocation(Goal.Location, AcceptanceRadius, bStopOnOverlap, true, false, false, nullptr, false) !=
 	       EPathFollowingRequestResult::Failed;
 }
 
@@ -249,6 +268,7 @@ void ALSCastle::EndBattleActions()
 {
 	bBattleActionsEnded = true;
 	Orders->EndBattleActions();
+	Weapons->EndBattleActions();
 	TInlineComponentArray<ULSBasicAttackComponent*> Attacks(this);
 	for (ULSBasicAttackComponent* Attack : Attacks)
 		Attack->EndBattleActions();

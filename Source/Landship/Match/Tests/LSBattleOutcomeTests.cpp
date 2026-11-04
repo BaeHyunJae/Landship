@@ -4,7 +4,9 @@
 #include "Match/LSGameMode.h"
 #include "Match/LSGameState.h"
 #include "Match/Tests/LSBattleOutcomeTestObserver.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Castle/LSCastleProjectile.h"
 #include "Combat/LSCollisionChannels.h"
@@ -91,7 +93,7 @@ ALSBattlefieldSetup* SpawnOutcomeSetup(UWorld* World, bool bMobile = true)
 	World->GetWorldSettings()->DefaultGameMode = ALSGameMode::StaticClass();
 	ALSBattlefieldSetup* Setup = SpawnOutcomeActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
 	Setup->PlayerCastle = bMobile
-		? static_cast<AActor*>(SpawnOutcomeActor<ALSMobileCastle>(World, FVector(10000, 0, 200)))
+		? static_cast<AActor*>(LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200)))
 		: static_cast<AActor*>(SpawnOutcomeActor<ALSBattleOutcomeTestCastle>(World, FVector(10000, 0, 200)));
 	Setup->CoreOutpost = SpawnOutcomeActor<ALSEnemyOutpost>(World, FVector(0, 0, 200));
 	Setup->CoreOutpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
@@ -145,8 +147,8 @@ bool FLSBattleOutcomeDualStrikeTest::RunTest(const FString& Parameters)
 		if (!TestWorld.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = TestWorld.GetTestWorld();
 		ALSBattlefieldSetup* Setup = SpawnOutcomeSetup(World);
-		ALSMobileCastle* Castle = CastChecked<ALSMobileCastle>(Setup->PlayerCastle);
-		Castle->GetCharacterMovement()->DisableMovement();
+		ALSCastle* Castle = CastChecked<ALSCastle>(Setup->PlayerCastle);
+		Castle->GetMovementComponent()->Deactivate();
 		ALSBasicAttackTestActor* Ally = SpawnOutcomeActor<ALSBasicAttackTestActor>(World, FVector(250, 0, 200));
 		// 독립 거점의 실제 적 resolver를 사용해 핵심 함락 뒤의 성 타격도 검사한다.
 		ALSEnemyOutpost* CastleAttacker = SpawnOutcomeActor<ALSEnemyOutpost>(World, FVector(10350, 0, 200));
@@ -393,14 +395,14 @@ bool FLSBattleOutcomeStopsActionsTest::RunTest(const FString& Parameters)
 	ALSTroopUnit* Troop = SpawnOutcomeActor<ALSTroopUnit>(World, FVector(20000, 0, 200));
 	ALSBasicAttackTestActor* Target = SpawnOutcomeActor<ALSBasicAttackTestActor>(World, FVector(20300, 0, 200));
 	Target->SetInitialFaction(ELSFaction::Enemy);
-	ALSMobileCastle* Mobile = SpawnOutcomeActor<ALSMobileCastle>(World, FVector(25000, 0, 200));
+	ALSCastle* Mobile = LSCastleTestFixture::Spawn(World, FVector(25000, 0, 200));
 	ULSTroopProductionComponent* Production = NewObject<ULSTroopProductionComponent>(Setup);
 	Setup->AddInstanceComponent(Production);
 	Production->RegisterComponent();
 	ALSGameState* State = BeginOutcomeWorld(TestWorld, *this);
 	if (!State) return false;
 	Troop->GetCharacterMovement()->DisableMovement();
-	Mobile->GetCharacterMovement()->DisableMovement();
+	Mobile->GetMovementComponent()->Deactivate();
 	ConfigureOutcomeAttack(Troop->BasicAttack, 1);
 	FLSOrder AttackOrder;
 	AttackOrder.Kind = ELSOrderKind::AttackTarget;
@@ -413,8 +415,8 @@ bool FLSBattleOutcomeStopsActionsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("진행 중 공격 대상"), Troop->BasicAttack->GetAttackTarget());
 	Troop->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
 	Troop->GetCharacterMovement()->Velocity = FVector(10, 0, 0);
-	Mobile->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
-	Mobile->GetCharacterMovement()->Velocity = FVector(10, 0, 0);
+	Mobile->GetMovementComponent()->Activate();
+	Mobile->GetMovementComponent()->Velocity = FVector(10, 0, 0);
 	ULSBattleOutcomeTestObserver* Observer = ObserveOutcome(State);
 	Observer->AttackToInspect = Troop->BasicAttack;
 	DamageOutcomeActor(Setup->CoreOutpost, OutcomeHealth(Setup->CoreOutpost));
@@ -423,7 +425,7 @@ bool FLSBattleOutcomeStopsActionsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("예약 정리"), Troop->Orders->GetQueuedCount(), 0);
 	TestNull(TEXT("교전 대상 정리"), Troop->Orders->GetEngagedTarget());
 	TestEqual(TEXT("병력 이동 차단"), Troop->GetCharacterMovement()->MovementMode, MOVE_None);
-	TestEqual(TEXT("이동형 성 이동 차단"), Mobile->GetCharacterMovement()->MovementMode, MOVE_None);
+	TestEqual(TEXT("이동형 성 이동 차단"), Mobile->GetMovementComponent()->IsActive(), false);
 	TestTrue(TEXT("병력 속도 정리"), Troop->GetVelocity().IsNearlyZero());
 	TestTrue(TEXT("이동형 성 속도 정리"), Mobile->GetVelocity().IsNearlyZero());
 	TestFalse(TEXT("성 직접 이동 재요청 거부"), CastChecked<ALSCastle>(Setup->PlayerCastle)->RequestMove(FVector(11000, 0, 200)));
@@ -436,7 +438,7 @@ bool FLSBattleOutcomeStopsActionsTest::RunTest(const FString& Parameters)
 	Mobile->Restart();
 	TestFalse(TEXT("컴포넌트 재활성화 뒤 공격 거부"), Troop->BasicAttack->StartAttack(Target));
 	TestEqual(TEXT("Restart 뒤 병력 정지 유지"), Troop->GetCharacterMovement()->MovementMode, MOVE_None);
-	TestEqual(TEXT("Restart 뒤 이동형 성 정지 유지"), Mobile->GetCharacterMovement()->MovementMode, MOVE_None);
+	TestEqual(TEXT("Restart 뒤 이동형 성 정지 유지"), Mobile->GetMovementComponent()->IsActive(), false);
 	TestEqual(TEXT("종료 뒤 생산 상태"), Production->GetStatus(ELSTroopType::Spearman), ELSProductionResult::Unavailable);
 	TestEqual(TEXT("종료 뒤 직접 생산 거부"), Production->Produce(ELSTroopType::Spearman), ELSProductionResult::Unavailable);
 	TestEqual(TEXT("종료 뒤 수동 무장 상태"), Mobile->Weapons->GetStatus(ELSCastleWeapon::Cannon), ELSWeaponCastResult::Unavailable);

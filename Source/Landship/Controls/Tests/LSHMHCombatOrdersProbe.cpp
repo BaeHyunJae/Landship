@@ -4,7 +4,8 @@
 #include "Controls/LSRTSCameraPawn.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Troops/LSUnit.h"
 #include "Troops/LSTroopUnit.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Engine/World.h"
@@ -18,7 +19,7 @@
 
 namespace
 {
-float ReadProbeHP(ALSUnit* Unit)
+float ReadProbeHP(AActor* Unit)
 {
 	FLSHealthSnapshot S;
 	return Unit->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(S) ? S.CurrentHealth : -1;
@@ -93,11 +94,11 @@ void ALSHMHCombatOrdersProbe::Tick(float DeltaSeconds)
 	if (Stage == 0 && Elapsed > 1.5f)
 	{
 		Army.SetNum(3);
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It)
+			if (It->GetFaction() == ELSFaction::Enemy) { TargetCastle = *It; It->Orders->SetComponentTickEnabled(false); }
 		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
 		{
 			HaltProbeUnit(*It);
-			if (auto* Castle = Cast<ALSMobileCastle>(*It); Castle && Castle->GetFaction() == ELSFaction::Enemy)
-				TargetCastle = Castle;
 			if (auto* Unit = Cast<ALSTroopUnit>(*It))
 			{
 				if (Unit->GetFaction() == ELSFaction::Ally)

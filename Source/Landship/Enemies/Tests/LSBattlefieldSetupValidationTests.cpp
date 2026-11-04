@@ -3,7 +3,12 @@
 #include "Enemies/LSBattlefieldSetup.h"
 #include "Enemies/LSOutpost.h"
 #include "Castle/LSCastle.h"
+#include "Castle/LSMobileCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
+#include "Combat/Tests/LSBasicAttackTestActor.h"
+#include "Controls/LSSelectableComponent.h"
 #include "Engine/World.h"
+#include "Engine/Level.h"
 #include "Maps/LSBattlefieldSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
@@ -31,6 +36,36 @@ bool HasValidationError(const FDataValidationContext& Context, const TCHAR* Text
 	}
 	return false;
 }
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBattlefieldActualCastleValidationTest,
+	"Landship.Enemies.Battlefield.ActualCastleValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSBattlefieldActualCastleValidationTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = TestWorld.GetTestWorld();
+	auto* Setup = SpawnSetupValidationActor<ALSBattlefieldSetup>(World);
+	Setup->CoreOutpost = SpawnSetupValidationActor<ALSOutpost>(World);
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World);
+	TestTrue(TEXT("actual castle satisfies authoritative setup"), Setup->GetConfigurationError().IsEmpty());
+	Setup->PlayerCastle = SpawnSetupValidationActor<ALSMobileCastle>(World);
+	TestTrue(TEXT("movement-test MobileCastle explicitly rejected"), Setup->GetConfigurationError().Contains(TEXT("actual ALSCastle")));
+	FDataValidationContext MobileValidation;
+	TestEqual(TEXT("editor also rejects movement-test MobileCastle"), Setup->IsDataValid(MobileValidation), EDataValidationResult::Invalid);
+	auto* Fake = SpawnSetupValidationActor<ALSBasicAttackTestActor>(World);
+	auto* Selection = NewObject<ULSSelectableComponent>(Fake);
+	Selection->Kind = ELSSelectionKind::Castle;
+	Fake->AddInstanceComponent(Selection);
+	Selection->RegisterComponent();
+	Setup->PlayerCastle = Fake;
+	TestTrue(TEXT("generic actor with Ally faction, Castle selection and health is rejected"), Setup->GetConfigurationError().Contains(TEXT("actual ALSCastle")));
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World);
+	TestTrue(TEXT("restoring actual castle restores valid configuration"), Setup->GetConfigurationError().IsEmpty());
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBattlefieldCoreMarkerValidationTest,
@@ -92,6 +127,12 @@ bool FLSBattlefieldCoreMarkerValidationTest::RunTest(const FString& Parameters)
 			!!Setup->CoreOutpost->Vision->bPublicCorePosition, Case.bCoreFlag);
 		TestEqual(FString::Printf(TEXT("%s: 다른 표식 자동 변경 없음"), Case.Name),
 			!!OtherOutpost->Vision->bPublicCorePosition, Case.bOtherFlag);
+		const bool bOriginalLevelVisible = World->PersistentLevel->bIsVisible;
+		World->PersistentLevel->bIsVisible = false;
+		FDataValidationContext InactiveValidation;
+		TestEqual(FString::Printf(TEXT("%s: 비활성 레벨에서도 같은 데이터 판정"), Case.Name),
+			Setup->IsDataValid(InactiveValidation), Case.Expected);
+		World->PersistentLevel->bIsVisible = bOriginalLevelVisible;
 	}
 	return true;
 }

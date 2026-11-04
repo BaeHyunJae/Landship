@@ -33,7 +33,7 @@ bool ULSVisionParticipantComponent::IsFriendly() const
 
 bool ULSVisionParticipantComponent::IsLivingCombatant() const
 {
-	return ULSCombatTargetLibrary::IsCombatAlive(GetOwner());
+	return bParticipationEnabled && ULSCombatTargetLibrary::IsCombatAlive(GetOwner());
 }
 
 bool ULSVisionParticipantComponent::IsEnemyDiscoveryCandidate() const
@@ -51,8 +51,31 @@ bool ULSVisionParticipantComponent::ShouldConceal() const
 void ULSVisionParticipantComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	AActor* Owner = GetOwner();
-	bOriginalHidden = Owner->IsHidden();
+	if (bParticipationEnabled) RegisterParticipation();
+}
+
+void ULSVisionParticipantComponent::SetParticipationEnabled(bool bEnabled)
+{
+	if (bParticipationEnabled == bEnabled) return;
+	bParticipationEnabled = bEnabled;
+	if (!HasBegunPlay()) return;
+	if (bEnabled)
+	{
+		RegisterParticipation();
+	}
+	else if (bRegistered)
+	{
+		bRegistered = false;
+		if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
+			Vision->UnregisterParticipant(this);
+		ApplySightVisibility(true);
+	}
+}
+
+void ULSVisionParticipantComponent::RegisterParticipation()
+{
+	if (bRegistered) return;
+	bOriginalHidden = GetOwner()->IsHidden();
 	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
 	{
 		if (Vision->IsVisionEnabled() && ShouldConceal())

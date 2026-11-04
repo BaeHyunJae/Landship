@@ -6,6 +6,7 @@
 
 ## 준비
 
+- 맵을 다시 만들 때는 실제 성 템플릿 `/Game/Landship/Maps/Blueprints/BP_BattlefieldCastle`과 `DT_CastleStats`의 `BattlefieldPrototype` 행이 있어야 한다. 스크립트는 템플릿을 개인 경로의 검증용 Blueprint로 복제하고 작은 시험용 몸체와 이동 기본값을 지정한다. 원본 템플릿은 바꾸지 않는다.
 - `LandshipEditor`(Win64 Development Editor)를 빌드해 둔다. 검사하는 프로브 클래스는 이 빌드의 Landship 모듈에 있다.
 - 로그를 저장할 파일 경로를 정해 아래 명령의 `<로그 파일 경로>`에 쓴다. Git이 추적하지 않는 위치로 한다. `<엔진 경로>`는 UE 5.8 설치 폴더, `<프로젝트 경로>`는 이 저장소의 클론 폴더다.
 - 검사 대상 맵은 `/Game/Developers/BHJ/EnemyCombat/L_EnemyCombat`이다. 이 맵에는 프로브 액터(`LSEnemyCombatProbe`, `LSEnemyBoundaryProbe`, `LSEnemySupportProbe`, `LSEnemyRegressionProbe`, `LSEnemyVisionRuntimeProbe`)가 놓여 있다. 프로브는 해당 실행 인수가 없으면 스스로 제거되므로 일반 플레이에는 영향이 없다.

@@ -22,7 +22,7 @@ class ALSHMHProductionProbe : public AActor
 	void Check(bool bPassed, const TCHAR* Message);
 	void Finish();
 	UPROPERTY()
-	TObjectPtr<class ALSMobileCastle> Castle;
+	TObjectPtr<class ALSCastle> Castle;
 	UPROPERTY()
 	TObjectPtr<class UBoxComponent> Blocker;
 	float Elapsed = 0;

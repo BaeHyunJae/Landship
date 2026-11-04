@@ -1,7 +1,8 @@
 #include "Troops/Tests/LSHMHTroopProbe.h"
 
 #include "Troops/LSTroopUnit.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -110,7 +111,7 @@ void ALSHMHTroopProbe::Tick(float DeltaSeconds)
 	}
 	if (Stage == 0 && StageTime > 1.5f)
 	{
-		for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It)
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It)
 		{
 			(It->GetFaction() == ELSFaction::Ally ? Castle : EnemyCastle) = *It;
 			It->Selection->SetPlayerControlled(true);
@@ -290,7 +291,7 @@ void ALSHMHTroopProbe::Tick(float DeltaSeconds)
 			      TEXT("대형 성 목적지 도착"));
 			Check(CastleDetour > 430, TEXT("성의 몸집을 고려해 벽 바깥으로 우회"));
 			EnemyCastle->SetActorLocation(Castle->GetActorLocation() + FVector(600, 0, 0));
-			EnemyCastle->BasicAttack->Deactivate();
+
 			EnemyCastle->Orders->SetComponentTickEnabled(false);
 			FLSOrder Attack;
 			Attack.Kind = ELSOrderKind::AttackTarget;
@@ -309,7 +310,7 @@ void ALSHMHTroopProbe::Tick(float DeltaSeconds)
 		{
 			Check(true, TEXT("성의 수동 무장 피해 적용"));
 			EnemyHealth->ApplyDamage(ULSHealthComponent::MakeDamageRequest(10000, Castle, Castle));
-			Check(IsValid(EnemyCastle) && EnemyCastle->GetCharacterMovement()->MovementMode == MOVE_None,
+			Check(IsValid(EnemyCastle) && !EnemyCastle->GetMovementComponent()->IsActive(),
 			      TEXT("파괴된 성은 보존하고 이동 차단"));
 			for (int32 Index = 0; Index < 3; ++Index)
 			{

@@ -1,10 +1,12 @@
 #include "Controls/LSOrderComponent.h"
 #include "Match/LSBattleOutcomePolicy.h"
 #include "Obstacles/LSMine.h"
+#include "Obstacles/LSBarricade.h"
 #include "Obstacles/LSPathObstacle.h"
 #include "Obstacles/LSObstacleGeometry.h"
 #include "Navigation/LSMineAvoidance.h"
 #include "Navigation/LSMineAwareMovementComponent.h"
+#include "Navigation/LSCastlePathFollowingComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -12,18 +14,57 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Troops/LSUnit.h"
+#include "Troops/LSTroopUnit.h"
 #include "Castle/LSCastle.h"
+#include "Navigation/LSCastleMovementComponent.h"
+#include "Enemies/LSBattlefieldStateSubsystem.h"
+#include "Enemies/LSOutpost.h"
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
+
+namespace
+{
+bool IsCapsulePathClear(const TArray<FVector>& BodyCenters, float Radius, float Height,
+	const FVector& Center, float OtherRadius, float OtherHeight)
+{
+	if (BodyCenters.Num() < 2) return false;
+	const float CombinedRadius = Radius + OtherRadius;
+	const float CombinedHeight = Height + OtherHeight;
+	const double AxisHalfHeight = CombinedHeight - CombinedRadius;
+	const double ContactDistanceSquared = FMath::Square(static_cast<double>(CombinedRadius));
+	auto AxisDistanceSquared = [Center, AxisHalfHeight](const FVector& Point)
+	{
+		const double Gap = FMath::Max(0.0, FMath::Abs(Point.Z - Center.Z) - AxisHalfHeight);
+		return FVector::DistSquared2D(Point, Center) + Gap * Gap;
+	};
+	// 처음 맞닿은 몸체에서는 거리가 줄지 않는 탈출만 허용하고, 벗어난 뒤의 재진입은 거부한다.
+	for (int32 Index = 1; Index < BodyCenters.Num(); ++Index)
+	{
+		const FVector Start = BodyCenters[Index - 1], End = BodyCenters[Index];
+		if (FMath::PointDistToSegmentSquared(FVector(Center.X, Center.Y, 0), FVector(Start.X, Start.Y, 0),
+			FVector(End.X, End.Y, 0)) > ContactDistanceSquared + 0.0001) continue;
+		if (!LSMineAvoidance::CapsuleSegmentTouchesSphere(Start, End, CombinedRadius, CombinedHeight, {Center, 0})) continue;
+		const FVector Relative = Start - Center, Delta = End - Start;
+		const double VerticalGap = FMath::Sign(Relative.Z) * FMath::Max(0.0, FMath::Abs(Relative.Z) - AxisHalfHeight);
+		const double SeparationDerivative = Relative.X * Delta.X + Relative.Y * Delta.Y + VerticalGap * Delta.Z;
+		if (AxisDistanceSquared(Start) > ContactDistanceSquared + 0.0001 || SeparationDerivative < -0.0001)
+			return false;
+	}
+	return AxisDistanceSquared(BodyCenters.Last()) > ContactDistanceSquared + 0.0001;
+}
+} // namespace
 
 ULSOrderComponent::ULSOrderComponent()
 {
@@ -55,6 +96,7 @@ void ULSOrderComponent::EndBattleActions()
 	bKnockbackActive = false;
 	if (bBattleActionsEnded) return;
 	bBattleActionsEnded = true;
+	CancelIdleYield();
 	GetWorld()->GetTimerManager().ClearTimer(OrderUpdateTimer);
 	CancelDisarm();
 	bMineBlocked = false;
@@ -101,42 +143,79 @@ bool ULSOrderComponent::CanMove() const
 	return Pawn && Pawn->GetMovementComponent() && Cast<AAIController>(Pawn->GetController());
 }
 
-bool ULSOrderComponent::ResolveDestination(const FVector& Goal, FVector& OutDestination) const
+bool ULSOrderComponent::ResolveDestination(const FVector& Goal, FVector& OutDestination, FNavPathSharedPtr* OutPath, bool* OutFullPathFailed) const
 {
+	if (OutFullPathFailed) *OutFullPathFailed = false;
+	if (OutPath) OutPath->Reset();
 	if (Goal.ContainsNaN() || !CanMove())
 	{
 		return false;
 	}
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const ANavigationData* Data = Nav && Pawn ? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
 	FNavLocation Point;
-	if (!Nav || !Nav->ProjectPointToNavigation(Goal, Point, FVector(150, 150, 300)))
+	if (!Data || !Nav->ProjectPointToNavigation(Goal, Point, FVector(150, 150, 300), Data))
 	{
 		return false;
 	}
-	const APawn* Pawn = Cast<APawn>(GetOwner());
 	// 이미 목적지에 있는 경우 한 점짜리 경로가 반환되어도 유효한 명령이다.
 	if (FVector::DistSquared(Pawn->GetNavAgentLocation(), Point.Location) <= FMath::Square(ArrivalTolerance))
 	{
 		OutDestination = Point.Location;
 		return true;
 	}
-	UNavigationPath* Path =
-	    Nav->FindPathToLocationSynchronously(GetWorld(), Pawn->GetNavAgentLocation(), Point.Location, GetOwner());
-	if (!Path || !Path->IsValid() || Path->IsPartial())
+	FPathFindingQuery Query(Pawn, *Data, Pawn->GetNavAgentLocation(), Point.Location);
+	Query.SetAllowPartialPaths(false);
+	const FNavPathSharedPtr Path = Nav->FindPathSync(Pawn->GetNavAgentPropertiesRef(), Query).Path;
+	if (!Path.IsValid() || !Path->IsValid() || Path->IsPartial())
 	{
+		if (OutFullPathFailed) *OutFullPathFailed = true;
 		return false;
 	}
+	if (OutPath) *OutPath = Path;
 	OutDestination = Point.Location;
 	return true;
+}
+
+ALSBarricade* ULSOrderComponent::GetBlockingBarricade() const
+{
+	return BlockingBarricade.Get();
+}
+
+ALSBarricade* ULSOrderComponent::FindBlockingBarricade(const FVector& Goal) const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const ANavigationData* Data = Nav && Pawn ? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
+	FNavLocation Destination;
+	if (!Data || !Nav->ProjectPointToNavigation(Goal, Destination, FVector(150, 150, 300), Data)) return nullptr;
+	FPathFindingQuery Query(Pawn, *Data, Pawn->GetNavAgentLocation(), Destination.Location);
+	Query.SetAllowPartialPaths(true);
+	const FNavPathSharedPtr Path = Nav->FindPathSync(Pawn->GetNavAgentPropertiesRef(), Query).Path;
+	if (!Path.IsValid() || !Path->IsValid() || !Path->IsPartial() || Path->GetPathPoints().IsEmpty()) return nullptr;
+	const FVector End = Path->GetPathPoints().Last().Location;
+	float Radius, Height;
+	Pawn->GetSimpleCollisionCylinder(Radius, Height);
+	ALSBarricade* Nearest = nullptr;
+	double Best = Radius + ArrivalTolerance;
+	for (TActorIterator<ALSBarricade> It(GetWorld()); It; ++It)
+	{
+		if (!It->IsObstacleActive()) continue;
+		const double Distance = LSObstacleGeometry::GetPlanarBodyDistance(It->GetObstacleBody(), End);
+		if (Distance <= Best) { Best = Distance; Nearest = *It; }
+	}
+	return Nearest;
 }
 
 bool ULSOrderComponent::GetNavigationOriginHeight(double& OutHeight) const
 {
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const ANavigationData* Data = Nav && Pawn ? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
 	FNavLocation ProjectedHere;
-	if (!Pawn || !Nav || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), ProjectedHere,
-	                                                 FVector(150, 150, 300)))
+	if (!Data || !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), ProjectedHere,
+	                                                 FVector(150, 150, 300), Data))
 		return false;
 	// 경로의 바닥 좌표에서 실제 원점 위치를 예측한다.
 	OutHeight = Pawn->GetActorLocation().Z - ProjectedHere.Location.Z;
@@ -166,8 +245,9 @@ bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 	}
 }
 
-bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) const
+bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder)
 {
+	BlockingBarricade.Reset();
 	const ULSSelectableComponent* Selection = GetOwner()->FindComponentByClass<ULSSelectableComponent>();
 	if (!Selection || !Selection->CanPlayerControl())
 	{
@@ -180,14 +260,20 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder) 
 	case ELSOrderKind::Hold:
 		return true;
 	case ELSOrderKind::Move:
-		return ResolveDestination(Order.Destination, OutOrder.Destination);
 	case ELSOrderKind::AttackMove:
-		return CanAttack() && ResolveDestination(Order.Destination, OutOrder.Destination);
+	{
+		if (Order.Kind == ELSOrderKind::AttackMove && !CanAttack()) return false;
+		bool bFullPathFailed = false;
+		const bool bResolved = ResolveDestination(Order.Destination, OutOrder.Destination, nullptr, &bFullPathFailed);
+		if (!bResolved && bFullPathFailed) BlockingBarricade = FindBlockingBarricade(Order.Destination);
+		return bResolved;
+	}
 	case ELSOrderKind::AttackTarget:
 	{
 		FVector TargetDestination;
 		return CanAttack() && IsHostile(Order.Target.Get()) &&
-		       (IsInAttackRange(Order.Target.Get()) || ResolveAttackDestination(Order.Target.Get(), TargetDestination, false));
+		       ((IsInAttackRange(Order.Target.Get()) && Attack->HasClearAttackPathFromLocation(GetOwner()->GetActorLocation(), Order.Target.Get())) ||
+		        ResolveAttackDestination(Order.Target.Get(), TargetDestination, false));
 	}
 	default:
 		return false;
@@ -202,6 +288,7 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 		return false;
 	}
 	LastFailure = ELSOrderFailure::None;
+	BlockingBarricade.Reset();
 	if (Order.Kind == ELSOrderKind::Disarm)
 	{
 		ALSMine* Mine = Cast<ALSMine>(Order.Target.Get());
@@ -224,6 +311,8 @@ bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 		                  : (Order.Kind == ELSOrderKind::AttackTarget && !IsHostile(Order.Target.Get())
 		                         ? ELSOrderFailure::InvalidTarget
 		                         : ELSOrderFailure::Unreachable);
+		if (LastFailure == ELSOrderFailure::Unreachable && BlockingBarricade.IsValid())
+			LastFailure = ELSOrderFailure::BlockedByBarricade;
 		return false;
 	}
 	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
@@ -250,6 +339,7 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
+	CancelIdleYield();
 	bMineBlocked = false;
 	if (bKnockbackActive)
 	{
@@ -330,6 +420,12 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 	bMovementCompleted = false;
 	FAIMoveRequest Request(Goal);
 	float AcceptanceRadius = ArrivalTolerance;
+	const ALSCastle* Castle = Cast<ALSCastle>(Pawn);
+	const auto* CastleMovement = Castle ? Cast<ULSCastleMovementComponent>(Castle->GetMovementComponent()) : nullptr;
+	if (!bAttackApproach && CastleMovement && CastleMovement->bTurnBeforeForward)
+	{
+		Request.SetReachTestIncludesAgentRadius(false);
+	}
 	if (bAttackApproach)
 	{
 		double OriginHeight;
@@ -392,6 +488,7 @@ bool ULSOrderComponent::ApplyKnockback(const FVector& Velocity)
 	    !ULSCombatTargetLibrary::IsCombatAlive(Character) || !GetWorld() || GetWorld()->bIsTearingDown)
 		return false;
 	CancelDisarm();
+	CancelIdleYield();
 	SetMineAvoidance(false);
 	StopMovement();
 	if (Attack)
@@ -416,6 +513,13 @@ void ULSOrderComponent::OnMovementFinished(FAIRequestID RequestId, const FPathFo
 		return;
 	if (MovementRequestId == FAIRequestID::InvalidRequest || RequestId != MovementRequestId)
 	{
+		return;
+	}
+	if (bYieldingToCastle)
+	{
+		bMovementCompleted = true;
+		MovementRequestId = FAIRequestID::InvalidRequest;
+		RequestOrderUpdate();
 		return;
 	}
 	if (!Result.IsSuccess() && UsesMineAvoidance())
@@ -480,6 +584,22 @@ bool ULSOrderComponent::IsInAttackRange(AActor* Target) const
 	       ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Component->GetAttackSettings().Range;
 }
 
+bool ULSOrderComponent::IsWaitingFriendlyBody(const AActor* Candidate) const
+{
+	const ILSFactionInterface* SourceFaction = Cast<ILSFactionInterface>(GetOwner());
+	const ILSFactionInterface* CandidateFaction = Cast<ILSFactionInterface>(Candidate);
+	if (!IsValid(Candidate) || Candidate == GetOwner() || Candidate->IsActorBeingDestroyed() || !SourceFaction ||
+	    !CandidateFaction || CandidateFaction->GetFaction() != SourceFaction->GetFaction() ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(Candidate)) return false;
+	const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Candidate->GetRootComponent());
+	const ULSOrderComponent* Orders = Candidate->FindComponentByClass<ULSOrderComponent>();
+	const ALSUnit* Unit = Cast<ALSUnit>(Candidate);
+	const bool bGrounded = Cast<ALSCastle>(Candidate) || (Unit && Unit->GetCharacterMovement()->IsMovingOnGround());
+	return Capsule && Capsule->IsQueryCollisionEnabled() && Capsule->GetUpVector().Equals(FVector::UpVector, 0.001) &&
+	    bGrounded && Candidate->GetVelocity().IsNearlyZero() && Orders && !Orders->IsMoving() &&
+	    !Orders->IsYieldingToCastle() && !Orders->IsKnockedBack();
+}
+
 bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDestination, bool bAvoidMines,
                                                 bool* OutMineBlocked) const
 {
@@ -494,6 +614,29 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	if (!GetNavigationOriginHeight(OriginHeight))
 		return false;
 	const FVector CenterOffset(0, 0, OriginHeight);
+	struct FLSWaitingBody
+	{
+		FVector Center;
+		float Radius, Height;
+	};
+	TArray<FLSWaitingBody> WaitingBodies;
+	const UCapsuleComponent* OwnCapsule = Cast<UCapsuleComponent>(GetOwner()->GetRootComponent());
+	if ((Cast<ALSOutpost>(Target) || Cast<ALSPathObstacle>(Target)) && OwnCapsule &&
+	    OwnCapsule->GetUpVector().Equals(FVector::UpVector, 0.001))
+	{
+		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
+			if (IsWaitingFriendlyBody(*It))
+			{
+				const UCapsuleComponent* Capsule = It->GetCapsuleComponent();
+				WaitingBodies.Add({Capsule->GetComponentLocation(), Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()});
+			}
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It)
+			if (IsWaitingFriendlyBody(*It))
+			{
+				const UCapsuleComponent* Capsule = It->GetCapsuleComponent();
+				WaitingBodies.Add({Capsule->GetComponentLocation(), Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()});
+			}
+	}
 	FVector Direction = (GetOwner()->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
 	if (Direction.IsNearlyZero())
 		Direction = FVector::ForwardVector;
@@ -505,6 +648,9 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	Query.AddIgnoredActor(Target);
 	FVector OccupiedFallback = FVector::ZeroVector;
 	bool bHasFallback = false;
+	FVector VacantFallback = FVector::ZeroVector;
+	bool bHasVacantFallback = false;
+	const TArray<FLSMineSphere> Mines = bAvoidMines ? LSMineAvoidance::Snapshot(GetWorld()) : TArray<FLSMineSphere>();
 	TArray<FVector> Candidates;
 	if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Target))
 	{
@@ -522,18 +668,21 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 	{
 		Goal.Z = Pawn->GetNavAgentLocation().Z;
 		FVector Projected;
+		FNavPathSharedPtr CandidatePath;
 		bool bResolved = false;
 		if (bAvoidMines)
 		{
-			const FLSMineSafePath Safe = LSMineAvoidance::BuildSafePath(const_cast<APawn*>(Pawn), Goal, LSMineAvoidance::Snapshot(GetWorld()));
+			const FLSMineSafePath Safe = LSMineAvoidance::BuildSafePath(const_cast<APawn*>(Pawn), Goal, Mines);
 			if (OutMineBlocked) *OutMineBlocked |= Safe.Result == ELSMinePathResult::HazardBlocked || Safe.Result == ELSMinePathResult::SearchLimit;
 			bResolved = Safe.Result == ELSMinePathResult::SafePath;
 			Projected = Safe.Destination;
+			CandidatePath = Safe.Path;
 		}
-		else bResolved = ResolveDestination(Goal, Projected);
+		else bResolved = ResolveDestination(Goal, Projected, WaitingBodies.IsEmpty() ? nullptr : &CandidatePath);
 		if (bResolved &&
 		    ULSCombatTargetLibrary::GetAttackDistanceAtLocation(GetOwner(), Target, Projected + CenterOffset) <=
-		        Attack->GetAttackSettings().Range)
+		        Attack->GetAttackSettings().Range &&
+		    Attack->HasClearAttackPathFromLocation(Projected + CenterOffset, Target))
 		{
 			if (!bHasFallback)
 			{
@@ -545,9 +694,31 @@ bool ULSOrderComponent::ResolveAttackDestination(AActor* Target, FVector& OutDes
 			        Projected + CenterOffset, FQuat::Identity, Objects,
 			        FCollisionShape::MakeCapsule(Radius + 4, FMath::Max(Height, Radius + 4)), Query))
 				continue;
+			if (!bHasVacantFallback) { VacantFallback = Projected; bHasVacantFallback = true; }
+			if (!WaitingBodies.IsEmpty())
+			{
+				TArray<FVector> BodyCenters{GetOwner()->GetActorLocation()};
+				// 도착 허용 거리 안의 일반 이동은 경로 조회 없이 수락하므로 실제 몸체 사이의 짧은 구간을 검사한다.
+				if (!CandidatePath.IsValid() && !bAvoidMines) BodyCenters.Add(Projected + CenterOffset);
+				else
+				{
+					if (!CandidatePath.IsValid() || !CandidatePath->IsValid() || CandidatePath->IsPartial()) continue;
+					for (const FNavPathPoint& Point : CandidatePath->GetPathPoints()) BodyCenters.Add(Point.Location + CenterOffset);
+				}
+				if (WaitingBodies.ContainsByPredicate([&](const FLSWaitingBody& Body)
+				{
+					return !IsCapsulePathClear(BodyCenters, Radius + 4, FMath::Max(Height, Radius + 4), Body.Center, Body.Radius, Body.Height);
+				})) continue;
+			}
 			OutDestination = Projected;
 			return true;
 		}
+	}
+	// 대기 병력을 피할 후보가 없어도 종전의 첫 빈 도착점을 먼저 유지한다.
+	if (bHasVacantFallback)
+	{
+		OutDestination = VacantFallback;
+		return true;
 	}
 	// 포위가 꽉 차도 유효한 공격 명령을 버리지 않고 회피·재탐색으로 빈자리를 기다린다.
 	if (bHasFallback)
@@ -605,6 +776,7 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
+	CancelIdleYield();
 	// 정지한 앞줄까지 예측 회피하면 뒤의 근접 병력이 사거리 밖에서 옆으로 떠밀린다.
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
@@ -618,7 +790,7 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 	bHasEngagement = true;
 	SetMineAvoidance(UsesMineAvoidance());
 	const float Padding = bAttackApproaching && IsMoving() ? GetAttackApproachPadding() : 0.0f;
-	if (IsInAttackRange(Target) &&
+	if (IsInAttackRange(Target) && Attack->HasClearAttackPathFromLocation(GetOwner()->GetActorLocation(), Target) &&
 	    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Attack->GetAttackSettings().Range - Padding)
 	{
 		StopMovement();
@@ -656,6 +828,11 @@ void ULSOrderComponent::Engage(AActor* Target, bool bAllowChase)
 			}
 		}
 	}
+	else
+	{
+		StopMovement();
+		if (Attack) Attack->StopAttack();
+	}
 }
 
 void ULSOrderComponent::FinishOrder()
@@ -681,6 +858,305 @@ void ULSOrderComponent::FinishOrder()
 			BeginOrder(PreparedOrder);
 			return;
 		}
+	}
+}
+
+bool ULSOrderComponent::GetPlannedMovementPath(TArray<FVector>& OutPoints, float MaxDistance) const
+{
+	OutPoints.Reset();
+	if (!FMath::IsFinite(MaxDistance) || MaxDistance <= 0 || bMovementCompleted || bKnockbackActive ||
+	    bMineBlocked || !CanMove() ||
+	    (ActiveOrder.Kind != ELSOrderKind::Move && ActiveOrder.Kind != ELSOrderKind::AttackMove && !bAttackApproaching))
+		return false;
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const AAIController* AI = Pawn ? Cast<AAIController>(Pawn->GetController()) : nullptr;
+	const UPathFollowingComponent* Following = AI ? AI->GetPathFollowingComponent() : nullptr;
+	const FNavPathSharedPtr Path = Following ? Following->GetPath() : nullptr;
+	if (!Path.IsValid() || !Path->IsValid() || Path->IsPartial() || !Path->IsUpToDate() ||
+	    Following->GetStatus() == EPathFollowingStatus::Idle)
+		return false;
+	const TArray<FNavPathPoint>& Points = Path->GetPathPoints();
+	const FVector Origin = Pawn->GetNavAgentLocation();
+	OutPoints.Add(Origin);
+	auto AppendPoint = [&OutPoints, &MaxDistance](const FVector& Point)
+	{
+		const FVector Start = OutPoints.Last();
+		const double Length = FVector::Dist2D(Start, Point);
+		if (Length <= KINDA_SMALL_NUMBER) return true;
+		if (Length >= MaxDistance)
+		{
+			OutPoints.Add(FMath::Lerp(Start, Point, MaxDistance / Length));
+			return false;
+		}
+		OutPoints.Add(Point);
+		MaxDistance -= Length;
+		return true;
+	};
+	const int32 NextIndex = static_cast<int32>(Following->GetNextPathIndex());
+	const ULSCastleMovementComponent* Movement = Cast<ULSCastleMovementComponent>(Pawn->GetMovementComponent());
+	if (Movement && Movement->bTurnBeforeForward &&
+	    Movement->Velocity.SizeSquared2D() > 1.0)
+	{
+		const FVector HorizontalVelocity(Movement->Velocity.X, Movement->Velocity.Y, 0);
+		FVector NextDirection = FVector::ZeroVector;
+		for (int32 Index = NextIndex; Index < Points.Num(); ++Index)
+		{
+			NextDirection = (Points[Index].Location - Origin).GetSafeNormal2D();
+			if (!NextDirection.IsNearlyZero()) break;
+		}
+		const double StoppingDistance = HorizontalVelocity.SizeSquared() /
+		    (2.0 * FMath::Max(1.0f, Movement->ForwardBrakingDeceleration));
+		const bool bDirectionChanged = !NextDirection.IsNearlyZero() &&
+		    FVector::DotProduct(HorizontalVelocity.GetSafeNormal(), NextDirection) < FMath::Cos(FMath::DegreesToRadians(1.0f));
+		const auto* CastleFollowing = Cast<ULSCastlePathFollowingComponent>(Following);
+		float DistanceToStop;
+		const bool bCannotStopBeforeBoundary = CastleFollowing && CastleFollowing->GetDistanceToNextStop(DistanceToStop) &&
+		    StoppingDistance > DistanceToStop;
+		if (bDirectionChanged || bCannotStopBeforeBoundary)
+		{
+			// 새 경로를 받은 첫 틱 전에는 이동 요청 속도가 이전 방향일 수 있으므로 실제 경로를 비교한다.
+			// 충돌로 제동 거리가 짧아져도 생산·양보는 충돌이 없을 때의 통과 구간까지 비워 둔다.
+			if (!AppendPoint(Origin + HorizontalVelocity.GetSafeNormal() * StoppingDistance)) return true;
+		}
+	}
+	for (int32 Index = NextIndex; Index < Points.Num(); ++Index)
+		if (!AppendPoint(Points[Index].Location)) break;
+	if (OutPoints.Num() >= 2) return true;
+	OutPoints.Reset();
+	return false;
+}
+
+void ULSOrderComponent::CancelIdleYield()
+{
+	if (!bYieldingToCastle) return;
+	bYieldingToCastle = false;
+	StopMovement();
+	SetMineAvoidance(false);
+}
+
+bool ULSOrderComponent::IsIdleYieldPathClear(const TArray<FVector>& BodyCenters) const
+{
+	if (BodyCenters.Num() < 2) return false;
+	float Radius, Height;
+	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
+	const float SweepRadius = Radius + 4;
+	const float SweepHeight = FMath::Max(Height, SweepRadius);
+	const FCollisionShape Body = FCollisionShape::MakeCapsule(SweepRadius, SweepHeight);
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::PathObstacle);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSIdleYield), false, GetOwner());
+	TArray<FOverlapResult> InitialContacts;
+	GetWorld()->OverlapMultiByObjectType(InitialContacts, BodyCenters[0], FQuat::Identity, Objects, Body, Query);
+	for (const FOverlapResult& Contact : InitialContacts)
+	{
+		const AActor* Ally = Contact.GetActor();
+		const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Ally);
+		const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Contact.GetComponent());
+		if ((!Cast<ALSUnit>(Ally) && !Cast<ALSCastle>(Ally)) || !Faction || Faction->GetFaction() != ELSFaction::Ally ||
+		    !Capsule || Capsule != Ally->GetRootComponent() || !Capsule->GetUpVector().Equals(FVector::UpVector, 0.001)) continue;
+		const FVector Center = Capsule->GetComponentLocation();
+		if (!IsCapsulePathClear(BodyCenters, SweepRadius, SweepHeight, Center,
+			Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight())) return false;
+		Query.AddIgnoredComponent(Capsule);
+	}
+	for (int32 Index = 1; Index < BodyCenters.Num(); ++Index)
+		if (GetWorld()->SweepTestByObjectType(BodyCenters[Index - 1], BodyCenters[Index], FQuat::Identity, Objects, Body, Query))
+			return false;
+	return true;
+}
+
+float ULSOrderComponent::GetIdleYieldAlongOffset(const FVector& Closest, const FVector& Direction, const FVector& Side,
+	float CorridorRadius, bool& OutNearbyYielding) const
+{
+	float Radius, Height;
+	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
+	float AlongOffset = Radius * 2 + YieldClearance;
+	OutNearbyYielding = false;
+	for (TActorIterator<ALSTroopUnit> It(GetWorld()); It; ++It)
+	{
+		if (*It == GetOwner() || It->GetFaction() != ELSFaction::Ally || !ULSCombatTargetLibrary::IsCombatAlive(*It)) continue;
+		float OtherRadius, OtherHeight;
+		It->GetSimpleCollisionCylinder(OtherRadius, OtherHeight);
+		const FVector Relative = It->GetActorLocation() - Closest;
+		const double SideDistance = FVector::DotProduct(Relative, Side);
+		if (FMath::Abs(FVector::DotProduct(Relative, Direction)) > CorridorRadius ||
+		    SideDistance < -(Radius + OtherRadius) || SideDistance > CorridorRadius + YieldClearance + OtherRadius) continue;
+		AlongOffset = FMath::Max(AlongOffset,
+			static_cast<float>(FMath::Abs(FVector::DotProduct(Relative, Direction))) + Radius + OtherRadius + YieldClearance);
+		const ULSOrderComponent* OtherOrders = It->Orders;
+		if (OtherOrders && OtherOrders->bYieldingToCastle)
+		{
+			OutNearbyYielding = true;
+			AlongOffset = FMath::Max(AlongOffset,
+				static_cast<float>(FMath::Abs(FVector::DotProduct(OtherOrders->YieldDestination - Closest, Direction))) +
+				Radius + OtherRadius + YieldClearance);
+		}
+	}
+	return AlongOffset;
+}
+
+void ULSOrderComponent::UpdateIdleYield()
+{
+	ALSTroopUnit* Troop = Cast<ALSTroopUnit>(GetOwner());
+	const ULSSelectableComponent* Selection = Troop ? Troop->Selection.Get() : nullptr;
+	if (!Troop || Troop->GetFaction() != ELSFaction::Ally || !Selection || !Selection->CanPlayerControl() ||
+	    ActiveOrder.Kind != ELSOrderKind::Idle || !PendingOrders.IsEmpty() || bHasEngagement ||
+	    EngagedTarget.IsValid() || (Attack && Attack->GetAttackTarget()) || DisarmMine.IsValid() ||
+	    bKnockbackActive || (!bYieldingToCastle && IsMoving()) || !CanMove() ||
+	    !IsComponentTickEnabled() || GetWorld()->bIsTearingDown)
+	{
+		CancelIdleYield();
+		return;
+	}
+	const ULSBattlefieldStateSubsystem* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
+	FLSPlayerCastleState CastleState;
+	ALSCastle* Castle = Battlefield && Battlefield->IsSetupValid() && Battlefield->TryGetPlayerCastleState(CastleState)
+	    ? Cast<ALSCastle>(CastleState.Castle.Get()) : nullptr;
+	TArray<FVector> Corridor;
+	if (!IsValid(Castle) || CastleState.bIsDead || Castle->IsActorBeingDestroyed() ||
+	    Castle->GetFaction() != ELSFaction::Ally || !Castle->Orders ||
+	    !Castle->Orders->GetPlannedMovementPath(Corridor, YieldLookAhead))
+	{
+		CancelIdleYield();
+		YieldAttempts = 0;
+		bYieldSpaceChanging = false;
+		return;
+	}
+	float Radius, Height, CastleRadius, CastleHeight;
+	Troop->GetSimpleCollisionCylinder(Radius, Height);
+	Castle->GetSimpleCollisionCylinder(CastleRadius, CastleHeight);
+	const float CorridorRadius = CastleRadius + Radius + YieldClearance;
+	auto FindNearestSegment = [&Corridor](const FVector& Location, FVector& Closest, FVector& Direction)
+	{
+		double Best = TNumericLimits<double>::Max();
+		for (int32 Index = 1; Index < Corridor.Num(); ++Index)
+		{
+			const FVector Segment = Corridor[Index] - Corridor[Index - 1];
+			const double Length = Segment.Size2D();
+			if (Length <= KINDA_SMALL_NUMBER) continue;
+			const FVector Tangent = Segment.GetSafeNormal2D();
+			const double Along = FVector::DotProduct(Location - Corridor[Index - 1], Tangent);
+			if (Index == 1 && Along < 0) continue;
+			const FVector Point = Corridor[Index - 1] + Tangent * FMath::Clamp(Along, 0.0, Length);
+			const double Distance = FVector::DistSquared2D(Location, Point);
+			if (Distance < Best) { Best = Distance; Closest = Point; Direction = Tangent; }
+		}
+		return Best;
+	};
+	FVector Closest, Direction;
+	const double DistanceSquared = FindNearestSegment(Troop->GetNavAgentLocation(), Closest, Direction);
+	if (bYieldingToCastle)
+	{
+		FVector UnusedPoint, UnusedDirection;
+		if (bMovementCompleted || FindNearestSegment(YieldDestination, UnusedPoint, UnusedDirection) < FMath::Square(CorridorRadius))
+			CancelIdleYield();
+		return;
+	}
+	if (DistanceSquared > FMath::Square(CorridorRadius)) return;
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextYieldTime) return;
+	if (FVector::DistSquared2D(Castle->GetNavAgentLocation(), YieldCastleOrigin) > FMath::Square(CastleRadius * 0.5f) ||
+	    !Castle->Orders->GetOrderDestination().Equals(YieldCastleGoal, YieldClearance))
+	{
+		YieldAttempts = 0;
+		YieldCastleOrigin = Castle->GetNavAgentLocation();
+		YieldCastleGoal = Castle->Orders->GetOrderDestination();
+	}
+	FVector Side = FVector::CrossProduct(FVector::UpVector, Direction);
+	if (FVector::DotProduct(Troop->GetActorLocation() - Closest, Side) < 0) Side *= -1;
+	bool bSideYielding = false, bOtherSideYielding = false;
+	const float AlongOffsets[] = {
+		GetIdleYieldAlongOffset(Closest, Direction, Side, CorridorRadius, bSideYielding),
+		GetIdleYieldAlongOffset(Closest, Direction, -Side, CorridorRadius, bOtherSideYielding)};
+	const float BaseSpacing = Radius * 2 + YieldClearance;
+	bool bOuterSideYielding = false, bOtherOuterSideYielding = false;
+	GetIdleYieldAlongOffset(Closest, Direction, Side, CorridorRadius + BaseSpacing, bOuterSideYielding);
+	GetIdleYieldAlongOffset(Closest, Direction, -Side, CorridorRadius + BaseSpacing, bOtherOuterSideYielding);
+	const bool bNearbyYielding = bSideYielding || bOtherSideYielding || bOuterSideYielding || bOtherOuterSideYielding;
+	if (bYieldSpaceChanging && !bNearbyYielding) YieldAttempts = 0;
+	bYieldSpaceChanging = bNearbyYielding;
+	if (!bNearbyYielding && YieldAttempts >= MaxYieldAttempts) return;
+	if (!bNearbyYielding) ++YieldAttempts;
+	NextYieldTime = Now + YieldRetryInterval;
+	double OriginHeight;
+	if (!GetNavigationOriginHeight(OriginHeight)) return;
+	const FVector CenterOffset(0, 0, OriginHeight);
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::PathObstacle);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSIdleYield), false, Troop);
+	const FCollisionShape Body = FCollisionShape::MakeCapsule(Radius + 4, FMath::Max(Height, Radius + 4));
+	const TArray<FLSMineSphere> Mines = LSMineAvoidance::Snapshot(GetWorld());
+	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const ANavigationData* Data = Nav ? Nav->GetNavDataForProps(Troop->GetNavAgentPropertiesRef(), Troop->GetNavAgentLocation()) : nullptr;
+	if (!Data) return;
+	// 후방 후보보다 먼저 성의 진로 앞쪽으로 더 멀리 비킬 자리도 검사한다.
+	// 바깥 행은 안쪽 이웃이 늘린 앞뒤 간격을 쓰지 않고 실제 경로·몸체 검사로 안전을 확인한다.
+	constexpr int32 CandidateOrder[] = {0, 1, 2, 3, 12, 13, 4, 5, 6, 7, 8, 9, 10, 11};
+	for (const int32 Index : CandidateOrder)
+	{
+		const bool bFarForward = Index >= 12;
+		const int32 Row = bFarForward ? 0 : Index / 6;
+		const int32 Slot = Index % 6;
+		const float AlongSpacing = Row == 0 ? AlongOffsets[Slot % 2] : BaseSpacing;
+		const float Along = bFarForward ? FMath::Max(AlongOffsets[Slot % 2], CorridorRadius + BaseSpacing)
+			: (Slot / 2 == 0 ? 0.0f : (Slot / 2 == 1 ? 1.0f : -1.0f)) * AlongSpacing;
+		const float SideDistance = CorridorRadius + YieldClearance + Row * BaseSpacing;
+		FVector Candidate = Closest + Side * (Slot % 2 == 0 ? 1 : -1) * SideDistance + Direction * Along;
+		Candidate.Z = Troop->GetNavAgentLocation().Z;
+		auto DiagnoseCandidate = [&](const TCHAR* Stage, const FVector& Point)
+		{
+			const IConsoleVariable* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("LS.RTS.InputDebug"));
+			if (Debug && Debug->GetInt() != 0)
+				UE_LOG(LogTemp, Display, TEXT("RTS_YIELD actor=%s at=%s attempt=%d changing=%d candidate=%d along=%.1f requested=%s checked=%s stage=%s"),
+					*Troop->GetName(), *Troop->GetActorLocation().ToString(), YieldAttempts, bNearbyYielding, Index,
+					Along, *Candidate.ToString(), *Point.ToString(), Stage);
+		};
+		FNavLocation Point;
+		if (!Nav->ProjectPointToNavigation(Candidate, Point, FVector(150, 150, 300), Data) ||
+		    FVector::DistSquared2D(Candidate, Point.Location) > FMath::Square(YieldClearance))
+		{ DiagnoseCandidate(TEXT("projection"), Candidate); continue; }
+		const FVector Projected = Point.Location;
+		FVector UnusedPoint, UnusedDirection;
+		if (FindNearestSegment(Projected, UnusedPoint, UnusedDirection) < FMath::Square(CorridorRadius))
+		{ DiagnoseCandidate(TEXT("inside-corridor"), Projected); continue; }
+		if (GetWorld()->OverlapAnyTestByObjectType(Projected + CenterOffset, FQuat::Identity, Objects, Body, Query))
+		{ DiagnoseCandidate(TEXT("endpoint-occupied"), Projected); continue; }
+		const FLSMineSafePath Safe = LSMineAvoidance::BuildSafePath(Troop, Projected, Mines);
+		if (Safe.Result != ELSMinePathResult::SafePath || !Safe.Path.IsValid() || !Safe.Path->IsValid() || Safe.Path->IsPartial())
+		{ DiagnoseCandidate(TEXT("no-full-safe-path"), Projected); continue; }
+		TArray<FVector> BodyCenters{Troop->GetActorLocation()};
+		for (const FNavPathPoint& YieldPoint : Safe.Path->GetPathPoints())
+			BodyCenters.Add(YieldPoint.Location + CenterOffset);
+		if (!IsIdleYieldPathClear(BodyCenters))
+		{ DiagnoseCandidate(TEXT("body-path-blocked"), Projected); continue; }
+		DiagnoseCandidate(TEXT("accepted"), Projected);
+		AAIController* AI = CastChecked<AAIController>(Troop->GetController());
+		UPathFollowingComponent* Following = AI->GetPathFollowingComponent();
+		if (!Following) return;
+		Following->OnRequestFinished.RemoveAll(this);
+		Following->OnRequestFinished.AddUObject(this, &ULSOrderComponent::OnMovementFinished);
+		bYieldingToCastle = true;
+		YieldDestination = Safe.Destination;
+		bMovementCompleted = false;
+		MovementRequestId = FAIRequestID::InvalidRequest;
+		SetMineAvoidance(true);
+		FAIMoveRequest Request(Safe.Destination);
+		Request.SetAcceptanceRadius(5);
+		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetReachTestIncludesGoalRadius(false);
+		Request.SetAllowPartialPath(false);
+		Request.SetProjectGoalLocation(false);
+		MovementRequestId = AI->RequestMove(Request, Safe.Path);
+		if (MovementRequestId == FAIRequestID::InvalidRequest) CancelIdleYield();
+		return;
 	}
 }
 
@@ -731,6 +1207,7 @@ void ULSOrderComponent::UpdateOrders(float DeltaTime)
 		const ULSMineAwareMovementComponent* Movement = Cast<ULSMineAwareMovementComponent>(Character->GetCharacterMovement());
 		if (UsesMineAvoidance() && Movement && Movement->GetMineConstraintDuration() >= RepathInterval && !bMineBlocked)
 		{
+			if (bYieldingToCastle) { CancelIdleYield(); return; }
 			StopForMine();
 		}
 	}
@@ -750,7 +1227,7 @@ void ULSOrderComponent::UpdateOrders(float DeltaTime)
 		{
 			AActor* StationaryTarget = IsInAttackRange(BlockedTarget) ? BlockedTarget :
 			    (CanAttack() ? FindEnemy(Attack->GetAttackSettings().Range) : nullptr);
-			if (StationaryTarget)
+			if (StationaryTarget && Attack->HasClearAttackPathFromLocation(GetOwner()->GetActorLocation(), StationaryTarget))
 			{
 				if (Attack && Attack->GetAttackTarget() != StationaryTarget) Attack->StartAttack(StationaryTarget);
 				return;
@@ -837,10 +1314,13 @@ void ULSOrderComponent::UpdateOrders(float DeltaTime)
 			FinishOrder();
 		}
 	}
+	if (ActiveOrder.Kind == ELSOrderKind::Idle)
+		UpdateIdleYield();
 }
 
 void ULSOrderComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+	CancelIdleYield();
 	GetWorld()->GetTimerManager().ClearTimer(OrderUpdateTimer);
 	SetEngagementTarget(nullptr);
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
@@ -991,7 +1471,7 @@ void ULSOrderComponent::TickDisarm(float DeltaTime)
 
 bool ULSOrderComponent::UsesMineAvoidance() const
 {
-	return ActiveOrder.Kind == ELSOrderKind::Disarm ||
+	return bYieldingToCastle || ActiveOrder.Kind == ELSOrderKind::Disarm ||
 	       (bHasEngagement && ActiveOrder.Kind != ELSOrderKind::AttackTarget);
 }
 

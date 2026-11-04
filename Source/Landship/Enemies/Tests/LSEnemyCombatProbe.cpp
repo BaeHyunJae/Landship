@@ -1,6 +1,6 @@
 #include "Enemies/Tests/LSEnemyCombatProbe.h"
 
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicProjectile.h"
@@ -51,7 +51,7 @@ void ALSEnemyCombatProbe::PostInitializeComponents()
 	ULSCastleWeaponData* Ballista = Load(TEXT("DA_Ballista"));
 	WeaponCaptureCannon = Cannon ? DuplicateObject<ULSCastleWeaponData>(Cannon, this) : nullptr;
 	bool bInstalled = false;
-	for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It)
+	for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It)
 	{
 		bInstalled = WeaponCaptureCannon && Shotgun && Ballista &&
 			It->Weapons->SetWeaponDefinitions({WeaponCaptureCannon.Get(), Shotgun, Ballista});
@@ -216,7 +216,7 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 			FParse::Param(FCommandLine::Get(), TEXT("LSEnemyCoreOrderRunExit")) ||
 			FParse::Param(FCommandLine::Get(), TEXT("LSEnemyMovingSolo"))) &&
 			UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(GetWorld()) && StageTime < 8) { return; }
-		for (TActorIterator<ALSMobileCastle> It(GetWorld()); It; ++It) { Castle = *It; }
+		for (TActorIterator<ALSCastle> It(GetWorld()); It; ++It) { Castle = *It; }
 		for (TActorIterator<ALSEnemyOutpost> It(GetWorld()); It; ++It) { Core = *It; }
 		for (TActorIterator<ALSEnemyTroop> It(GetWorld()); It; ++It) { Units.Add(*It); Starts.Add(*It, It->GetActorLocation()); }
 		Check(Castle.IsValid() && Core.IsValid() && Units.Num() == 4, TEXT("explicit scene actors"));
@@ -245,7 +245,7 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 			Core->BasicAttack->StopAttack();
 			Castle->SetActorLocation(FVector(-500, -1700, 142));
 			MovingSoloUnit->SetActorLocation(FVector(0, -1700, 88));
-			Castle->BasicAttack->StopAttack();
+
 			Castle->FindComponentByClass<ULSHealthComponent>()->OnDamagedEvent.AddUniqueDynamic(this, &ThisClass::OnCastleDamaged);
 			Castle->Orders->SetComponentTickEnabled(true);
 			FLSOrder Move;
@@ -282,7 +282,7 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 					if (!PublicAttackTroop.IsValid()) { Check(false, TEXT("public melee attacker spawn")); Finish(); return; }
 					PublicOrders = PublicAttackTroop->Orders;
 					Castle->Orders->SetComponentTickEnabled(false);
-					Castle->BasicAttack->StopAttack();
+
 					if (AController* Controller = Castle->GetController()) { Controller->StopMovement(); }
 				}
 				else { Castle->SetActorLocation(Core->GetActorLocation() + FVector(bCorner ? -1000 : 0, -1000, 42)); }
@@ -346,7 +346,7 @@ void ALSEnemyCombatProbe::Tick(float DeltaSeconds)
 			return;
 		}
 		Castle->Orders->SetComponentTickEnabled(false);
-		Castle->BasicAttack->StopAttack();
+
 		Castle->FindComponentByClass<ULSHealthComponent>()->OnDamagedEvent.AddDynamic(this, &ALSEnemyCombatProbe::OnCastleDamaged);
 		for (const auto& Unit : Units) { Unit->BasicAttack->OnAttackExecutedEvent.AddDynamic(this, &ALSEnemyCombatProbe::OnExecuted); }
 		// 실제 이동을 멈추지 않고 전략 목표를 바꾸어 재경로를 관찰한다.

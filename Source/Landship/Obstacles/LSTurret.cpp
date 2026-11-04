@@ -3,7 +3,6 @@
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Castle/LSCastle.h"
-#include "Castle/LSMobileCastle.h"
 #include "Troops/LSUnit.h"
 #include "Match/LSBattleOutcomePolicy.h"
 #include "Controls/LSSelectableComponent.h"
@@ -13,8 +12,11 @@
 #include "EngineUtils.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 ALSTurret::ALSTurret()
 {
+	PrimaryActorTick.bCanEverTick = true;
 	UBoxComponent* Body = CreateDefaultSubobject<UBoxComponent>(TEXT("Body"));
 	Body->SetBoxExtent(FVector(70, 70, 120));
 	SetObstacleBody(Body, true);
@@ -23,10 +25,20 @@ ALSTurret::ALSTurret()
 	AttackSettings.Interval = 2;
 	AttackSettings.Range = 1200;
 	ProjectileSettings.ProjectileClass = ALSBasicProjectile::StaticClass();
+	ProjectileSettings.VisualStyle = ELSProjectileVisualStyle::TurretBolt;
 	Vision->bTriggersEnemyDiscovery = true;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Mesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	Visual->SetStaticMesh(Mesh.Object);
-	Visual->SetRelativeScale3D(FVector(1.4, 1.4, 2.4));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	Visual->SetStaticMesh(Cylinder.Object);
+	Visual->SetRelativeLocation(FVector(0, 0, -35));
+	Visual->SetRelativeScale3D(FVector(1.4, 1.4, 1.7));
+	Barrel = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Barrel"));
+	Barrel->SetupAttachment(Body);
+	Barrel->SetStaticMesh(Cylinder.Object);
+	Barrel->SetRelativeLocation(FVector(60, 0, 70));
+	Barrel->SetRelativeRotation(FRotator(90, 0, 0));
+	Barrel->SetRelativeScale3D(FVector(.35, .35, 1.5));
+	Barrel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Barrel->SetCanEverAffectNavigation(false);
 }
 FString ALSTurret::GetConfigurationError() const
 {
@@ -51,6 +63,14 @@ void ALSTurret::BeginPlay()
 	const bool bConfigured =
 		BasicAttack->ConfigureAttack(AttackSettings) && BasicAttack->ConfigureProjectile(ProjectileSettings);
 	Super::BeginPlay();
+	if (auto* Material = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/Landship/Troops/Materials/M_TroopPrototype.M_TroopPrototype")))
+	{
+		ThreatMaterial = UMaterialInstanceDynamic::Create(Material, this);
+		Visual->SetMaterial(0, ThreatMaterial);
+		Barrel->SetMaterial(0, ThreatMaterial);
+	}
+	UpdateThreatVisual();
 	if (!bConfigured || !IsObstacleActive() || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		StopObstacleActions();
 }
@@ -65,14 +85,14 @@ AActor* ALSTurret::ResolveTarget()
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		AActor* Candidate = *It;
-		const bool bCastle = Candidate->IsA<ALSCastle>() || Candidate->IsA<ALSMobileCastle>();
 		const ALSUnit* Unit = Cast<ALSUnit>(Candidate);
+		const bool bCastle = Candidate->IsA<ALSCastle>() || (Unit && Unit->Selection->Kind == ELSSelectionKind::Castle);
 		if (!bCastle && (!Unit || Unit->Selection->Kind != ELSSelectionKind::Unit))
 			continue;
 		if (!ULSCombatTargetLibrary::CanAutoAttackTarget(this, Candidate))
 			continue;
 		const double Distance = ULSCombatTargetLibrary::GetAttackDistance(this, Candidate);
-		if (Distance > AttackSettings.Range)
+		if (Distance > AttackSettings.Range || !BasicAttack->HasClearAttackPathFromLocation(GetActorLocation(), Candidate))
 			continue;
 		FLSHealthSnapshot HP;
 		if (!Candidate->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(HP))
@@ -97,9 +117,39 @@ void ALSTurret::StopObstacleActions()
 	bActionsStopped = true;
 	BasicAttack->EndBattleActions();
 	BasicAttack->Deactivate();
+	UpdateThreatVisual();
 }
 void ALSTurret::PrepareForDeath()
 {
 	StopObstacleActions();
 	Super::PrepareForDeath();
+}
+
+void ALSTurret::UpdateThreatVisual()
+{
+	AActor* Target = BasicAttack->GetAttackTarget();
+	const bool bThreat = !bActionsStopped && !LSBattleOutcome::AreActionsStopped(GetWorld()) && IsObstacleActive() &&
+		ULSCombatTargetLibrary::CanAutoAttackTarget(this, Target) &&
+		ULSCombatTargetLibrary::GetAttackDistance(this, Target) <= BasicAttack->GetAttackSettings().Range &&
+		BasicAttack->HasClearAttackPathFromLocation(GetActorLocation(), Target);
+	if (ThreatMaterial) ThreatMaterial->SetVectorParameterValue(TEXT("TeamColor"),
+		bThreat ? FLinearColor(1, .35f, .03f) : FLinearColor(.95f, .12f, .05f));
+	if (bThreat)
+	{
+		const FVector Direction = (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+		Barrel->SetWorldRotation(FRotator(90, Direction.Rotation().Yaw, 0));
+		Barrel->SetWorldLocation(GetActorLocation() + Direction * 60 + FVector(0, 0, 70));
+	}
+}
+
+void ALSTurret::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateThreatVisual();
+}
+
+void ALSTurret::EndPlay(const EEndPlayReason::Type Reason)
+{
+	StopObstacleActions();
+	Super::EndPlay(Reason);
 }

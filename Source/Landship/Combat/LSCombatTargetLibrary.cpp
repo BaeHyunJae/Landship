@@ -6,6 +6,7 @@
 #include "Obstacles/LSPathObstacle.h"
 #include "Obstacles/LSMine.h"
 #include "Obstacles/LSObstacleGeometry.h"
+#include "Troops/LSUnit.h"
 #include <limits>
 
 double ULSCombatTargetLibrary::GetAttackDistance(const AActor* Source, const AActor* Target)
@@ -58,6 +59,8 @@ bool ULSCombatTargetLibrary::IsCombatAlive(const AActor* Target)
 	{
 		return false;
 	}
+	if (const ALSUnit* Unit = Cast<ALSUnit>(Target); Unit && Unit->IsGameplayStaged())
+		return false;
 	const ULSHealthComponent* Health = Target->FindComponentByClass<ULSHealthComponent>();
 	FLSHealthSnapshot Snapshot;
 	return Health && Health->TryGetHealth(Snapshot) && !Snapshot.bIsDead;

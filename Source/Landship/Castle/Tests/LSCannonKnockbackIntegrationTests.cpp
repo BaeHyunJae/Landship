@@ -2,7 +2,10 @@
 
 #include "Castle/LSCastleProjectile.h"
 #include "Castle/LSCastleWeaponComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "GameFramework/PawnMovementComponent.h"
+#include "Troops/LSUnit.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatDeveloperSettings.h"
@@ -162,14 +165,14 @@ bool FLSCannonKnockbackEligibilityIntegrationTest::RunTest(const FString& Parame
 			auto* Outpost = SpawnCannonIntegrationActor<ALSEnemyOutpost>(World, FVector(400, 0, 100));
 			Outpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
 			auto* Setup = SpawnCannonIntegrationActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-			Setup->PlayerCastle = SpawnCannonIntegrationActor<ALSMobileCastle>(World, FVector(10000, 0, 200));
+			Setup->PlayerCastle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200));
 			Setup->CoreOutpost = Outpost;
 			Target = Outpost;
 		}
 		else if (Case == 5)
 			Target = SpawnCannonIntegrationActor<ALSBarricade>(World, FVector(400, 0, 100));
 		else if (Case == 2)
-			Target = SpawnCannonIntegrationActor<ALSMobileCastle>(World, FVector(400, 0, 144));
+			Target = LSCastleTestFixture::Spawn(World, FVector(400, 0, 144));
 		else
 		{
 			auto* Troop = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(Case == 3 ? 551 : 400, 0, 100));
@@ -216,7 +219,7 @@ bool FLSCannonKnockbackCastSnapshotIntegrationTest::RunTest(const FString& Param
 		FTestWorldWrapper Fixture;
 		if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = Fixture.GetTestWorld();
-		auto* Castle = SpawnCannonIntegrationActor<ALSMobileCastle>(World, FVector(0, 0, 144));
+		auto* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 144));
 		auto* Target = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(600, 0, 100));
 		auto* Original = LoadObject<ULSCastleWeaponData>(nullptr, TEXT("/Game/Landship/Castle/Data/DA_Cannon.DA_Cannon"));
 		if (!TestNotNull(TEXT("기존 대포 Data Asset"), Original)) return false;
@@ -225,7 +228,8 @@ bool FLSCannonKnockbackCastSnapshotIntegrationTest::RunTest(const FString& Param
 		Data->Levels = {Settings, Settings};
 		if (!TestTrue(TEXT("메모리 복제 데이터 지정"), Castle->Weapons->SetWeaponDefinitions({Data}))) return false;
 		if (!Fixture.BeginPlayInTestWorld()) return false;
-		PauseCannonIntegrationUnit(Castle);
+		Castle->Orders->SetComponentTickEnabled(false);
+		Castle->GetMovementComponent()->SetComponentTickEnabled(false);
 		PauseCannonIntegrationUnit(Target);
 		const float Before = CannonIntegrationHealth(Target);
 		if (!TestEqual(TEXT("무장 컴포넌트의 실제 대포 발사"), Castle->Weapons->CastWeapon(ELSCastleWeapon::Cannon,
@@ -265,7 +269,7 @@ bool FLSCannonKnockbackBattleEndIntegrationTest::RunTest(const FString& Paramete
 	UWorld* World = Fixture.GetTestWorld();
 	World->GetWorldSettings()->DefaultGameMode = ALSGameMode::StaticClass();
 	auto* Setup = SpawnCannonIntegrationActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-	Setup->PlayerCastle = SpawnCannonIntegrationActor<ALSMobileCastle>(World, FVector(10000, 0, 200));
+	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200));
 	Setup->CoreOutpost = SpawnCannonIntegrationActor<ALSEnemyOutpost>(World, FVector(0, 0, 200));
 	Setup->CoreOutpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
 	auto* Floor = SpawnCannonIntegrationActor<AActor>(World, FVector::ZeroVector);

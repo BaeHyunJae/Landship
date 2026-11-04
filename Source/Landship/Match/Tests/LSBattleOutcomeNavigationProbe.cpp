@@ -3,7 +3,7 @@
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Controls/LSOrderComponent.h"

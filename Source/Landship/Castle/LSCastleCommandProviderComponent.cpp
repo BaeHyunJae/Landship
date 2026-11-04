@@ -1,12 +1,13 @@
 #include "Castle/LSCastleCommandProviderComponent.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
 #include "Controls/LSPlayerController.h"
 #include "Match/LSBattleOutcomePolicy.h"
 
 TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implementation(ALSPlayerController* PC) const
 {
 	TArray<FLSCommandEntry> Result;
-	const auto* Castle = Cast<ALSMobileCastle>(GetOwner());
+	const auto* Castle = Cast<ALSCastle>(GetOwner());
 	if (!PC || !Castle || PC->GetSelectedArmedCastle() != Castle)
 		return Result;
 	const TCHAR* WeaponNames[] = {TEXT("일반 대포"), TEXT("산탄"), TEXT("발리스타")};

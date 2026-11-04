@@ -1,5 +1,6 @@
 #include "Enemies/LSBattlefieldSetup.h"
 
+#include "Castle/LSCastle.h"
 #include "Combat/LSFactionInterface.h"
 #include "Combat/LSHealthComponent.h"
 #include "Controls/LSSelectableComponent.h"
@@ -25,6 +26,10 @@ FString ALSBattlefieldSetup::GetConfigurationError() const
 	if (PlayerCastle->GetWorld() != GetWorld() || CoreOutpost->GetWorld() != GetWorld())
 	{
 		return TEXT("Battlefield references must belong to the setup world");
+	}
+	if (!PlayerCastle->IsA<ALSCastle>())
+	{
+		return TEXT("PlayerCastle must be an actual ALSCastle or derived class; movement-test MobileCastle is not supported");
 	}
 	const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(PlayerCastle);
 	const ULSSelectableComponent* Selection = PlayerCastle->FindComponentByClass<ULSSelectableComponent>();
@@ -57,7 +62,8 @@ EDataValidationResult ALSBattlefieldSetup::IsDataValid(FDataValidationContext& C
 	if (GetWorld())
 	{
 		int32 SetupCount = 0;
-		for (TActorIterator<ALSBattlefieldSetup> It(GetWorld()); It; ++It)
+		// 미개방 맵의 레벨은 비활성이므로 데이터 검증에서 활성 레벨 필터를 쓰지 않는다.
+		for (TActorIterator<ALSBattlefieldSetup> It(GetWorld(), StaticClass(), EActorIteratorFlags::SkipPendingKill); It; ++It)
 		{
 			++SetupCount;
 		}
@@ -73,7 +79,8 @@ EDataValidationResult ALSBattlefieldSetup::IsDataValid(FDataValidationContext& C
 		Context.AddError(FText::FromString(Error));
 		return EDataValidationResult::Invalid;
 	}
-	const bool bHasBattlefieldSettings = GetWorld() && TActorIterator<ALSBattlefieldSettings>(GetWorld());
+	const bool bHasBattlefieldSettings = GetWorld() && TActorIterator<ALSBattlefieldSettings>(
+		GetWorld(), ALSBattlefieldSettings::StaticClass(), EActorIteratorFlags::SkipPendingKill);
 	if (bHasBattlefieldSettings)
 	{
 		bool bInvalidCoreMarker = false;
@@ -83,7 +90,7 @@ EDataValidationResult ALSBattlefieldSetup::IsDataValid(FDataValidationContext& C
 			Context.AddError(FText::FromString(TEXT("CoreOutpost must have a vision participant with bPublicCorePosition enabled")));
 			bInvalidCoreMarker = true;
 		}
-		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		for (TActorIterator<AActor> It(GetWorld(), AActor::StaticClass(), EActorIteratorFlags::SkipPendingKill); It; ++It)
 		{
 			if (*It == CoreOutpost.Get())
 			{

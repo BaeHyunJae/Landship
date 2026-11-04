@@ -1,2 +1,3 @@
 Name,Health,VisionRadius,MovementSpeed
 PrototypeTest,777,1200,150
+BattlefieldPrototype,1000,1600,400

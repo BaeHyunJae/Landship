@@ -6,7 +6,7 @@
 #include "Combat/LSHealthTypes.h"
 #include "LSEnemyCombatProbe.generated.h"
 
-class ALSMobileCastle;
+class ALSCastle;
 class ALSEnemyOutpost;
 class ALSEnemyTroop;
 class ALSBasicAttackTestActor;
@@ -47,7 +47,7 @@ private:
 	void OnWeaponCoreDied(const FLSDamageResult& Damage);
 	UFUNCTION()
 	void OnPublicCoreDamaged(const FLSDamageResult& Damage);
-	TWeakObjectPtr<ALSMobileCastle> Castle;
+	TWeakObjectPtr<ALSCastle> Castle;
 	TWeakObjectPtr<ALSEnemyOutpost> Core;
 	TArray<TWeakObjectPtr<ALSEnemyTroop>> Units;
 	TMap<TWeakObjectPtr<ALSEnemyTroop>, FVector> Starts;

@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Castle/LSCastleProjectile.h"
-#include "Castle/LSMobileCastle.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Castle/LSCastleWeaponComponent.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
@@ -58,7 +59,7 @@ bool FLSArcSnapshotTest::RunTest(const FString& Parameters)
 	if (!Fixture.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = Fixture.GetTestWorld();
-	auto* Castle = World->SpawnActor<ALSMobileCastle>();
+	auto* Castle = LSCastleTestFixture::Spawn(World);
 	auto* Inside = MakeProjectileTarget(World, FVector(800, 0, 0));
 	auto* Dodges = MakeProjectileTarget(World, FVector(800, 20, 0));
 	auto* Enters = MakeProjectileTarget(World, FVector(1200, 0, 0));

@@ -9,17 +9,17 @@ if not data_class:
 
 definitions = [
     ('DA_Cannon', unreal.LSCastleWeapon.CANNON, [
-        dict(damage=60, cooldown=8, range=1200, radius=250),
-        dict(damage=80, cooldown=8, range=1300, radius=300),
-        dict(damage=100, cooldown=8, range=1400, radius=350)]),
+        dict(damage=60, cooldown=5.6, range=1600, radius=250),
+        dict(damage=80, cooldown=5.6, range=1650, radius=300),
+        dict(damage=100, cooldown=5.6, range=1700, radius=350)]),
     ('DA_Shotgun', unreal.LSCastleWeapon.SHOTGUN, [
-        dict(damage=35, cooldown=6, range=600, cone_angle=70, knockback_speed=650),
-        dict(damage=45, cooldown=6, range=650, cone_angle=80, knockback_speed=750),
-        dict(damage=55, cooldown=6, range=700, cone_angle=90, knockback_speed=850)]),
+        dict(damage=35, cooldown=4.2, range=1000, cone_angle=70, knockback_speed=650),
+        dict(damage=45, cooldown=4.2, range=1100, cone_angle=80, knockback_speed=750),
+        dict(damage=55, cooldown=4.2, range=1200, cone_angle=90, knockback_speed=850)]),
     ('DA_Ballista', unreal.LSCastleWeapon.BALLISTA, [
-        dict(damage=160, cooldown=10, range=1800, radius=18, projectile_speed=1800),
-        dict(damage=200, cooldown=10, range=2000, radius=22, projectile_speed=2000),
-        dict(damage=240, cooldown=10, range=2200, radius=26, projectile_speed=2200)])]
+        dict(damage=160, cooldown=7.5, range=2400, radius=18, projectile_speed=1800),
+        dict(damage=200, cooldown=7.5, range=2700, radius=22, projectile_speed=2000),
+        dict(damage=240, cooldown=7.5, range=3000, radius=26, projectile_speed=2200)])]
 
 for name, weapon, rows in definitions:
     path = '/Game/Landship/Castle/Data/' + name

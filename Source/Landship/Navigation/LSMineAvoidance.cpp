@@ -1,4 +1,5 @@
 #include "Navigation/LSMineAvoidance.h"
+#include "Navigation/LSCastlePathGeometry.h"
 #include "Obstacles/LSMine.h"
 #include "Obstacles/LSMineHazardSubsystem.h"
 #include "Combat/LSCollisionChannels.h"
@@ -200,7 +201,9 @@ FLSMineSafePath LSMineAvoidance::BuildSafePath(APawn* Pawn, const FVector& Goal,
 	{
 		FPathFindingQuery Request(Pawn, *Data, From, To);
 		Request.SetAllowPartialPaths(false);
-		return Nav->FindPathSync(Pawn->GetNavAgentPropertiesRef(), Request).Path;
+		const FNavPathSharedPtr Path = Nav->FindPathSync(Pawn->GetNavAgentPropertiesRef(), Request).Path;
+		LSCastlePathGeometry::OffsetCorners(Pawn, Path);
+		return Path;
 	};
 	const FNavPathSharedPtr Baseline = Query(Start, Projected.Location);
 	if (!Baseline.IsValid() || !Baseline->IsValid() || Baseline->IsPartial())

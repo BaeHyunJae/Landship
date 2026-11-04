@@ -7,6 +7,7 @@
 #include "TimerManager.h"
 
 #include "Controls/LSSelectableComponent.h"
+#include "Controls/LSRTSHUD.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -22,6 +23,7 @@ ALSTroopUnit::ALSTroopUnit()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
+	RangedAttack.VisualStyle = ELSProjectileVisualStyle::Arrow;
 	MeleeIdleAnimation = TSoftObjectPtr<UAnimSequence>(
 	    FSoftObjectPath(TEXT("/Game/ReflectionLab/Gameplay/Player/Animations/A_2HandIdle.A_2HandIdle")));
 	MeleeAttackAnimation = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(
@@ -79,6 +81,12 @@ FName ALSTroopUnit::GetStatsRowName(ELSTroopType Type)
 	}
 }
 
+void ALSTroopUnit::GetCapsuleDimensions(ELSTroopType Type, float& OutRadius, float& OutHalfHeight)
+{
+	OutRadius = Type == ELSTroopType::Cavalry ? 65.0f : 42.0f;
+	OutHalfHeight = 88.0f;
+}
+
 bool ALSTroopUnit::SetInitialTroopType(ELSTroopType InType)
 {
 	if (bTroopTypeLocked || GetStatsRowName(InType).IsNone())
@@ -124,7 +132,9 @@ void ALSTroopUnit::RefreshDefinition()
 	TroopMarker->SetStaticMesh(Shape);
 	TroopMarker->SetRelativeScale3D(Scale);
 	TroopMarker->SetRelativeLocation(FVector(0, 0, 145));
-	GetCapsuleComponent()->SetCapsuleSize(TroopType == ELSTroopType::Cavalry ? 65.0f : 42.0f, 88.0f);
+	float Radius, HalfHeight;
+	GetCapsuleDimensions(TroopType, Radius, HalfHeight);
+	GetCapsuleComponent()->SetCapsuleSize(Radius, HalfHeight);
 	const bool bAlly = GetFaction() == ELSFaction::Ally;
 	MarkerColor = bAlly ? FLinearColor(0.08f, 0.55f, 1.0f) : FLinearColor(0.95f, 0.12f, 0.05f);
 	if (UMaterialInterface* Material = PrototypeMaterial.LoadSynchronous())
@@ -151,6 +161,12 @@ void ALSTroopUnit::BeginPlay()
 	Super::BeginPlay();
 	Health->OnDiedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDied);
 	Health->OnDamagedEvent.AddDynamic(this, &ALSTroopUnit::OnTroopDamaged);
+	if (!IsGameplayStaged()) InitializeAnimations();
+}
+
+void ALSTroopUnit::ActivateProducedUnit()
+{
+	Super::ActivateProducedUnit();
 	InitializeAnimations();
 }
 
@@ -202,7 +218,7 @@ void ALSTroopUnit::Tick(float DeltaSeconds)
 
 void ALSTroopUnit::OnTroopDamaged(const FLSDamageResult& Damage)
 {
-	if (!MarkerMaterial || !ULSCombatTargetLibrary::IsCombatAlive(this) || !FMath::IsFinite(HitFlashDuration) ||
+	if (ALSRTSHUD::UsesUnifiedCombatFeedback(GetWorld()) || !MarkerMaterial || !ULSCombatTargetLibrary::IsCombatAlive(this) || !FMath::IsFinite(HitFlashDuration) ||
 	    HitFlashDuration <= 0)
 		return;
 	MarkerMaterial->SetVectorParameterValue(TEXT("TeamColor"), HitFlashColor);

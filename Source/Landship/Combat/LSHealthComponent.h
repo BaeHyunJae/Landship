@@ -9,6 +9,7 @@
 DECLARE_DELEGATE(FLSPrepareCombatDeath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDamageApplied, const FLSDamageResult&, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDeath, const FLSDamageResult&, Damage);
+DECLARE_MULTICAST_DELEGATE_OneParam(FLSOnDamageCommitted, const FLSDamageResult&);
 
 /** 세 대상이 공유하는 체력 상태와 피해 처리다. 대상별 사망 처리는 네이티브 훅에 맡긴다. */
 UCLASS(ClassGroup = (Landship))
@@ -32,6 +33,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Health")
 	FString GetInitializationFailureReason() const { return InitializationFailureReason; }
+	bool HasTakenDamage() const { return bHasTakenDamage; }
+	bool TryGetLastDamage(FLSDamageResult& OutDamage) const;
+	int64 GetDamageReceiverId() const { return DamageReceiverId; }
+	/** 양수 피해(치명 포함)를 다음 타이머 틱에 알린다. 같은 틱에 전달하는 기록의 순서는 보장하지 않는다.
+	 * 기록은 공격자·피격 대상이 제거되어도 살아 있는 소비자에게 전달된다. AddUObject/AddWeakLambda로 구독한다.
+	 * 확정 시 구독 목록을 복사하므로 RemoveAll 뒤에도 이미 확정한 기록을 받을 수 있다. 소비자는 종료 상태를 검사한다. */
+	FLSOnDamageCommitted OnDamageCommitted;
 
 	/** 체력 변경의 공통 진입점이다. UE TakeDamage에 자동 연결되지 않는다. 알림 중 재진입해도 반환값은 이 요청의 결과다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
@@ -80,4 +88,8 @@ private:
 	FLSHealthSnapshot Health;
 
 	FLSPrepareCombatDeath PrepareDeathEvent;
+	UPROPERTY(Transient)
+	FLSDamageResult LastDamage;
+	bool bHasTakenDamage = false;
+	int64 DamageReceiverId = 0;
 };
