@@ -37,7 +37,6 @@ class LANDSHIP_API ALSAutoBattleProbe : public AActor
 	TArray<int32> Ids;
 	int32 Stage = 0;
 	int32 Failures = 0;
-	int32 BudgetAfterPlacement = 0;
 	int32 InitialBattleId = 0;
 	float Elapsed = 0;
 	float StageTime = 0;

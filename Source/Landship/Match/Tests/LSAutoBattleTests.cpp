@@ -18,14 +18,15 @@ bool FLSAutoBattleScenarioTest::RunTest(const FString& Parameters)
 	auto* Scenario = Play.GetTestWorld()->SpawnActor<ALSAutoBattleScenario>();
 	if (!Scenario)
 		return false;
-	TestTrue(TEXT("기본 시나리오의 명시적 편성 유효"), Scenario->GetConfigurationError().IsEmpty());
+	TestTrue(TEXT("기본 시나리오는 적 병력 없이 유효"), Scenario->EnemyFormation.IsEmpty() &&
+	         Scenario->GetConfigurationError().IsEmpty());
 	Scenario->UnitCosts.Remove(ELSTroopType::Archer);
 	TestFalse(TEXT("누락 비용을 자동 대체하지 않음"), Scenario->GetConfigurationError().IsEmpty());
 	Scenario->UnitCosts.Add(ELSTroopType::Archer, 60);
 	Scenario->DeploymentMax.X = Scenario->BoundsMax.X + 1;
 	TestFalse(TEXT("배치 구역의 전장 이탈 거부"), Scenario->GetConfigurationError().IsEmpty());
 	Scenario->DeploymentMax.X = -300;
-	Scenario->EnemyFormation[0].Type = static_cast<ELSTroopType>(255);
+	Scenario->EnemyFormation.AddDefaulted_GetRef().Type = static_cast<ELSTroopType>(255);
 	TestFalse(TEXT("잘못된 병종 거부"), Scenario->GetConfigurationError().IsEmpty());
 	return true;
 }

@@ -3,6 +3,8 @@
 #include "HUD/LSAutoBattleWidget.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Match/LSAutoBattleCastle.h"
+#include "Castle/LSCastleWeaponComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"
@@ -59,6 +61,9 @@ void ALSAutoBattleController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ThisClass::WheelDown);
 	InputComponent->BindKey(EKeys::Delete, IE_Pressed, this, &ThisClass::ToggleEraseBrush);
 	InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ThisClass::StartHotkey);
+	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &ThisClass::ArmCannon);
+	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ThisClass::ArmShotgun);
+	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ThisClass::ArmBallista);
 }
 
 void ALSAutoBattleController::SetCameraCapture(bool bCapture)
@@ -117,7 +122,21 @@ void ALSAutoBattleController::OnBattleChanged()
 		bEraseBrush = false;
 		SelectionId = 0;
 		bCastlePlacement = false;
+		ArmedWeapon.Reset();
+		LastWeaponResult = ELSWeaponCastResult::Ready;
 		SetCameraCapture(false);
+		if (auto* Camera = Cast<ALSFreeCameraPawn>(GetPawn()))
+		{
+			if (Phase == ELSAutoBattlePhase::Fighting && IsValid(Mode->GetAllyCastle()))
+				Camera->FollowCastle(*Mode->GetAllyCastle(), 0, true);
+			else if (Phase == ELSAutoBattlePhase::Preparation && LastPhase != ELSAutoBattlePhase::Preparation)
+				Camera->ResetView();
+		}
+		if (Phase == ELSAutoBattlePhase::Fighting && IsValid(Mode->GetAllyCastle()) &&
+		    Mode->GetAllyCastle()->Weapons->GetStatus(Mode->GetWeapon()) == ELSWeaponCastResult::Ready)
+		{
+			ArmedWeapon = Mode->GetWeapon();
+		}
 		LastPhase = Phase;
 		LastBattleId = Mode->GetBattleId();
 	}
@@ -130,6 +149,12 @@ void ALSAutoBattleController::OnBattleChanged()
 void ALSAutoBattleController::PlayerTick(float DeltaSeconds)
 {
 	Super::PlayerTick(DeltaSeconds);
+	const auto* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>();
+	auto* Camera = Cast<ALSFreeCameraPawn>(GetPawn());
+	const bool bFighting = Mode && Mode->GetPhase() == ELSAutoBattlePhase::Fighting;
+	ALSAutoBattleCastle* Castle = bFighting ? Mode->GetAllyCastle() : nullptr;
+	if (Camera && IsValid(Castle))
+		Camera->FollowCastle(*Castle, DeltaSeconds, false);
 	if (!IsLocalController() || !GetWorld()->GetGameViewport() || !GetWorld()->GetGameViewport()->Viewport ||
 	    !GetWorld()->GetGameViewport()->Viewport->HasFocus() ||
 	    !GetWorld()->GetGameViewport()->Viewport->IsForegroundWindow())
@@ -141,9 +166,19 @@ void ALSAutoBattleController::PlayerTick(float DeltaSeconds)
 		}
 		return;
 	}
-	ALSFreeCameraPawn* Camera = Cast<ALSFreeCameraPawn>(GetPawn());
 	if (!Camera)
 	{
+		return;
+	}
+	if (bFighting)
+	{
+		if (ULSCombatTargetLibrary::IsCombatAlive(Castle))
+		{
+			const float Throttle = static_cast<int32>(IsInputKeyDown(EKeys::W)) - static_cast<int32>(IsInputKeyDown(EKeys::S));
+			const float Steering = static_cast<int32>(IsInputKeyDown(EKeys::D)) - static_cast<int32>(IsInputKeyDown(EKeys::A));
+			Castle->Drive(Throttle, Steering, DeltaSeconds);
+			UpdateCastleAim(*Castle);
+		}
 		return;
 	}
 	if (bCameraCaptured)
@@ -183,7 +218,6 @@ void ALSAutoBattleController::PlayerTick(float DeltaSeconds)
 			ContinueBrushStroke(BrushGround);
 		}
 	}
-	const ALSAutoBattleGameMode* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>();
 	if (!Mode || !Mode->GetScenario())
 	{
 		return;
@@ -253,6 +287,12 @@ void ALSAutoBattleController::LeftClick()
 		return;
 	}
 	ALSAutoBattleGameMode* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>();
+	if (Mode && Mode->GetPhase() == ELSAutoBattlePhase::Fighting)
+	{
+		if (ALSAutoBattleCastle* Castle = Mode->GetAllyCastle(); ULSCombatTargetLibrary::IsCombatAlive(Castle))
+			ConfirmCastleWeapon(*Castle);
+		return;
+	}
 	if (!Mode || Mode->GetPhase() != ELSAutoBattlePhase::Preparation)
 	{
 		return;
@@ -348,11 +388,90 @@ void ALSAutoBattleController::ChooseWeapon(ELSCastleWeapon Weapon)
 {
 	if (auto* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>())
 	{
-		LastRequest = Mode->SelectWeapon(Weapon, EditingFaction);
+		if (Mode->GetPhase() == ELSAutoBattlePhase::Fighting)
+		{
+			auto* Castle = Mode->GetAllyCastle();
+			LastWeaponResult = ULSCombatTargetLibrary::IsCombatAlive(Castle)
+			    ? Castle->Weapons->GetStatus(Weapon) : ELSWeaponCastResult::Unavailable;
+			ArmedWeapon.Reset();
+			if (LastWeaponResult == ELSWeaponCastResult::Ready)
+				ArmedWeapon = Weapon;
+		}
+		else
+		{
+			LastRequest = Mode->SelectWeapon(Weapon, EditingFaction);
+		}
 	}
 	if (Widget)
 	{
 		Widget->RefreshState();
+	}
+}
+
+void ALSAutoBattleController::ArmCannon()
+{
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		ChooseWeapon(ELSCastleWeapon::Cannon);
+}
+
+void ALSAutoBattleController::ArmShotgun()
+{
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		ChooseWeapon(ELSCastleWeapon::Shotgun);
+}
+
+void ALSAutoBattleController::ArmBallista()
+{
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		ChooseWeapon(ELSCastleWeapon::Ballista);
+}
+
+void ALSAutoBattleController::ConfirmCastleWeapon(ALSAutoBattleCastle& Castle)
+{
+	if (!ArmedWeapon.IsSet())
+		return;
+	FVector Aim;
+	LastWeaponResult = GetGroundUnderCursor(Aim) ? Castle.Weapons->CastWeapon(ArmedWeapon.GetValue(), Aim)
+	                                            : ELSWeaponCastResult::InvalidAim;
+	if (LastWeaponResult == ELSWeaponCastResult::Ready)
+		ArmedWeapon.Reset();
+	if (Widget)
+		Widget->RefreshState();
+}
+
+void ALSAutoBattleController::UpdateCastleAim(const ALSAutoBattleCastle& Castle) const
+{
+	if (!ArmedWeapon.IsSet() || (Widget && Widget->IsPointerOverPanel()))
+		return;
+	FVector Aim;
+	const ELSCastleWeapon Weapon = ArmedWeapon.GetValue();
+	const FLSCastleWeaponSettings* Settings = Castle.Weapons->FindSettings(Weapon);
+	if (!Settings || !GetGroundUnderCursor(Aim))
+		return;
+	const FColor Color = Castle.Weapons->ValidateAim(Weapon, Aim) == ELSWeaponCastResult::Ready ? FColor::Cyan : FColor::Red;
+	const FVector Origin = Castle.Weapons->GetWeaponFireOrigin(Weapon, Aim);
+	const FVector Direction = (Aim - Origin).GetSafeNormal2D();
+	if (Weapon == ELSCastleWeapon::Cannon)
+	{
+		DrawDebugCircle(GetWorld(), Aim + FVector(0, 0, 8), Settings->Radius, 32, Color, false, -1, 0, 3,
+		                FVector::ForwardVector, FVector::RightVector, false);
+	}
+	else if (Weapon == ELSCastleWeapon::Shotgun)
+	{
+		const float HalfAngle = Settings->ConeAngle * 0.5f;
+		FVector Previous = Origin;
+		for (int32 Segment = 0; Segment <= 12; ++Segment)
+		{
+			const FVector Edge = Origin + Direction.RotateAngleAxis(-HalfAngle + Settings->ConeAngle * Segment / 12,
+			                                                        FVector::UpVector) * Settings->Range;
+			DrawDebugLine(GetWorld(), Previous, Edge, Color, false, -1, 0, 3);
+			Previous = Edge;
+		}
+		DrawDebugLine(GetWorld(), Previous, Origin, Color, false, -1, 0, 3);
+	}
+	else
+	{
+		DrawDebugLine(GetWorld(), Origin, Origin + Direction * Settings->Range, Color, false, -1, 0, 4);
 	}
 }
 void ALSAutoBattleController::BeginBattle()
@@ -485,9 +604,8 @@ void ALSAutoBattleController::PaintBrushSample(const FVector& Ground)
 	auto* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>();
 	int32 Id = 0;
 	LastRequest = Mode->PlaceUnit(ChosenTroop, Ground, Id, EditingFaction);
-	// 겹침·장애물은 건너뛰지만 자원 부족이면 이번 스트로크를 종료한다.
-	if (LastRequest == ELSAutoBattleRequest::InsufficientBudget ||
-	    LastRequest == ELSAutoBattleRequest::PopulationFull || LastRequest == ELSAutoBattleRequest::WrongPhase ||
+	// 겹침·장애물은 건너뛰고 편집 불가 상태에서만 스트로크를 종료한다.
+	if (LastRequest == ELSAutoBattleRequest::PopulationFull || LastRequest == ELSAutoBattleRequest::WrongPhase ||
 	    LastRequest == ELSAutoBattleRequest::Unavailable || LastRequest == ELSAutoBattleRequest::InvalidData)
 	{
 		EndBrushStroke();
@@ -538,6 +656,12 @@ void ALSAutoBattleController::EraseBrushSegment(const FVector& Start, const FVec
 
 void ALSAutoBattleController::LookPressed()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+	{
+		ArmedWeapon.Reset();
+		LastWeaponResult = ELSWeaponCastResult::Ready;
+		return;
+	}
 	if (!Widget || !Widget->IsPointerOverPanel())
 	{
 		bPanning = false;
@@ -546,6 +670,8 @@ void ALSAutoBattleController::LookPressed()
 }
 void ALSAutoBattleController::LookReleased()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (IsInputKeyDown(EKeys::MiddleMouseButton))
 	{
 		bPanning = true;
@@ -557,6 +683,8 @@ void ALSAutoBattleController::LookReleased()
 }
 void ALSAutoBattleController::PanPressed()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (!Widget || !Widget->IsPointerOverPanel())
 	{
 		bPanning = true;
@@ -565,6 +693,8 @@ void ALSAutoBattleController::PanPressed()
 }
 void ALSAutoBattleController::PanReleased()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (IsInputKeyDown(EKeys::RightMouseButton))
 	{
 		bPanning = false;
@@ -576,6 +706,12 @@ void ALSAutoBattleController::PanReleased()
 }
 void ALSAutoBattleController::Escape()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+	{
+		ArmedWeapon.Reset();
+		LastWeaponResult = ELSWeaponCastResult::Ready;
+		return;
+	}
 	EndBrushStroke();
 	bEraseBrush = false;
 	if (bCameraCaptured)
@@ -594,6 +730,8 @@ void ALSAutoBattleController::Escape()
 }
 void ALSAutoBattleController::Home()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (auto* Camera = Cast<ALSFreeCameraPawn>(GetPawn()))
 	{
 		Camera->ResetView();
@@ -601,6 +739,8 @@ void ALSAutoBattleController::Home()
 }
 void ALSAutoBattleController::WheelUp()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (auto* Camera = Cast<ALSFreeCameraPawn>(GetPawn()))
 	{
 		if (bCameraCaptured && !bPanning)
@@ -615,6 +755,8 @@ void ALSAutoBattleController::WheelUp()
 }
 void ALSAutoBattleController::WheelDown()
 {
+	if (LastPhase == ELSAutoBattlePhase::Fighting)
+		return;
 	if (auto* Camera = Cast<ALSFreeCameraPawn>(GetPawn()))
 	{
 		if (bCameraCaptured && !bPanning)
@@ -708,21 +850,6 @@ void ALSAutoBattleController::LoadPreset(const FString& Name)
 		Widget->RefreshState();
 	}
 }
-void ALSAutoBattleController::SetLimits(int32 Budget, int32 Limit)
-{
-	if (auto* Mode = GetWorld()->GetAuthGameMode<ALSAutoBattleGameMode>())
-	{
-		LastRequest = Mode->SetPreparationLimits(Budget, Limit);
-	}
-	EditorMessage = LastRequest == ELSAutoBattleRequest::Success
-	                    ? TEXT("예산·인구 상한 적용 완료")
-	                    : TEXT("이미 사용한 예산·인구보다 작게 설정할 수 없습니다.");
-	if (Widget)
-	{
-		Widget->RefreshState();
-	}
-}
-
 void ALSAutoBattleController::StartHotkey()
 {
 	if (Widget && Widget->IsEditingText())

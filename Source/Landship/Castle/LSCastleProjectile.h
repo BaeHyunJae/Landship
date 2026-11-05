@@ -6,6 +6,7 @@
 #include "LSCastleProjectile.generated.h"
 
 class UStaticMeshComponent;
+class ULSBasicAttackComponent;
 
 /** 곡사 포탄 또는 산탄 한 발의 탄환 묶음. 발사 수치와 진영을 보관한다. */
 UCLASS(NotPlaceable)
@@ -42,6 +43,9 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	TArray<TObjectPtr<UStaticMeshComponent>> Bullets;
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> Source;
+	TWeakObjectPtr<ULSBasicAttackComponent> SourceAttack;
+	uint64 SourceLifeSerial = 0;
+	bool bHasSourceLife = false;
 	UPROPERTY(Transient)
 	FLSDamageRequest ShotRequest;
 	UPROPERTY(Transient)

@@ -3,11 +3,12 @@
 #include "GameFramework/PlayerController.h"
 #include "Troops/LSTroopUnit.h"
 #include "Match/LSAutoBattleGameMode.h"
+#include "Castle/LSCastleWeaponData.h"
 #include "LSAutoBattleController.generated.h"
 
 class ULSAutoBattleWidget;
 
-/** 준비 중 배치만 요청하고 전투 중에는 관전 카메라만 조작한다. RTS 명령 입력은 상속하지 않는다. */
+/** 준비 중 편성을 편집하고 전투 중 아군 성의 주행과 무장을 제어한다. */
 UCLASS()
 class LANDSHIP_API ALSAutoBattleController : public APlayerController
 {
@@ -21,7 +22,6 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	}
 	void SavePreset(const FString& Name, bool bOverwrite);
 	void LoadPreset(const FString& Name);
-	void SetLimits(int32 Budget, int32 Limit);
 	const FString& GetEditorMessage() const
 	{
 		return EditorMessage;
@@ -29,6 +29,8 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	void ChooseTroop(ELSTroopType Type);
 	void ChooseCastle();
 	void ChooseWeapon(ELSCastleWeapon Weapon);
+	TOptional<ELSCastleWeapon> GetArmedWeapon() const { return ArmedWeapon; }
+	ELSWeaponCastResult GetLastWeaponResult() const { return LastWeaponResult; }
 	void BeginBattle();
 	void Retry();
 	void ClearFormation();
@@ -97,12 +99,19 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	void WheelUp();
 	void WheelDown();
 	void SetCameraCapture(bool bCapture);
+	void ArmCannon();
+	void ArmShotgun();
+	void ArmBallista();
+	void UpdateCastleAim(const ALSAutoBattleCastle& Castle) const;
+	void ConfirmCastleWeapon(ALSAutoBattleCastle& Castle);
 	UFUNCTION()
 	void OnBattleChanged();
 	UPROPERTY(Transient)
 	TObjectPtr<ULSAutoBattleWidget> Widget;
 	ELSTroopType ChosenTroop = ELSTroopType::Spearman;
 	ELSAutoBattleRequest LastRequest = ELSAutoBattleRequest::Success;
+	TOptional<ELSCastleWeapon> ArmedWeapon;
+	ELSWeaponCastResult LastWeaponResult = ELSWeaponCastResult::Ready;
 	ELSAutoBattlePhase LastPhase = ELSAutoBattlePhase::Loading;
 	int32 SelectionId = 0;
 	int32 LastBattleId = 0;

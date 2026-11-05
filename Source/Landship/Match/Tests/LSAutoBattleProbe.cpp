@@ -2,7 +2,6 @@
 #include "Match/LSAutoBattlePreset.h"
 #include "Components/EditableTextBox.h"
 #include "Components/ComboBoxString.h"
-#include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
@@ -112,13 +111,16 @@ void ALSAutoBattleProbe::Tick(float DeltaSeconds)
 	if (Stage == 0 && Mode->GetPhase() == ELSAutoBattlePhase::Preparation && StageTime > 1)
 	{
 		Check(Controller && Cast<ALSFreeCameraPawn>(Controller->GetPawn()), TEXT("자유 1인칭 카메라와 전용 컨트롤러"));
-		Check(Mode->StartBattle() == ELSAutoBattleRequest::InvalidData, TEXT("빈 편성으로 전투 시작 거부"));
+		if (Controller && Controller->GetBattleWidget())
+		{
+			const UWidget* Start = Controller->GetBattleWidget()->GetWidgetFromName(TEXT("Start"));
+			Check(Start && Start->GetIsEnabled(), TEXT("아군 병력이 없어도 전투 시작 버튼 활성"));
+		}
 		int32 Id = 77;
-		const int32 Budget = Mode->GetBudget();
 		Check(Mode->PlaceUnit(ELSTroopType::Spearman, FVector(1000, 1000, 0), Id) ==
 		              ELSAutoBattleRequest::InvalidPlacement &&
-		          Mode->GetBudget() == Budget && Id == 77,
-		      TEXT("배치 구역 밖 실패 시 예산과 출력 보존"));
+		          Mode->GetPopulation() == 0 && Id == 77,
+		      TEXT("배치 구역 밖 실패 시 편성과 출력 보존"));
 		for (int32 Index = 0; Index < 10; ++Index)
 		{
 			Id = 0;
@@ -135,13 +137,12 @@ void ALSAutoBattleProbe::Tick(float DeltaSeconds)
 			return;
 		}
 		FirstUnit = Mode->GetPlacementActor(Ids[0]);
-		BudgetAfterPlacement = Mode->GetBudget();
 		Check(!FirstUnit->Orders->IsComponentTickEnabled() && !FirstUnit->BasicAttack->IsActive(),
 		      TEXT("준비 단계 RTS 명령과 공격 비활성"));
 		Check(Mode->PlaceUnit(ELSTroopType::Cavalry, FVector(-1100, -1050, 0), Id) ==
 		              ELSAutoBattleRequest::InvalidPlacement &&
-		          Mode->GetBudget() == BudgetAfterPlacement,
-		      TEXT("병력 겹침 배치 실패 시 비용 보존"));
+		          Mode->GetPopulation() == 10,
+		      TEXT("병력 겹침 배치 실패 시 편성 보존"));
 		Check(Mode->MoveUnit(Ids[0], FVector(-1100, -1200, 0)) == ELSAutoBattleRequest::Success,
 		      TEXT("기존 병력 위치 수정"));
 		Check(Mode->MoveCastle(FVector(1500, 0, 0)) == ELSAutoBattleRequest::InvalidPlacement,
@@ -200,20 +201,24 @@ void ALSAutoBattleProbe::Tick(float DeltaSeconds)
 		Check(Mode->MoveUnit(Ids[0], FVector(-1000, -900, 0)) == ELSAutoBattleRequest::WrongPhase &&
 		          Mode->RemoveUnit(Ids[0]) == ELSAutoBattleRequest::WrongPhase &&
 		          Mode->ResetFormation() == ELSAutoBattleRequest::WrongPhase &&
-		          Mode->SelectWeapon(ELSCastleWeapon::Cannon) == ELSAutoBattleRequest::WrongPhase &&
-		          Mode->RetryBattle() == ELSAutoBattleRequest::WrongPhase,
-		      TEXT("전투 중 배치·제거·무장·재도전 요청 차단"));
+		          Mode->SelectWeapon(ELSCastleWeapon::Cannon) == ELSAutoBattleRequest::WrongPhase,
+		      TEXT("전투 중 배치·제거·무장 변경 차단"));
+		if (Controller && Controller->GetBattleWidget())
+		{
+			const UWidget* Retry = Controller->GetBattleWidget()->GetWidgetFromName(TEXT("Retry"));
+			Check(Retry && Retry->GetIsEnabled(), TEXT("전투 중 편성 복원 버튼 활성"));
+		}
 		Check(Controller && !Controller->IsCameraCaptured(), TEXT("전투 시작이 마우스를 자동 캡처하지 않음"));
 		if (Controller)
 		{
+			Check(Controller->GetArmedWeapon() == ELSCastleWeapon::Ballista, TEXT("준비 단계에서 고른 무장이 조준 대기"));
+			Controller->ArmCannon();
+			Check(Controller->GetArmedWeapon() == ELSCastleWeapon::Cannon, TEXT("전투 중 대포 선택"));
 			Controller->LookPressed();
-			Check(Controller->IsCameraCaptured(), TEXT("전투 중 우클릭 누름으로 관전 시작"));
-			Controller->LookReleased();
-			Check(!Controller->IsCameraCaptured(), TEXT("전투 중에도 우클릭을 놓으면 커서 복원"));
+			Check(!Controller->IsCameraCaptured() && !Controller->GetArmedWeapon().IsSet(),
+			      TEXT("전투 중 우클릭은 조준을 취소하고 성 추적을 유지"));
 			Controller->PanPressed();
-			Check(Controller->IsCameraCaptured(), TEXT("가운데 버튼 누름으로 화면 이동 시작"));
-			Controller->PanReleased();
-			Check(!Controller->IsCameraCaptured(), TEXT("가운데 버튼 해제로 커서 복원"));
+			Check(!Controller->IsCameraCaptured(), TEXT("전투 중 자유 카메라 이동을 시작하지 않음"));
 		}
 		Stage = 2;
 		StageTime = 0;
@@ -272,12 +277,12 @@ void ALSAutoBattleProbe::Tick(float DeltaSeconds)
 	else if (Stage == 7 && Mode->GetPhase() == ELSAutoBattlePhase::Preparation)
 	{
 		Check(Mode->GetBattleId() == InitialBattleId + 1 && Mode->GetPopulation() == 10 &&
-		          Mode->GetBudget() == BudgetAfterPlacement && Mode->GetPlacementActor(Ids[0]) != FirstUnit.Get(),
-		      TEXT("전투 식별자 갱신·편성 경제 복원·액터 재생성"));
+		          Mode->GetPlacementActor(Ids[0]) != FirstUnit.Get(),
+		      TEXT("전투 식별자 갱신·편성 복원·액터 재생성"));
 		Check(HasFullHealth(Mode->GetAllyCastle()) && Controller && !Controller->IsCameraCaptured(),
 		      TEXT("성 내구도와 준비 커서 복원"));
-		Check(Mode->RemoveUnit(Ids[0]) == ELSAutoBattleRequest::Success && Mode->GetBudget() > BudgetAfterPlacement,
-		      TEXT("병력 제거와 비용 환급"));
+		Check(Mode->RemoveUnit(Ids[0]) == ELSAutoBattleRequest::Success,
+		      TEXT("병력 제거"));
 		Mode->StartBattle();
 		// 같은 프레임의 전멸과 성 사망은 패배를 우선한다.
 		for (TActorIterator<ALSUnit> It(GetWorld()); It; ++It)
@@ -300,8 +305,8 @@ void ALSAutoBattleProbe::Tick(float DeltaSeconds)
 	}
 	else if (Stage == 8 && Mode->GetPhase() == ELSAutoBattlePhase::Preparation)
 	{
-		Check(Mode->GetPopulation() == 0 && Mode->GetBudget() == Mode->GetScenario()->Budget,
-		      TEXT("빈 편성으로 재도전 준비와 예산 복원"));
+		Check(Mode->GetPopulation() == 0,
+		      TEXT("빈 편성으로 재도전 준비"));
 		Finish();
 	}
 }
@@ -449,9 +454,8 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 	{
 		FString Error;
 		Check(Mode->LoadPreset(Name, Error), TEXT("별도 프로세스 JSON 로드"));
-		Check(Mode->GetPopulation() == 1 && Mode->GetScenario()->EnemyFormation.Num() == 3 &&
-		          Mode->GetBudget() == 860 && Mode->GetScenario()->PopulationLimit == 20,
-		      TEXT("새 프로세스 편성 경제 복원"));
+		Check(Mode->GetPopulation() == 1 && Mode->GetScenario()->EnemyFormation.Num() == 3,
+		      TEXT("새 프로세스 편성 복원"));
 		Check(Mode->StartBattle() == ELSAutoBattleRequest::Success, TEXT("새 프로세스 로드 후 전투 시작"));
 		Finish();
 		return;
@@ -462,7 +466,6 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 		return Label && Label->GetText().ToString() == Expected;
 	};
 	int32 Id = 0;
-	const int32 Budget = Mode->GetBudget();
 	Click(TEXT("EditEnemies"));
 	Check(Controller->GetEditingFaction() == ELSFaction::Enemy, TEXT("실제 버튼으로 적 편집 전환"));
 	Mode->ResetFormation(ELSFaction::Enemy);
@@ -473,13 +476,13 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 		          Id < 0,
 		      TEXT("적 병종 배치와 별도 ID"));
 	}
-	Check(Mode->GetBudget() == Budget && Mode->GetPopulation() == 0, TEXT("적 배치에 아군 자원·인구 소비 없음"));
+	Check(Mode->GetPopulation() == 0, TEXT("적 배치가 아군 편성에 영향 없음"));
 	Check(SummaryEquals(TEXT("EnemyForcePopulation"), TEXT("3")) &&
 	          SummaryEquals(TEXT("EnemyForceCost"), TEXT("190")) && SummaryEquals(TEXT("AllyForceCost"), TEXT("0")),
 	      TEXT("적 편성 인구·명목 코스트 비교 표시"));
 	Check(Mode->MoveUnit(Id, FVector(1000, 600, 0)) == ELSAutoBattleRequest::Success, TEXT("적 병력 이동"));
-	Check(Mode->RemoveUnit(Id) == ELSAutoBattleRequest::Success && Mode->GetBudget() == Budget,
-	      TEXT("적 제거로 아군 자원 늘지 않음"));
+	Check(Mode->RemoveUnit(Id) == ELSAutoBattleRequest::Success,
+	      TEXT("적 병력 제거"));
 	Check(SummaryEquals(TEXT("EnemyForcePopulation"), TEXT("2")) && SummaryEquals(TEXT("EnemyForceCost"), TEXT("100")),
 	      TEXT("적 삭제 즉시 비교 갱신"));
 	Check(Mode->PlaceUnit(ELSTroopType::Cavalry, FVector(700, 600, 0), Id, ELSFaction::Enemy) ==
@@ -492,18 +495,7 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 	Click(TEXT("EditAllies"));
 	Check(Mode->PlaceUnit(ELSTroopType::Spearman, FVector(-800, 0, 0), Id) == ELSAutoBattleRequest::Success,
 	      TEXT("아군 편성 배치"));
-	auto* BudgetInput = Cast<USpinBox>(Widget->GetWidgetFromName(TEXT("BudgetInput")));
-	auto* PopulationInput = Cast<USpinBox>(Widget->GetWidgetFromName(TEXT("PopulationInput")));
-	if (!BudgetInput || !PopulationInput)
-	{
-		Check(false, TEXT("경제 입력 위젯"));
-		Finish();
-		return;
-	}
-	BudgetInput->SetValue(900);
-	PopulationInput->SetValue(20);
-	Click(TEXT("ApplyLimits"));
-	Check(Mode->GetBudget() == 860 && Mode->GetScenario()->PopulationLimit == 20, TEXT("실제 버튼으로 자원·인구 조절"));
+	Check(!Widget->GetWidgetFromName(TEXT("ApplyLimits")), TEXT("아군 편성 조건 UI 제거"));
 	auto* NameInput = Cast<UEditableTextBox>(Widget->GetWidgetFromName(TEXT("PresetName")));
 	if (!NameInput)
 	{
@@ -527,8 +519,8 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 	}
 	List->SetSelectedOption(Name);
 	Click(TEXT("LoadSelectedPreset"));
-	Check(Mode->GetPopulation() == 1 && Mode->GetScenario()->EnemyFormation.Num() == 3 && Mode->GetBudget() == 860,
-	      TEXT("양측 편성·예산 복원"));
+	Check(Mode->GetPopulation() == 1 && Mode->GetScenario()->EnemyFormation.Num() == 3,
+	      TEXT("양측 편성 복원"));
 	Check(Mode->GetPlacementActor(1) != OldUnit, TEXT("로드는 새 액터로 복원"));
 	Check(SummaryEquals(TEXT("AllyForcePopulation"), TEXT("1")) && SummaryEquals(TEXT("AllyForceCost"), TEXT("40")) &&
 	          SummaryEquals(TEXT("EnemyForcePopulation"), TEXT("3")) &&
@@ -541,8 +533,6 @@ void ALSAutoBattleProbe::TickScenarioEditor(float DeltaSeconds)
 	Check(Mode->ApplyPreset(Bad) == ELSAutoBattleRequest::InvalidPlacement && Mode->GetPlacementActor(1) == Before &&
 	          ULSCombatTargetLibrary::IsCombatAlive(Before),
 	      TEXT("겹친 프리셋은 기존 편성·액터 유지"));
-	Check(Mode->SetPreparationLimits(0, 20) == ELSAutoBattleRequest::InvalidData && Mode->GetBudget() == 860,
-	      TEXT("사용한 비용 아래로 예산 축소 거부"));
 	Check(Mode->StartBattle() == ELSAutoBattleRequest::Success, TEXT("로드한 편성 전투 시작"));
 	FString Error;
 	Check(!Mode->SavePreset(Name, true, Error) && !Mode->LoadPreset(Name, Error), TEXT("전투 중 저장·불러오기 차단"));
@@ -636,7 +626,6 @@ void ALSAutoBattleProbe::TickPlacementBrush(float DeltaSeconds)
 	}
 	Mode->ResetFormation(ELSFaction::Enemy);
 	Mode->ResetFormation(ELSFaction::Ally);
-	const int32 OriginalBudget = Mode->GetBudget();
 	int32 AllyId = 0;
 	Check(Mode->PlaceUnit(ELSTroopType::Spearman, FVector(-1200, -2200, 0), AllyId) == ELSAutoBattleRequest::Success,
 	      TEXT("다른 진영 보존용 병력"));
@@ -694,17 +683,14 @@ void ALSAutoBattleProbe::TickPlacementBrush(float DeltaSeconds)
 	Controller->BeginBrushStroke(FVector(-2000, -2600, 0));
 	Controller->ContinueBrushStroke(FVector(-1550, -2600, 0));
 	Controller->EndBrushStroke();
-	Check(Mode->GetPopulation() == 5 &&
-	          Mode->GetBudget() ==
-	              OriginalBudget - 5 * Mode->GetScenario()->UnitCosts.FindChecked(ELSTroopType::Spearman),
-	      TEXT("생성은 공통 예산·인구 계산 사용"));
+	Check(Mode->GetPopulation() == 5,
+	      TEXT("생성 후 아군 편성 집계"));
 	Controller->ToggleEraseBrush();
 	Controller->BeginBrushStroke(FVector(-2200, -2600, 0));
 	Controller->ContinueBrushStroke(FVector(-1300, -2600, 0));
 	Controller->EndBrushStroke();
-	Check(Mode->GetPopulation() == 1 &&
-	          Mode->GetBudget() == OriginalBudget - Mode->GetScenario()->UnitCosts.FindChecked(ELSTroopType::Spearman),
-	      TEXT("삭제는 제거한 병력의 비용만 환급"));
+	Check(Mode->GetPopulation() == 1,
+	      TEXT("삭제 후 아군 편성 집계"));
 	Check(Mode->StartBattle() == ELSAutoBattleRequest::Success, TEXT("브러시 편성으로 전투 시작"));
 	const int32 BeforeBattleEdit = Mode->GetScenario()->EnemyFormation.Num();
 	Controller->BeginBrushStroke(Start);
@@ -732,7 +718,6 @@ void ALSAutoBattleProbe::TickDenseRetry(float DeltaSeconds)
 	{
 		Mode->ResetFormation(ELSFaction::Ally);
 		Mode->ResetFormation(ELSFaction::Enemy);
-		Mode->SetPreparationLimits(10000, 100);
 		Check(Mode->MoveCastle(FVector(-3200, -1400, 0), ELSFaction::Ally) == ELSAutoBattleRequest::Success &&
 		          Mode->MoveCastle(FVector(2400, -1400, 0), ELSFaction::Enemy) == ELSAutoBattleRequest::Success,
 		      TEXT("양 진영 성 시작 위치 변경"));
@@ -755,7 +740,6 @@ void ALSAutoBattleProbe::TickDenseRetry(float DeltaSeconds)
 			}
 			Check(Count == 70, TEXT("혼합 병종 밀집 편성 배치"));
 		}
-		BudgetAfterPlacement = Mode->GetBudget();
 		Check(Mode->StartBattle() == ELSAutoBattleRequest::Success, TEXT("밀집 편성 전투 시작"));
 		Stage = 1;
 		StageTime = 0;
@@ -783,9 +767,8 @@ void ALSAutoBattleProbe::TickDenseRetry(float DeltaSeconds)
 	}
 	else if (Stage == 3 && Mode->GetPhase() == ELSAutoBattlePhase::Preparation)
 	{
-		Check(Mode->GetPopulation() == 70 && Mode->GetScenario()->EnemyFormation.Num() == 70 &&
-		          Mode->GetBudget() == BudgetAfterPlacement,
-		      TEXT("양 진영 편성과 예산 복원"));
+		Check(Mode->GetPopulation() == 70 && Mode->GetScenario()->EnemyFormation.Num() == 70,
+		      TEXT("양 진영 편성 복원"));
 		bool bExact = true;
 		const TArray<FLSAutoBattlePlacement>* Formations[] = {&Mode->GetFormation(),
 		                                                      &Mode->GetScenario()->EnemyFormation};

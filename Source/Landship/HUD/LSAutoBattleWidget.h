@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Blueprint/UserWidget.h"
+#include "Types/SlateEnums.h"
 #include "LSAutoBattleWidget.generated.h"
 
 /** 배치·무장·전투 요청만 전달한다. WBP가 화면 배치와 디자인을 소유한다. */
@@ -21,11 +22,16 @@ class LANDSHIP_API ULSAutoBattleWidget : public UUserWidget
 
   private:
 	void SetLabel(const TCHAR* Name, const FString& Text);
-	void EnsureMedicButton();
+	void EnsureTroopButtons();
+	void SetupBattlefieldPicker();
+	UFUNCTION() void OnBattlefieldSelected(FString Selection, ESelectInfo::Type SelectionType);
 	UFUNCTION() void Spear();
 	UFUNCTION() void Archer();
 	UFUNCTION() void Cavalry();
 	UFUNCTION() void Medic();
+	UFUNCTION() void Shieldbearer();
+	UFUNCTION() void Mortar();
+	UFUNCTION() void Bomber();
 	UFUNCTION() void Castle();
 	UFUNCTION() void Cannon();
 	UFUNCTION() void Shotgun();
@@ -36,11 +42,9 @@ class LANDSHIP_API ULSAutoBattleWidget : public UUserWidget
 	UFUNCTION() void Remove();
 	UFUNCTION() void EditAllies();
 	UFUNCTION() void EditEnemies();
-	UFUNCTION() void ApplyLimits();
 	UFUNCTION() void SaveNewPreset();
 	UFUNCTION() void OverwritePreset();
 	UFUNCTION() void LoadSelectedPreset();
 	UFUNCTION() void ReloadPresetList();
-	int32 DisplayedBattleId = -1;
 	FTimerHandle StatusTimer;
 };

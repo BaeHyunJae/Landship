@@ -7,6 +7,8 @@
 
 class ALSAutoBattleCastle;
 class AAIController;
+class AStaticMeshActor;
+class ULevelStreamingDynamic;
 struct FLSAutoBattlePreset;
 
 UENUM(BlueprintType)
@@ -27,7 +29,6 @@ enum class ELSAutoBattleRequest : uint8
 	WrongPhase,
 	InvalidData,
 	InvalidPlacement,
-	InsufficientBudget,
 	PopulationFull,
 	InvalidTarget,
 	Unavailable
@@ -46,10 +47,6 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ELSAutoBattlePhase GetPhase() const
 	{
 		return Phase;
-	}
-	int32 GetBudget() const
-	{
-		return RemainingBudget;
 	}
 	int32 GetPopulation() const
 	{
@@ -94,13 +91,22 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ELSAutoBattleRequest MoveCastle(const FVector& Ground, ELSFaction Faction = ELSFaction::Ally);
 	ELSAutoBattleRequest SelectWeapon(ELSCastleWeapon Weapon, ELSFaction Faction = ELSFaction::Ally);
 	ELSAutoBattleRequest StartBattle();
-	/** 결과에서 복원을 요청한다. 성공은 요청 수락이며 Loading 뒤 준비 또는 Error로 알린다. true는 직전 편성, false는 빈
-	 * 편성이다. */
+	TOptional<ELSCastleWeapon> GetEnemyAimingWeapon() const;
+	struct FLSBattlefieldOption
+	{
+		const TCHAR* Label;
+		const TCHAR* TerrainPackage;
+	};
+	static TConstArrayView<FLSBattlefieldOption> GetBattlefieldOptions();
+	int32 GetCurrentBattlefieldIndex() const;
+	/** 준비 단계에서 현재 레벨의 지형을 교체하고 새 준비 편성을 초기화한다. */
+	bool SelectBattlefield(int32 Index);
+	/** 전투 중 또는 결과에서 복원을 요청한다. 성공은 요청 수락이며 Loading 뒤 준비 또는 Error로 알린다.
+	 * true는 아군 편성 유지, false는 아군 편성 초기화다. */
 	ELSAutoBattleRequest RetryBattle(bool bKeepFormation = true);
 	bool CanPlace(ELSTroopType Type, const FVector& Ground, int32 IgnoreId, FVector& OutGround,
 	              ELSFaction Faction = ELSFaction::Ally) const;
 	bool CanPlaceCastle(const FVector& Ground, FVector& OutGround, ELSFaction Faction = ELSFaction::Ally) const;
-	ELSAutoBattleRequest SetPreparationLimits(int32 Budget, int32 PopulationLimit);
 	FLSAutoBattlePreset GetPreset() const;
 	/** 실패하면 현재 액터와 편성을 유지한다. 성공 시 새 준비 액터로 교체한다. */
 	ELSAutoBattleRequest ApplyPreset(const FLSAutoBattlePreset& Preset);
@@ -121,6 +127,10 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	float ApproachPadding = 10.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Melee")
 	FLSMeleeApproachSettings MeleeApproach;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Enemy Castle", meta = (ClampMin = "0.1", Units = "s"))
+	float EnemyAimTime = 0.85f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Enemy Castle", meta = (ClampMin = "0.1", Units = "s"))
+	float EnemyWeaponRecovery = 1.25f;
 
   private:
 	struct FLSAutoBattleAgent
@@ -140,7 +150,9 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	void ReleaseUnitController(AAIController* Controller);
 	void AutoTick();
 	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents, const TArray<ALSUnit*>& Allies);
-	void FireCastle(ALSAutoBattleCastle* Castle, ELSCastleWeapon Weapon, const TArray<ALSUnit*>& Opponents);
+	/** 조준 또는 발사 중이면 true를 반환해 적 성의 이동 판단을 한 번 건너뛴다. */
+	bool UpdateEnemyWeapons(const TArray<ALSUnit*>& Opponents);
+	void DrawEnemyWeaponWarning() const;
 	void CollectOutcome(UWorld* World, ELevelTick TickType, float DeltaSeconds);
 	void OnActorSpawned(AActor* Actor);
 	void Fail(const FString& Reason);
@@ -159,13 +171,37 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	TArray<TWeakObjectPtr<AActor>> Projectiles;
 	TArray<TWeakObjectPtr<AAIController>> Controllers;
 	TArray<FLSAutoBattleAgent> Agents;
+	struct FLSEnemyWeaponAim
+	{
+		ELSCastleWeapon Weapon;
+		FVector Aim;
+		FVector CastleLocation;
+		double FireTime;
+	};
+	TOptional<FLSEnemyWeaponAim> EnemyWeaponAim;
+	double EnemyNextWeaponTime = 0;
 	FLSMeleeApproachPlanner MeleePlanner;
 	TArray<FLSAutoBattlePlacement> Formation;
 	FVector CastleGround = FVector::ZeroVector;
+	FVector DefaultEnemyCastleGround = FVector::ZeroVector;
+	ELSCastleWeapon DefaultEnemyWeapon = ELSCastleWeapon::Cannon;
+	struct FLSFlatTerrainState
+	{
+		TWeakObjectPtr<AStaticMeshActor> Actor;
+		bool bHidden;
+		bool bCollision;
+		bool bNavigation;
+	};
+	TArray<FLSFlatTerrainState> FlatTerrain;
+	UPROPERTY(Transient)
+	TObjectPtr<ULevelStreamingDynamic> VariantTerrain;
+	UPROPERTY(Transient)
+	TObjectPtr<ULevelStreamingDynamic> UnloadingTerrain;
+	int32 BattlefieldIndex = 0;
+	bool bTerrainNavigationRebuildPending = false;
 	ELSCastleWeapon SelectedWeapon = ELSCastleWeapon::Cannon;
 	ELSAutoBattlePhase Phase = ELSAutoBattlePhase::Loading;
 	FString Failure;
-	int32 RemainingBudget = 0;
 	int32 NextPlacementId = 1;
 	int32 NextEnemyId = -1;
 	TArray<TWeakObjectPtr<AActor>> PlacementIgnoredActors;

@@ -1,4 +1,5 @@
 #include "Combat/LSBasicProjectile.h"
+#include "Troops/LSShieldbearerComponent.h"
 #include "Combat/LSProjectilePoolSubsystem.h"
 #include "Combat/LSBasicAttackComponent.h"
 
@@ -317,6 +318,14 @@ bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, 
 			AActor* Target = Hit.GetActor();
 			if (!IsValid(Target))
 				continue;
+			const auto* Shield = Target->FindComponentByClass<ULSShieldbearerComponent>();
+			if (Shield && Shield->IsShieldSurface(Hit.GetComponent()) &&
+			    (VisualStyle != ELSProjectileVisualStyle::Arrow || !Shield->BlocksArrow(FlightVelocity)))
+			{
+				Query.AddIgnoredComponent(Hit.GetComponent());
+				bSkipped = true;
+				continue;
+			}
 			const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Target);
 			if (!Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) && Faction &&
 			    LSFaction::IsValid(Faction->GetFaction()) &&
@@ -375,7 +384,10 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 	const ILSFactionInterface* Faction = IsValid(Target) ? Cast<ILSFactionInterface>(Target) : nullptr;
 	const bool bCanDamage = Faction && LSFaction::IsValid(Faction->GetFaction()) &&
 	    ULSCombatTargetLibrary::IsCombatAlive(Target);
-	if (Health && bCanDamage)
+	const auto* Shield = IsValid(Target) ? Target->FindComponentByClass<ULSShieldbearerComponent>() : nullptr;
+	const bool bShieldBlocked = VisualStyle == ELSProjectileVisualStyle::Arrow && Shield &&
+	    Shield->IsShieldSurface(Hit.GetComponent()) && Shield->BlocksArrow(FlightVelocity);
+	if (Health && bCanDamage && !bShieldBlocked)
 	{
 		FLSDamageRequest Request = MakeHitRequest();
 		Request.DamageCauser = this;

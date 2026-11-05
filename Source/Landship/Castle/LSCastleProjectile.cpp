@@ -1,6 +1,7 @@
 #include "Castle/LSCastleProjectile.h"
 
 #include "Combat/LSCollisionChannels.h"
+#include "Combat/LSBasicAttackComponent.h"
 #include "Obstacles/LSPathObstacle.h"
 #include "Obstacles/LSObstacleGeometry.h"
 #include "Components/PrimitiveComponent.h"
@@ -50,6 +51,9 @@ bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSe
 	ShotSettings = Settings;
 	ShotRequest = Request;
 	Source = Request.SourceActor;
+	SourceAttack = Source.IsValid() ? Source->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
+	bHasSourceLife = SourceAttack.IsValid();
+	SourceLifeSerial = bHasSourceLife ? SourceAttack->GetCombatLifeSerial() : 0;
 	ShotRequest.SourceActor = nullptr;
 	ShotRequest.DamageCauser = nullptr;
 	LaunchLocation = GetActorLocation();
@@ -119,6 +123,9 @@ FLSDamageRequest ALSCastleProjectile::MakeHitRequest() const
 {
 	FLSDamageRequest Request = ShotRequest;
 	Request.SourceActor = Source.IsValid() && !Source->IsActorBeingDestroyed() ? Source.Get() : nullptr;
+	// 포탄 비행 중 발사 병력이 풀에 반환되면 새 생명에 피해를 귀속하지 않는다.
+	if (bHasSourceLife && (!SourceAttack.IsValid() || SourceAttack->GetCombatLifeSerial() != SourceLifeSerial))
+		Request.SourceActor = nullptr;
 	return Request;
 }
 

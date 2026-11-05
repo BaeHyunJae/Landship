@@ -19,6 +19,9 @@ class LANDSHIP_API ALSFreeCameraPawn : public APawn
 	void Dolly(float Steps);
 	void ChangeSpeed(float Steps);
 	void ResetView();
+	/** 관전 카메라의 현재 시점과 Home 복귀 위치를 함께 갱신한다. */
+	void SetHomeView(const FVector& Location, const FRotator& Rotation);
+	void FollowCastle(const AActor& Castle, float DeltaSeconds, bool bSnap);
 	float GetMoveSpeed() const
 	{
 		return MoveSpeed;
@@ -46,6 +49,10 @@ class LANDSHIP_API ALSFreeCameraPawn : public APawn
 	float DollyStep = 200.0f;
 
   private:
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
+	float CastleCameraDistance = 1100.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
+	float CastleCameraHeight = 850.0f;
 	FVector BoundsMin = FVector(-2500, -2000, 40);
 	FVector BoundsMax = FVector(2500, 2000, 3000);
 	FVector HomeLocation = FVector(-2000, -1600, 1800);

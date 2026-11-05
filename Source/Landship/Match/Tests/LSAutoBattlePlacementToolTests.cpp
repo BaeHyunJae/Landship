@@ -32,6 +32,12 @@ bool FLSAutoBattlePlacementToolTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		FLSAutoBattlePlacement& Unit = Scenario->EnemyFormation.AddDefaulted_GetRef();
+		Unit.Type = static_cast<ELSTroopType>(Index % 3);
+		Unit.Position = FVector(Index < 3 ? 700 : 1100, (Index % 3 - 1) * 360, 0);
+	}
 	auto Markers = [World, Scenario]()
 	{
 		TArray<ALSAutoBattleEnemyMarker*> Result;

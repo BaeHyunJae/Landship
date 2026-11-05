@@ -20,7 +20,10 @@ enum class ELSTroopType : uint8
 	Spearman,
 	Archer,
 	Cavalry,
-	Medic
+	Medic,
+	Shieldbearer,
+	Mortar,
+	Bomber
 };
 
 /** 공통 전투·이동을 재사용하고 병종별 데이터 행과 임시 외형만 선택한다. */
@@ -31,8 +34,12 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   public:
 	ALSTroopUnit();
-	virtual bool SupportsBasicAttack() const override { return TroopType != ELSTroopType::Medic; }
-	static constexpr int32 GetTroopTypeCount() { return static_cast<int32>(ELSTroopType::Medic) + 1; }
+	virtual bool SupportsBasicAttack() const override
+	{
+		return TroopType != ELSTroopType::Medic && TroopType != ELSTroopType::Mortar &&
+		       TroopType != ELSTroopType::Bomber;
+	}
+	static constexpr int32 GetTroopTypeCount() { return static_cast<int32>(ELSTroopType::Bomber) + 1; }
 	bool IsPoolManaged() const { return PoolOwner.IsValid(); }
 	uint64 GetActivationSerial() const { return ActivationSerial; }
 	bool CanReturnToPool() const;

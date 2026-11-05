@@ -10,7 +10,7 @@
 
 - 상단 ForceComparisonPanel은 양측 배치 인구수와 병종 비용을 합친 명목 코스트를 나란히 표시한다. AllyForcePopulation·AllyForceCost·EnemyForcePopulation·EnemyForceCost가 값이다. 성은 제외하며 전투 중에도 배치 기준을 유지한다. 적 배치는 예산을 차감하지 않지만 같은 병종 비용으로 비교한다. 편성 변경·초기화·프리셋 로드 시 갱신하며 패널 위 클릭은 전장으로 전달하지 않는다.
 
-- 오른쪽 EditorPanel은 EditAllies·EditEnemies·ApplyLimits·SaveNewPreset·OverwritePreset·LoadSelectedPreset·ReloadPresetList 버튼과 BudgetInput·PopulationInput·PresetName·PresetList 입력을 제공한다. 전투 중 편집을 막으며 현재 편집 진영과 파일 오류·결과를 표시한다. 파일 목록은 최초 표시와 명시적 새로고침·저장 때만 읽는다.
+- 오른쪽 EditorPanel은 EditAllies·EditEnemies·SaveNewPreset·OverwritePreset·LoadSelectedPreset·ReloadPresetList 버튼과 PresetName·PresetList 입력을 제공한다. 전투 중 편집을 막으며 현재 편집 진영과 파일 오류·결과를 표시한다. 파일 목록은 최초 표시와 명시적 새로고침·저장 때만 읽는다.
 - `UpgradeAutoBattleWidget`은 기존 개인 WBP의 원래 패널을 유지하고 오른쪽 시나리오 편집 패널이 없을 때 추가한다. 기존 편집 패널에서는 버튼 줄바꿈과 입력 글꼴·대비를 보정한다. 별도 개인 절차의 upgrade-runtime-editor.py로 실행한다.
 
 

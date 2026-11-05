@@ -12,7 +12,9 @@
 
 namespace
 {
-const TCHAR* AutoBattlePresetTroopNames[] = {TEXT("Spearman"), TEXT("Archer"), TEXT("Cavalry"), TEXT("Medic")};
+const TCHAR* AutoBattlePresetTroopNames[] = {
+    TEXT("Spearman"), TEXT("Archer"), TEXT("Cavalry"), TEXT("Medic"), TEXT("Shieldbearer"), TEXT("Mortar"), TEXT("Bomber")};
+static_assert(UE_ARRAY_COUNT(AutoBattlePresetTroopNames) == ALSTroopUnit::GetTroopTypeCount());
 TArray<TSharedPtr<FJsonValue>> VectorJson(const FVector& V)
 {
 	return {MakeShared<FJsonValueNumber>(V.X), MakeShared<FJsonValueNumber>(V.Y), MakeShared<FJsonValueNumber>(V.Z)};
@@ -57,10 +59,10 @@ FString Filename(const FString& Name)
 
 bool FLSAutoBattlePreset::IsValid() const
 {
-	if (Version != 2 || Budget < 0 || PopulationLimit < 1 || PopulationLimit > 100 ||
+	if (Version != 4 ||
 	    UnitCosts.Num() != ALSTroopUnit::GetTroopTypeCount() ||
 	    AllyCastle.ContainsNaN() || EnemyCastle.ContainsNaN() || static_cast<uint8>(AllyWeapon) > 2 ||
-	    static_cast<uint8>(EnemyWeapon) > 2 || Allies.Num() > PopulationLimit || Enemies.Num() > 100)
+	    static_cast<uint8>(EnemyWeapon) > 2 || Enemies.Num() > 100)
 	{
 		return false;
 	}
@@ -71,14 +73,12 @@ bool FLSAutoBattlePreset::IsValid() const
 			return false;
 		}
 	}
-	int64 Spent = 0;
 	for (const auto& P : Allies)
 	{
 		if (ALSTroopUnit::GetStatsRowName(P.Type).IsNone() || P.Position.ContainsNaN())
 		{
 			return false;
 		}
-		Spent += UnitCosts[static_cast<uint8>(P.Type)];
 	}
 	for (const auto& P : Enemies)
 	{
@@ -87,7 +87,7 @@ bool FLSAutoBattlePreset::IsValid() const
 			return false;
 		}
 	}
-	return Spent <= Budget;
+	return true;
 }
 
 FString FLSAutoBattlePresetStore::Directory()
@@ -188,11 +188,14 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 	}
 	P.AllyWeapon = static_cast<ELSCastleWeapon>(AllyWeapon);
 	P.EnemyWeapon = static_cast<ELSCastleWeapon>(EnemyWeapon);
+	constexpr int32 SavedTroopCounts[] = {0, 3, 4, 6, ALSTroopUnit::GetTroopTypeCount()};
+	const int32 SavedTroopCount = P.Version > 0 && P.Version < UE_ARRAY_COUNT(SavedTroopCounts)
+	    ? SavedTroopCounts[P.Version] : 0;
 	const TArray<TSharedPtr<FJsonValue>>* Values;
 	if (!J->TryGetArrayField(TEXT("allyCastle"), Values) || !ReadVector(*Values, P.AllyCastle) ||
 	    !J->TryGetArrayField(TEXT("enemyCastle"), Values) || !ReadVector(*Values, P.EnemyCastle) ||
 	    !J->TryGetArrayField(TEXT("unitCosts"), Values) ||
-	    (P.Version != 1 && P.Version != 2) || Values->Num() != (P.Version == 1 ? 3 : ALSTroopUnit::GetTroopTypeCount()))
+	    SavedTroopCount == 0 || Values->Num() != SavedTroopCount)
 	{
 		return false;
 	}
@@ -207,10 +210,10 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 		}
 		P.UnitCosts.Add(static_cast<int32>(C));
 	}
-	auto GetUnits = [&J, &P](const TCHAR* Key, TArray<FLSAutoBattlePlacement>& Units)
+	auto GetUnits = [&J, SavedTroopCount](const TCHAR* Key, TArray<FLSAutoBattlePlacement>& Units, bool bLimitEnemyCount)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Array;
-		if (!J->TryGetArrayField(Key, Array) || Array->Num() > 100)
+		if (!J->TryGetArrayField(Key, Array) || (bLimitEnemyCount && Array->Num() > 100))
 		{
 			return false;
 		}
@@ -226,7 +229,7 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 			}
 			FLSAutoBattlePlacement U;
 			int32 Index = INDEX_NONE;
-			for (int32 I = 0; I < (P.Version == 1 ? 3 : ALSTroopUnit::GetTroopTypeCount()); ++I)
+			for (int32 I = 0; I < SavedTroopCount; ++I)
 			{
 				if (Type == AutoBattlePresetTroopNames[I])
 				{
@@ -242,15 +245,15 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 		}
 		return true;
 	};
-	if (!GetUnits(TEXT("allies"), P.Allies) || !GetUnits(TEXT("enemies"), P.Enemies))
+	if (!GetUnits(TEXT("allies"), P.Allies, false) || !GetUnits(TEXT("enemies"), P.Enemies, true))
 	{
 		return false;
 	}
-	if (P.Version == 1)
+	for (int32 Index = SavedTroopCount; Index < ALSTroopUnit::GetTroopTypeCount(); ++Index)
 	{
-		P.UnitCosts.Add(ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType::Medic));
-		P.Version = 2;
+		P.UnitCosts.Add(ALSAutoBattleScenario::GetDefaultUnitCost(static_cast<ELSTroopType>(Index)));
 	}
+	P.Version = 4;
 	if (!P.IsValid())
 		return false;
 	OutPreset = MoveTemp(P);

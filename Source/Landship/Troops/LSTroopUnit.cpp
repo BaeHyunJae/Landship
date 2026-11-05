@@ -4,6 +4,9 @@
 #include "Troops/LSSpearmanComponent.h"
 #include "Troops/LSArcherComponent.h"
 #include "Troops/LSMedicComponent.h"
+#include "Troops/LSMortarComponent.h"
+#include "Troops/LSBomberComponent.h"
+#include "Troops/LSShieldbearerComponent.h"
 #include "Troops/LSTroopPoolSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
@@ -36,6 +39,9 @@ ALSTroopUnit::ALSTroopUnit()
 	CombatBehaviorClasses.Add(ELSTroopType::Spearman, ULSSpearmanComponent::StaticClass());
 	CombatBehaviorClasses.Add(ELSTroopType::Archer, ULSArcherComponent::StaticClass());
 	CombatBehaviorClasses.Add(ELSTroopType::Medic, ULSMedicComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Shieldbearer, ULSShieldbearerComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Mortar, ULSMortarComponent::StaticClass());
+	CombatBehaviorClasses.Add(ELSTroopType::Bomber, ULSBomberComponent::StaticClass());
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RangedAttack.ProjectileClass = ALSBasicProjectile::StaticClass();
@@ -102,6 +108,12 @@ FName ALSTroopUnit::GetStatsRowName(ELSTroopType Type)
 		return TEXT("Cavalry");
 	case ELSTroopType::Medic:
 		return TEXT("Medic");
+	case ELSTroopType::Shieldbearer:
+		return TEXT("Shieldbearer");
+	case ELSTroopType::Mortar:
+		return TEXT("Mortar");
+	case ELSTroopType::Bomber:
+		return TEXT("Bomber");
 	default:
 		return NAME_None;
 	}
@@ -136,7 +148,8 @@ void ALSTroopUnit::RefreshDefinition()
 	StatsRow.DataTable = TroopStatsTable.LoadSynchronous();
 	StatsRow.RowName = GetStatsRowName(TroopType);
 	Selection->SelectionType = StatsRow.RowName;
-	const TCHAR* GroupNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병")};
+	const TCHAR* GroupNames[] = {
+	    TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병"), TEXT("방패병"), TEXT("중화기병"), TEXT("자폭병")};
 	if (static_cast<uint8>(TroopType) < UE_ARRAY_COUNT(GroupNames))
 	{
 		Selection->CommandGroupName = FText::FromString(GroupNames[static_cast<uint8>(TroopType)]);
@@ -160,6 +173,18 @@ void ALSTroopUnit::RefreshDefinition()
 	case ELSTroopType::Medic:
 		Shape = SpearShape;
 		Scale = FVector(0.18f, 0.18f, 0.55f);
+		break;
+	case ELSTroopType::Shieldbearer:
+		Shape = SpearShape;
+		Scale = FVector(0.15f, 0.45f, 0.35f);
+		break;
+	case ELSTroopType::Mortar:
+		Shape = ArcherShape;
+		Scale = FVector(0.55f, 0.55f, 0.22f);
+		break;
+	case ELSTroopType::Bomber:
+		Shape = CavalryShape;
+		Scale = FVector(0.27f, 0.27f, 0.5f);
 		break;
 	}
 	TroopMarker->SetStaticMesh(Shape);
@@ -392,7 +417,7 @@ bool ALSTroopUnit::DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial)
 	GetCharacterMovement()->ClearAccumulatedForces();
 	GetCharacterMovement()->SetAvoidanceEnabled(false);
 	GetCharacterMovement()->SetComponentTickEnabled(false);
-	SetBase(static_cast<UPrimitiveComponent*>(nullptr));
+	SetBase(static_cast<FMovementBaseInterfaceData*>(nullptr));
 	GetMesh()->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
 	GetMesh()->SetAllPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 	GetMesh()->SetAllBodiesSimulatePhysics(false);

@@ -13,6 +13,8 @@ struct LANDSHIP_API FLSCombatDirective
 	double ApproachRange = 0;
 	bool bHoldPosition = false;
 	bool bSuppressBasicAttack = false;
+	/** 접촉형 특수 행동은 기본 공격이 없어도 근접 접근 자리를 예약한다. */
+	bool bUseMeleeApproach = false;
 };
 
 /** 돌격 피해를 받기 전에 확정하는 방어 결과. 기본값은 방어 없음이다. */

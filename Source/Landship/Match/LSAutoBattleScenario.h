@@ -68,12 +68,14 @@ class LANDSHIP_API ALSAutoBattleScenario : public AActor
 	FVector CameraLocation = FVector(-2000, -1600, 1800);
 	UPROPERTY(EditAnywhere, Category = "Scenario")
 	FRotator CameraRotation = FRotator(-38, 35, 0);
-	UPROPERTY(EditAnywhere, Category = "Scenario", meta = (ClampMin = "0"))
-	int32 Budget = 1000;
-	UPROPERTY(EditAnywhere, Category = "Scenario", meta = (ClampMin = "1", ClampMax = "100"))
-	int32 PopulationLimit = 100;
 	UPROPERTY(EditAnywhere, Category = "Scenario")
 	TMap<ELSTroopType, int32> UnitCosts;
+	/** 공격 병종이 새 표적을 발견하는 거리(cm). 실제 감지 거리는 공격 사거리 이상이다. */
+	UPROPERTY(EditAnywhere, Category = "Scenario|Engagement")
+	TMap<ELSTroopType, float> EnemyDetectionRanges;
+	/** 기존 표적을 놓기 전 감지 거리에 더하는 여유 거리(cm). */
+	UPROPERTY(EditAnywhere, Category = "Scenario|Engagement", meta = (ClampMin = "0", Units = "cm"))
+	float TargetRetentionPadding = 250.0f;
 	UPROPERTY(EditAnywhere, Category = "Scenario")
 	TArray<FLSAutoBattlePlacement> EnemyFormation;
 	UPROPERTY(EditAnywhere, Category = "Scenario")

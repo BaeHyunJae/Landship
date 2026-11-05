@@ -28,14 +28,20 @@ bool FLSAutoBattlePresetTest::RunTest(const FString& Parameters)
 	Read.Budget = 1234;
 	TestFalse(TEXT("깨진 JSON 거부"), FLSAutoBattlePresetStore::Decode(TEXT("{"), Read));
 	TestEqual(TEXT("파싱 실패 시 출력 유지"), Read.Budget, 1234);
-	FString Bad = Json.Replace(TEXT("\"version\": 1"), TEXT("\"version\": 2"));
+	FString Bad = Json.Replace(TEXT("\"version\": 4"), TEXT("\"version\": 99"));
 	TestFalse(TEXT("미지원 버전 거부"), FLSAutoBattlePresetStore::Decode(Bad, Read));
 	Bad = Json.Replace(TEXT("\"Archer\""), TEXT("\"Unknown\""));
 	TestFalse(TEXT("알 수 없는 병종 거부"), FLSAutoBattlePresetStore::Decode(Bad, Read));
 	TestFalse(TEXT("필수 필드 누락 거부"), FLSAutoBattlePresetStore::Decode(TEXT("{}"), Read));
 	P.Budget = 0;
-	TestFalse(TEXT("편성 비용보다 작은 예산 거부"), P.IsValid());
+	TestTrue(TEXT("이전 예산 필드가 배치를 제한하지 않음"), P.IsValid());
 	P.Budget = 1000;
+	FLSAutoBattlePreset LargeFormation = P;
+	LargeFormation.Allies.Init(Unit, 101);
+	FString LargeJson;
+	TestTrue(TEXT("아군 101기 프리셋 인코딩"), FLSAutoBattlePresetStore::Encode(LargeFormation, LargeJson));
+	TestTrue(TEXT("아군 101기 프리셋 디코딩"), FLSAutoBattlePresetStore::Decode(LargeJson, Read) &&
+	         Read.Allies.Num() == 101);
 	TestTrue(TEXT("한글 프리셋 이름 허용"), FLSAutoBattlePresetStore::IsValidName(TEXT("궁병 전열_테스트")));
 	TestFalse(TEXT("상위 경로 거부"), FLSAutoBattlePresetStore::IsValidName(TEXT("../outside")));
 	TestFalse(TEXT("절대 경로 거부"), FLSAutoBattlePresetStore::IsValidName(TEXT("C:/outside")));

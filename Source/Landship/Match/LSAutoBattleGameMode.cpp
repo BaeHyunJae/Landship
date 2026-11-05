@@ -17,14 +17,100 @@
 #include "Combat/LSCollisionChannels.h"
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/LevelStreamingDynamic.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "DrawDebugHelpers.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "Misc/ScopeExit.h"
+
+TConstArrayView<ALSAutoBattleGameMode::FLSBattlefieldOption> ALSAutoBattleGameMode::GetBattlefieldOptions()
+{
+	static const FLSBattlefieldOption Battlefields[] = {
+	    {TEXT("평지"), nullptr},
+	    {TEXT("다리 1개"), TEXT("/Game/Developers/HMH/TABS/L_TABS_Bridge")},
+	    {TEXT("다리 3개"), TEXT("/Game/Developers/HMH/TABS/L_TABS_ThreeBridges")},
+	    {TEXT("높낮이 전장"), TEXT("/Game/Developers/HMH/TABS/L_TABS_Heights")},
+	};
+	return MakeArrayView(Battlefields);
+}
+
+int32 ALSAutoBattleGameMode::GetCurrentBattlefieldIndex() const
+{
+	return FlatTerrain.IsEmpty() ? INDEX_NONE : BattlefieldIndex;
+}
+
+bool ALSAutoBattleGameMode::SelectBattlefield(int32 Index)
+{
+	const auto Battlefields = GetBattlefieldOptions();
+	if (bChanging || Phase != ELSAutoBattlePhase::Preparation || FlatTerrain.IsEmpty() ||
+	    !Battlefields.IsValidIndex(Index) || Index == BattlefieldIndex)
+	{
+		return false;
+	}
+	TGuardValue<bool> Guard(bChanging, true);
+	const TCHAR* Package = Battlefields[Index].TerrainPackage;
+	ULevelStreamingDynamic* NewTerrain = nullptr;
+	if (Package)
+	{
+		bool bRequested = false;
+		NewTerrain = ULevelStreamingDynamic::LoadLevelInstance(
+		    this, Package, FVector::ZeroVector, FRotator::ZeroRotator, bRequested);
+		if (!bRequested || !NewTerrain)
+			return false;
+	}
+
+	Phase = ELSAutoBattlePhase::Loading;
+	DestroyBattle();
+	UnloadingTerrain = VariantTerrain;
+	if (UnloadingTerrain)
+	{
+		UnloadingTerrain->SetShouldBeVisible(false);
+		UnloadingTerrain->SetShouldBeLoaded(false);
+		UnloadingTerrain->SetIsRequestingUnloadAndRemoval(true);
+	}
+	VariantTerrain = NewTerrain;
+
+	const bool bFlat = Package == nullptr;
+	for (const FLSFlatTerrainState& State : FlatTerrain)
+	{
+		if (AStaticMeshActor* Actor = State.Actor.Get())
+		{
+			Actor->SetActorHiddenInGame(!bFlat || State.bHidden);
+			Actor->SetActorEnableCollision(bFlat && State.bCollision);
+			Actor->GetStaticMeshComponent()->SetCanEverAffectNavigation(bFlat && State.bNavigation);
+		}
+	}
+	BattlefieldIndex = Index;
+	Formation.Reset();
+	Scenario->EnemyFormation.Reset();
+	CastleGround = bFlat ? Scenario->AllyCastleGround : FVector(-2100, 0, 0);
+	Scenario->EnemyCastleGround = bFlat ? DefaultEnemyCastleGround : FVector(2100, 0, 0);
+	SelectedWeapon = ELSCastleWeapon::Cannon;
+	Scenario->EnemyWeapon = DefaultEnemyWeapon;
+	if (APlayerController* Controller = GetWorld()->GetFirstPlayerController())
+	{
+		if (auto* Camera = Cast<ALSFreeCameraPawn>(Controller->GetPawn()))
+		{
+			Camera->SetHomeView(bFlat ? Scenario->CameraLocation : FVector(-3900, -1800, 2400),
+			                    bFlat ? Scenario->CameraRotation : FRotator(-32, 18, 0));
+		}
+	}
+	bHasPreparedFormation = false;
+	bTerrainNavigationRebuildPending = true;
+	NavigationDeadline = GetWorld()->GetTimeSeconds() + 15;
+	GetWorldTimerManager().SetTimer(InitializationTimer, this, &ThisClass::InitializeScenario, 0.2f, true);
+	OnChanged.Broadcast();
+	return true;
+}
 
 ALSAutoBattleGameMode::ALSAutoBattleGameMode()
 {
@@ -37,7 +123,9 @@ void ALSAutoBattleGameMode::StartPlay()
 	Super::StartPlay();
 	if (!FMath::IsFinite(DecisionInterval) || DecisionInterval < 0.05f || !FMath::IsFinite(RepathInterval) ||
 	    RepathInterval < 0.05f || !FMath::IsFinite(RepathDistance) || RepathDistance <= 0 ||
-	    !FMath::IsFinite(ApproachPadding) || ApproachPadding < 0 || !MeleeApproach.IsValid())
+	    !FMath::IsFinite(ApproachPadding) || ApproachPadding < 0 || !MeleeApproach.IsValid() ||
+	    !FMath::IsFinite(EnemyAimTime) || EnemyAimTime <= 0 ||
+	    !FMath::IsFinite(EnemyWeaponRecovery) || EnemyWeaponRecovery <= 0)
 	{
 		Fail(TEXT("자동 판단 주기 또는 접근 설정이 잘못되었습니다."));
 		return;
@@ -63,6 +151,18 @@ void ALSAutoBattleGameMode::StartPlay()
 		return;
 	}
 	CastleGround = Scenario->AllyCastleGround;
+	DefaultEnemyCastleGround = Scenario->EnemyCastleGround;
+	DefaultEnemyWeapon = Scenario->EnemyWeapon;
+	if (UGameplayStatics::GetCurrentLevelName(this) == TEXT("L_TABS"))
+	{
+		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+		{
+			if (It->GetLevel() != GetWorld()->PersistentLevel)
+				continue;
+			FlatTerrain.Add({*It, It->IsHidden(), It->GetActorEnableCollision(),
+			                 It->GetStaticMeshComponent()->CanEverAffectNavigation()});
+		}
+	}
 	NavigationDeadline = GetWorld()->GetTimeSeconds() + 15;
 	SpawnHandle = GetWorld()->AddOnActorSpawnedHandler(
 	    FOnActorSpawned::FDelegate::CreateUObject(this, &ThisClass::OnActorSpawned));
@@ -72,10 +172,33 @@ void ALSAutoBattleGameMode::StartPlay()
 
 void ALSAutoBattleGameMode::InitializeScenario()
 {
+	if ((UnloadingTerrain && UnloadingTerrain->GetLoadedLevel()) ||
+	    (VariantTerrain && !VariantTerrain->IsLevelVisible()))
+	{
+		if (GetWorld()->GetTimeSeconds() > NavigationDeadline)
+		{
+			GetWorldTimerManager().ClearTimer(InitializationTimer);
+			Fail(TEXT("전장 지형을 불러오지 못했습니다."));
+		}
+		return;
+	}
+	UnloadingTerrain = nullptr;
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	if (bTerrainNavigationRebuildPending && Nav)
+	{
+		if (ANavigationData* Data = Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate))
+		{
+			// 지형을 등록한 프레임이 끝난 뒤 전체 타일을 다시 만들어 이전 다리의 경로를 제거한다.
+			Data->RebuildAll();
+			bTerrainNavigationRebuildPending = false;
+			return;
+		}
+	}
 	FNavLocation Location;
-	if (!Nav || Nav->IsNavigationBuildInProgress() ||
-	    (!bHasPreparedFormation && !Nav->ProjectPointToNavigation(CastleGround, Location, FVector(100, 100, 300))))
+	if (!Nav || bTerrainNavigationRebuildPending || Nav->IsNavigationBuildInProgress() ||
+	    (!bHasPreparedFormation &&
+	     (!Nav->ProjectPointToNavigation(CastleGround, Location, FVector(100, 100, 300)) ||
+	      !Nav->ProjectPointToNavigation(Scenario->EnemyCastleGround, Location, FVector(100, 100, 300)))))
 	{
 		if (GetWorld()->GetTimeSeconds() > NavigationDeadline)
 		{
@@ -280,7 +403,6 @@ bool ALSAutoBattleGameMode::Rebuild(const TArray<FLSAutoBattlePlacement>& NewFor
 	DestroyBattle();
 	++BattleId;
 	Phase = ELSAutoBattlePhase::Loading;
-	RemainingBudget = Scenario->Budget;
 	Formation = NewFormation;
 	AllyCastle = SpawnCastle(CastleGround, ELSFaction::Ally, bRestoreValidatedGround);
 	EnemyCastle = SpawnCastle(Scenario->EnemyCastleGround, ELSFaction::Enemy, bRestoreValidatedGround);
@@ -320,7 +442,6 @@ bool ALSAutoBattleGameMode::Rebuild(const TArray<FLSAutoBattlePlacement>& NewFor
 			return false;
 		}
 		PlacementActors.Add(Placement.Id, Unit);
-		RemainingBudget -= Scenario->UnitCosts.FindChecked(Placement.Type);
 	}
 	bHasPreparedFormation = true;
 	Failure.Reset();
@@ -364,12 +485,7 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::PlaceUnit(ELSTroopType Type, const F
 	{
 		return ELSAutoBattleRequest::InvalidData;
 	}
-	if (Faction == ELSFaction::Ally && RemainingBudget < *Cost)
-	{
-		return ELSAutoBattleRequest::InsufficientBudget;
-	}
-	if ((Faction == ELSFaction::Ally && Formation.Num() >= Scenario->PopulationLimit) ||
-	    (Faction == ELSFaction::Enemy && Scenario->EnemyFormation.Num() >= 100))
+	if (Faction == ELSFaction::Enemy && Scenario->EnemyFormation.Num() >= 100)
 	{
 		return ELSAutoBattleRequest::PopulationFull;
 	}
@@ -398,10 +514,6 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::PlaceUnit(ELSTroopType Type, const F
 	}
 	(Faction == ELSFaction::Ally ? Formation : Scenario->EnemyFormation).Add(Placement);
 	PlacementActors.Add(Placement.Id, Unit);
-	if (Faction == ELSFaction::Ally)
-	{
-		RemainingBudget -= *Cost;
-	}
 	OutId = Placement.Id;
 	OnChanged.Broadcast();
 	return ELSAutoBattleRequest::Success;
@@ -459,10 +571,6 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::RemoveUnit(int32 Id)
 		return ELSAutoBattleRequest::InvalidTarget;
 	}
 	TGuardValue<bool> Guard(bChanging, true);
-	if (Id > 0)
-	{
-		RemainingBudget += Scenario->UnitCosts.FindChecked(EditingFormation[Index].Type);
-	}
 	EditingFormation.RemoveAt(Index);
 	PlacementActors.Remove(Id);
 	Units.Remove(Unit);
@@ -584,10 +692,6 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::StartBattle()
 	{
 		return ELSAutoBattleRequest::WrongPhase;
 	}
-	if (Formation.IsEmpty())
-	{
-		return ELSAutoBattleRequest::InvalidData;
-	}
 	for (ALSUnit* Unit : Units)
 	{
 		if (!ULSCombatTargetLibrary::IsCombatAlive(Unit) ||
@@ -644,6 +748,11 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::StartBattle()
 		}
 		Unit->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		Unit->GetCharacterMovement()->SetAvoidanceEnabled(false);
+		if (Unit == AllyCastle.Get())
+		{
+			AllyCastle->EnablePlayerDrive();
+			continue;
+		}
 		FLSAutoBattleAgent Agent;
 		Agent.Unit = Unit;
 		Agents.Add(Agent);
@@ -660,7 +769,8 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::RetryBattle(bool bKeepFormation)
 	{
 		return ELSAutoBattleRequest::Unavailable;
 	}
-	if (Phase != ELSAutoBattlePhase::Victory && Phase != ELSAutoBattlePhase::Defeat)
+	if (Phase != ELSAutoBattlePhase::Fighting && Phase != ELSAutoBattlePhase::Victory &&
+	    Phase != ELSAutoBattlePhase::Defeat)
 	{
 		return ELSAutoBattleRequest::WrongPhase;
 	}
@@ -669,11 +779,6 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::RetryBattle(bool bKeepFormation)
 	Phase = ELSAutoBattlePhase::Loading;
 	DestroyBattle();
 	Formation = Snapshot;
-	RemainingBudget = Scenario->Budget;
-	for (const FLSAutoBattlePlacement& Placement : Formation)
-	{
-		RemainingBudget -= Scenario->UnitCosts.FindChecked(Placement.Type);
-	}
 	// 파괴한 충돌 등록이 정리된 다음 타이머에서 편성을 복원한다.
 
 	NavigationDeadline = GetWorld()->GetTimeSeconds() + 15;
@@ -698,26 +803,73 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 	ALSUnit* Target = Agent.Target.Get();
 	ALSTroopUnit* TroopUnit = Cast<ALSTroopUnit>(Unit);
 	const bool bSupport = TroopUnit && TroopUnit->CombatBehavior && TroopUnit->CombatBehavior->IsSupportBehavior();
-	if (!bSupport && !ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target))
+	const bool bLocalDetection = TroopUnit && !bSupport;
+	FLSUnitStatRow TroopStats;
+	const float AttackRange = TroopUnit && TroopUnit->TryGetStats(TroopStats)
+	    ? TroopStats.AttackRange : Unit->BasicAttack->GetAttackSettings().Range;
+	const double DetectionRange = bLocalDetection
+	    ? FMath::Max(Scenario->EnemyDetectionRanges.FindRef(TroopUnit->GetTroopType()), AttackRange)
+	    : TNumericLimits<double>::Max();
+	TArray<ALSUnit*> DetectedOpponents;
+	ALSUnit* NearestDetected = nullptr;
+	ALSUnit* AdvanceTarget = Unit->GetFaction() == ELSFaction::Ally ? EnemyCastle.Get() : AllyCastle.Get();
+	if (bLocalDetection)
 	{
-		Target = nullptr;
-		double Best = TNumericLimits<double>::Max();
+		const bool bHasEnemyCastle = ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, AdvanceTarget);
+		if (!bHasEnemyCastle)
+		{
+			AdvanceTarget = nullptr;
+		}
+		double NearestDetectedDistance = TNumericLimits<double>::Max();
+		double NearestRemainingDistance = TNumericLimits<double>::Max();
 		for (ALSUnit* Candidate : Opponents)
 		{
-			const double Distance = ULSCombatTargetLibrary::GetAttackDistance(Unit, Candidate);
-			if (Distance < Best)
+			if (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Candidate))
 			{
-				Target = Candidate;
-				Best = Distance;
+				continue;
+			}
+			const double Distance = ULSCombatTargetLibrary::GetAttackDistance(Unit, Candidate);
+			if (Distance <= DetectionRange)
+			{
+				DetectedOpponents.Add(Candidate);
+				if (Distance < NearestDetectedDistance)
+				{
+					NearestDetected = Candidate;
+					NearestDetectedDistance = Distance;
+				}
+			}
+			if (!bHasEnemyCastle && Distance < NearestRemainingDistance)
+			{
+				AdvanceTarget = Candidate;
+				NearestRemainingDistance = Distance;
 			}
 		}
-		Agent.Target = Target;
-		Agent.NextRepath = 0;
 	}
-	if (!Target && !bSupport)
+	if (!bSupport && (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target) ||
+	    (bLocalDetection && ULSCombatTargetLibrary::GetAttackDistance(Unit, Target) >
+	                            DetectionRange + Scenario->TargetRetentionPadding)))
 	{
-		Unit->BasicAttack->StopAttack();
-		return;
+		Target = NearestDetected;
+		if (!bLocalDetection)
+		{
+			double Best = TNumericLimits<double>::Max();
+			for (ALSUnit* Candidate : Opponents)
+			{
+				const double Distance = ULSCombatTargetLibrary::GetAttackDistance(Unit, Candidate);
+				if (Distance < Best)
+				{
+					Target = Candidate;
+					Best = Distance;
+				}
+			}
+		}
+		if (Agent.Target.Get() != Target || Agent.Target.IsStale())
+		{
+			Unit->BasicAttack->StopAttack();
+			MeleePlanner.Release(Unit);
+			Agent.Target = Target;
+			Agent.NextRepath = 0;
+		}
 	}
 	AAIController* AI = Cast<AAIController>(Unit->GetController());
 	if (!AI)
@@ -734,16 +886,27 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 			return;
 		}
 		Directive = Troop->CombatBehavior->EvaluateEngagement(Target, bSupport ? Allies : Opponents);
+		if (!ULSCombatTargetLibrary::IsCombatAlive(Unit))
+		{
+			MeleePlanner.Release(Unit);
+			return;
+		}
 	}
 	Target = Cast<ALSUnit>(Directive.Target);
+	const bool bAdvancing = bLocalDetection && !Target && !Directive.bHoldPosition;
+	if (bAdvancing)
+	{
+		Target = AdvanceTarget;
+		Directive.bSuppressBasicAttack = true;
+	}
 	const bool bValidTarget = bSupport ? ULSCombatTargetLibrary::IsCombatAlive(Target) &&
 	    Target != Unit && Target->GetFaction() == Unit->GetFaction() :
 	    ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target);
 	if (!bValidTarget)
 	{
 		Unit->BasicAttack->StopAttack();
-		if (bSupport)
-			AI->StopMovement();
+		MeleePlanner.Release(Unit);
+		AI->StopMovement();
 		return;
 	}
 	if (bSupport)
@@ -756,12 +919,14 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 	const bool bMelee = !bSupport && !Unit->IsA<ALSAutoBattleCastle>() &&
 	    !Unit->BasicAttack->GetProjectileSettings().ProjectileClass;
 	FLSMeleeApproachResult MeleePlan;
-	if (bMelee && !Directive.bHoldPosition && !Directive.bSuppressBasicAttack)
+	if (bMelee && !bAdvancing && !Directive.bHoldPosition &&
+	    (!Directive.bSuppressBasicAttack || Directive.bUseMeleeApproach))
 	{
-		MeleePlan = MeleePlanner.Plan(Unit, Target, Opponents, GetWorld()->GetTimeSeconds(), Directive.ApproachRange,
+		MeleePlan = MeleePlanner.Plan(Unit, Target, DetectedOpponents, GetWorld()->GetTimeSeconds(), Directive.ApproachRange,
 		                              MeleeApproach);
 		if (MeleePlan.Target != Target)
 		{
+			Unit->BasicAttack->StopAttack();
 			Target = MeleePlan.Target;
 			Agent.Target = Target;
 			Agent.NextRepath = 0;
@@ -807,14 +972,18 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 	                               : ULSCombatTargetLibrary::GetAttackDistance(Unit, Target);
 	const bool bMoving = AI->GetMoveStatus() == EPathFollowingStatus::Moving;
 	const double Padding = bMoving ? FMath::Min(static_cast<double>(ApproachPadding), Range * 0.1) : 0;
-	if (Distance <= Range - Padding)
+	if (!bAdvancing && Distance <= Range - Padding)
 	{
 		if (bMoving)
 		{
 			AI->StopMovement();
 			Unit->GetCharacterMovement()->StopMovementImmediately();
 		}
-		if (!Castle && !Directive.bSuppressBasicAttack && Unit->BasicAttack->GetAttackTarget() != Target)
+		if (Directive.bSuppressBasicAttack)
+		{
+			Unit->BasicAttack->StopAttack();
+		}
+		else if (!Castle && Unit->BasicAttack->GetAttackTarget() != Target)
 		{
 			Unit->BasicAttack->StartAttack(Target);
 		}
@@ -882,67 +1051,198 @@ void ALSAutoBattleGameMode::UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<
 	}
 }
 
-void ALSAutoBattleGameMode::FireCastle(ALSAutoBattleCastle* Castle, ELSCastleWeapon Weapon,
-                                       const TArray<ALSUnit*>& Opponents)
+TOptional<ELSCastleWeapon> ALSAutoBattleGameMode::GetEnemyAimingWeapon() const
 {
-	if (!ULSCombatTargetLibrary::IsCombatAlive(Castle) ||
-	    Castle->Weapons->GetStatus(Weapon) != ELSWeaponCastResult::Ready)
+	if (Phase == ELSAutoBattlePhase::Fighting && EnemyWeaponAim.IsSet())
+		return EnemyWeaponAim.GetValue().Weapon;
+	return {};
+}
+
+bool ALSAutoBattleGameMode::UpdateEnemyWeapons(const TArray<ALSUnit*>& Opponents)
+{
+	ALSAutoBattleCastle* Castle = EnemyCastle.Get();
+	if (!ULSCombatTargetLibrary::IsCombatAlive(Castle))
 	{
-		return;
+		EnemyWeaponAim.Reset();
+		return false;
 	}
-	FLSCastleWeaponSettings Settings;
-	if (!Castle->Weapons->GetResolvedSettings(Weapon, Settings))
+
+	const double Now = GetWorld()->GetTimeSeconds();
+	const FVector CastleLocation = Castle->GetActorLocation();
+	if (EnemyWeaponAim.IsSet())
 	{
-		return;
-	}
-	ALSUnit* Best = nullptr;
-	double BestScore = -TNumericLimits<double>::Max();
-	for (ALSUnit* Candidate : Opponents)
-	{
-		const double Distance = FVector::Dist2D(Castle->GetActorLocation(), Candidate->GetActorLocation());
-		if (Distance > Settings.Range)
+		const FLSEnemyWeaponAim Aim = EnemyWeaponAim.GetValue();
+		// 밀려나거나 떨어지면 예고한 위치에서 발사할 수 없으므로 조준을 취소한다.
+		if (Castle->Orders->IsKnockedBack() || !Castle->GetCharacterMovement()->IsMovingOnGround() ||
+		    !CastleLocation.Equals(Aim.CastleLocation, 1.0))
 		{
+			EnemyWeaponAim.Reset();
+			EnemyNextWeaponTime = Now + EnemyWeaponRecovery;
+			return false;
+		}
+		if (Now < Aim.FireTime)
+		{
+			DrawEnemyWeaponWarning();
+			return true;
+		}
+
+		EnemyWeaponAim.Reset();
+		EnemyNextWeaponTime = Now + EnemyWeaponRecovery;
+		Castle->Weapons->CastWeapon(Aim.Weapon, Aim.Aim);
+		return true;
+	}
+	if (Now < EnemyNextWeaponTime || Castle->Orders->IsKnockedBack() ||
+	    !Castle->GetCharacterMovement()->IsMovingOnGround())
+		return false;
+
+	TOptional<FLSEnemyWeaponAim> Best;
+	double BestScore = 0;
+	for (const ELSCastleWeapon Weapon : {ELSCastleWeapon::Cannon, ELSCastleWeapon::Shotgun, ELSCastleWeapon::Ballista})
+	{
+		const FLSCastleWeaponSettings* Settings = Castle->Weapons->FindSettings(Weapon);
+		if (!Settings || Castle->Weapons->GetStatus(Weapon) != ELSWeaponCastResult::Ready)
 			continue;
-		}
-		double Score = -Distance;
-		if (Weapon == ELSCastleWeapon::Ballista)
+
+		TArray<ALSUnit*, TInlineAllocator<32>> InRange;
+		for (ALSUnit* Opponent : Opponents)
 		{
-			FLSHealthSnapshot Health;
-			if (!Candidate->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health))
+			if (ULSCombatTargetLibrary::CanAutoAttackTarget(Castle, Opponent) &&
+			    FVector::DistSquared2D(CastleLocation, Opponent->GetActorLocation()) <= FMath::Square(Settings->Range))
 			{
-				continue;
-			}
-			Score = Health.CurrentHealth;
-		}
-		else if (Weapon == ELSCastleWeapon::Cannon)
-		{
-			Score = 0;
-			for (ALSUnit* Nearby : Opponents)
-			{
-				Score += FVector::DistSquared2D(Candidate->GetActorLocation(), Nearby->GetActorLocation()) <=
-				                 FMath::Square(Settings.Radius)
-				             ? 1
-				             : 0;
+				InRange.Add(Opponent);
 			}
 		}
-		if (Score > BestScore)
+
+		// 대규모 편성에서도 밀집도·사선 검사를 수행할 후보 수를 제한한다.
+		constexpr int32 MaxAimSamples = 24;
+		const int32 Stride = FMath::Max(1, FMath::DivideAndRoundUp(InRange.Num(), MaxAimSamples));
+		for (int32 Index = 0; Index < InRange.Num(); Index += Stride)
 		{
-			BestScore = Score;
-			Best = Candidate;
+			const ALSUnit* Candidate = InRange[Index];
+			FVector Aim = Candidate->GetActorLocation();
+			double Score = 0;
+			if (Weapon == ELSCastleWeapon::Cannon)
+			{
+				Aim.Z -= Candidate->GetSimpleCollisionHalfHeight();
+				int32 Count = 0;
+				for (const ALSUnit* Nearby : InRange)
+				{
+					if (FVector::DistSquared2D(Aim, Nearby->GetActorLocation()) <= FMath::Square(Settings->Radius) &&
+					    ++Count >= 8)
+						break;
+				}
+				Score = Count >= 2 ? 60 + Count : 15;
+			}
+			else
+			{
+				const FVector Origin = Castle->Weapons->GetWeaponFireOrigin(Weapon, Aim);
+				const FVector Direction = (Aim - CastleLocation).GetSafeNormal2D();
+				if (Direction.IsNearlyZero() ||
+				    FMath::Abs(Aim.Z - Origin.Z) > Candidate->GetSimpleCollisionHalfHeight() + Settings->Radius)
+				{
+					continue;
+				}
+
+				const FVector End(Aim.X, Aim.Y, Origin.Z);
+				FCollisionObjectQueryParams Cover;
+				Cover.AddObjectTypesToQuery(ECC_WorldStatic);
+				Cover.AddObjectTypesToQuery(LSCollisionChannels::Ground);
+				Cover.AddObjectTypesToQuery(LSCollisionChannels::PathObstacle);
+				FCollisionQueryParams Query(SCENE_QUERY_STAT(LSEnemyCastleFireLane), false, Castle);
+				Query.AddIgnoredActor(Candidate);
+				FHitResult CoverHit;
+				if (GetWorld()->LineTraceSingleByObjectType(CoverHit, Origin, End, Cover, Query))
+					continue;
+
+				if (Weapon == ELSCastleWeapon::Ballista)
+				{
+					FLSHealthSnapshot Health;
+					const auto* Component = Candidate->FindComponentByClass<ULSHealthComponent>();
+					if (!Component || !Component->TryGetHealth(Health))
+						continue;
+					Score = Candidate == AllyCastle.Get() ? 45 : 10 + FMath::Min(Health.CurrentHealth / 100.0, 4.0);
+				}
+				else
+				{
+					const double ConeDot = FMath::Cos(FMath::DegreesToRadians(Settings->ConeAngle * 0.5));
+					int32 Count = 0;
+					for (const ALSUnit* Nearby : InRange)
+					{
+						const FVector Offset = Nearby->GetActorLocation() - CastleLocation;
+						if (FVector::DotProduct(Direction, Offset.GetSafeNormal2D()) >= ConeDot && ++Count >= 8)
+							break;
+					}
+					const double Distance = ULSCombatTargetLibrary::GetAttackDistance(Castle, Candidate);
+					Score = (Distance <= 300.0 ? 100 : 25) + Count;
+				}
+			}
+
+			// 준비에서 고른 적 무장은 같은 상황 점수에서 우선한다.
+			Score += Weapon == Scenario->EnemyWeapon ? 0.5 : 0;
+			if (Score > BestScore && Castle->Weapons->ValidateAim(Weapon, Aim) == ELSWeaponCastResult::Ready)
+			{
+				BestScore = Score;
+				Best.Emplace(FLSEnemyWeaponAim{Weapon, Aim, CastleLocation, Now + EnemyAimTime});
+			}
 		}
 	}
-	if (Best)
+
+	if (!Best.IsSet())
 	{
-		Castle->Weapons->CastWeapon(Weapon, Best->GetActorLocation());
+		EnemyNextWeaponTime = Now + 0.25;
+		return false;
+	}
+	if (auto* AI = Cast<AAIController>(Castle->GetController()))
+		AI->StopMovement();
+	Castle->GetCharacterMovement()->StopMovementImmediately();
+	EnemyWeaponAim = Best;
+	DrawEnemyWeaponWarning();
+	return true;
+}
+
+void ALSAutoBattleGameMode::DrawEnemyWeaponWarning() const
+{
+	const FLSEnemyWeaponAim& Aim = EnemyWeaponAim.GetValue();
+	const FLSCastleWeaponSettings* Settings = EnemyCastle->Weapons->FindSettings(Aim.Weapon);
+	if (!Settings)
+		return;
+	const float Duration = DecisionInterval + 0.025f;
+	const FColor Color = FColor::Red;
+	const FVector Origin = EnemyCastle->Weapons->GetWeaponFireOrigin(Aim.Weapon, Aim.Aim);
+	const FVector Direction = (Aim.Aim - Aim.CastleLocation).GetSafeNormal2D();
+	if (Aim.Weapon == ELSCastleWeapon::Cannon)
+	{
+		DrawDebugCircle(GetWorld(), Aim.Aim + FVector(0, 0, 8), Settings->Radius, 32, Color, false, Duration, 0, 5,
+		                FVector::ForwardVector, FVector::RightVector, false);
+	}
+	else if (Aim.Weapon == ELSCastleWeapon::Shotgun)
+	{
+		const double HalfAngle = Settings->ConeAngle * 0.5;
+		FVector Previous = Origin;
+		for (int32 Segment = 0; Segment <= 12; ++Segment)
+		{
+			const FVector Edge = Origin + Direction.RotateAngleAxis(-HalfAngle + Settings->ConeAngle * Segment / 12,
+			                                                        FVector::UpVector) * Settings->Range;
+			DrawDebugLine(GetWorld(), Previous, Edge, Color, false, Duration, 0, 4);
+			Previous = Edge;
+		}
+		DrawDebugLine(GetWorld(), Previous, Origin, Color, false, Duration, 0, 4);
+	}
+	else
+	{
+		const FVector ShotDirection = (Aim.Aim - Origin).GetSafeNormal2D();
+		DrawDebugLine(GetWorld(), Origin, Origin + ShotDirection * Settings->Range, Color, false, Duration, 0, 7);
 	}
 }
 
 void ALSAutoBattleGameMode::AutoTick()
 {
-	if (Phase != ELSAutoBattlePhase::Fighting)
+	if (Phase != ELSAutoBattlePhase::Fighting || bChanging)
 	{
 		return;
 	}
+	// 공격·피해 알림에서 복원을 재진입하면 순회 중인 편성 배열이 해제될 수 있다.
+	TGuardValue<bool> Guard(bChanging, true);
 	MeleePlanner.Prune();
 	TArray<ALSUnit*> Allies, Enemies;
 	for (ALSUnit* Unit : Units)
@@ -952,16 +1252,15 @@ void ALSAutoBattleGameMode::AutoTick()
 			(Unit->GetFaction() == ELSFaction::Ally ? Allies : Enemies).Add(Unit);
 		}
 	}
+	const bool bEnemyAiming = UpdateEnemyWeapons(Allies);
 	for (FLSAutoBattleAgent& Agent : Agents)
 	{
-		if (Agent.Unit.IsValid())
+		if (Agent.Unit.IsValid() && (!bEnemyAiming || Agent.Unit.Get() != EnemyCastle.Get()))
 		{
 			const bool bAlly = Agent.Unit->GetFaction() == ELSFaction::Ally;
 			UpdateAgent(Agent, bAlly ? Enemies : Allies, bAlly ? Allies : Enemies);
 		}
 	}
-	FireCastle(AllyCastle, SelectedWeapon, Enemies);
-	FireCastle(EnemyCastle, Scenario->EnemyWeapon, Allies);
 }
 
 void ALSAutoBattleGameMode::CollectOutcome(UWorld* World, ELevelTick TickType, float DeltaSeconds)
@@ -1016,6 +1315,8 @@ void ALSAutoBattleGameMode::OnActorSpawned(AActor* Actor)
 void ALSAutoBattleGameMode::DestroyBattle()
 {
 	GetWorldTimerManager().ClearTimer(DecisionTimer);
+	EnemyWeaponAim.Reset();
+	EnemyNextWeaponTime = 0;
 	for (const TWeakObjectPtr<AActor>& Projectile : Projectiles)
 	{
 		if (Projectile.IsValid())
@@ -1078,29 +1379,6 @@ void ALSAutoBattleGameMode::EndPlay(const EEndPlayReason::Type Reason)
 	Super::EndPlay(Reason);
 }
 
-ELSAutoBattleRequest ALSAutoBattleGameMode::SetPreparationLimits(int32 Budget, int32 Limit)
-{
-	if (bChanging)
-	{
-		return ELSAutoBattleRequest::Unavailable;
-	}
-	if (Phase != ELSAutoBattlePhase::Preparation)
-	{
-		return ELSAutoBattleRequest::WrongPhase;
-	}
-	const int64 Spent = static_cast<int64>(Scenario->Budget) - RemainingBudget;
-	if (Budget < Spent || Limit < 1 || Limit > 100 || Limit < Formation.Num())
-	{
-		return ELSAutoBattleRequest::InvalidData;
-	}
-	TGuardValue<bool> Guard(bChanging, true);
-	Scenario->Budget = Budget;
-	Scenario->PopulationLimit = Limit;
-	RemainingBudget = Budget - static_cast<int32>(Spent);
-	OnChanged.Broadcast();
-	return ELSAutoBattleRequest::Success;
-}
-
 FLSAutoBattlePreset ALSAutoBattleGameMode::GetPreset() const
 {
 	FLSAutoBattlePreset P;
@@ -1109,8 +1387,6 @@ FLSAutoBattlePreset ALSAutoBattleGameMode::GetPreset() const
 		P.Version = 0;
 		return P;
 	}
-	P.Budget = Scenario->Budget;
-	P.PopulationLimit = Scenario->PopulationLimit;
 	P.UnitCosts.Reset();
 	for (int32 I = 0; I < ALSTroopUnit::GetTroopTypeCount(); ++I)
 	{
@@ -1275,16 +1551,9 @@ ELSAutoBattleRequest ALSAutoBattleGameMode::ApplyPreset(const FLSAutoBattlePrese
 	Scenario->EnemyCastleGround = P.EnemyCastle;
 	SelectedWeapon = P.AllyWeapon;
 	Scenario->EnemyWeapon = P.EnemyWeapon;
-	Scenario->Budget = P.Budget;
-	Scenario->PopulationLimit = P.PopulationLimit;
 	for (int32 I = 0; I < ALSTroopUnit::GetTroopTypeCount(); ++I)
 	{
 		Scenario->UnitCosts.Add(static_cast<ELSTroopType>(I), P.UnitCosts[I]);
-	}
-	RemainingBudget = P.Budget;
-	for (const auto& Unit : Formation)
-	{
-		RemainingBudget -= P.UnitCosts[static_cast<uint8>(Unit.Type)];
 	}
 	NextPlacementId = AllyId;
 	NextEnemyId = EnemyId;

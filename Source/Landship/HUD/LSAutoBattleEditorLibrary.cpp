@@ -6,7 +6,6 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/SpinBox.h"
 #include "Components/EditableTextBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/CanvasPanel.h"
@@ -194,7 +193,7 @@ bool ULSAutoBattleEditorLibrary::UpgradeAutoBattleWidget()
 			    }
 		    });
 
-		for (const TCHAR* Button : {TEXT("EditAllies"), TEXT("EditEnemies"), TEXT("ApplyLimits"), TEXT("SaveNewPreset"),
+		for (const TCHAR* Button : {TEXT("EditAllies"), TEXT("EditEnemies"), TEXT("SaveNewPreset"),
 		                            TEXT("OverwritePreset"), TEXT("LoadSelectedPreset"), TEXT("ReloadPresetList")})
 		{
 			if (auto* Text = Cast<UTextBlock>(Tree->FindWidget(FName(*FString::Printf(TEXT("%sLabel"), Button)))))
@@ -211,15 +210,6 @@ bool ULSAutoBattleEditorLibrary::UpgradeAutoBattleWidget()
 			Input->SetWidgetStyle(Style);
 			Input->SetForegroundColor(FLinearColor(0.04f, 0.06f, 0.08f));
 			Input->SetHintText(FText::FromString(TEXT("프리셋 이름")));
-		}
-		for (const TCHAR* Name : {TEXT("BudgetInput"), TEXT("PopulationInput")})
-		{
-			if (auto* Input = Cast<USpinBox>(Tree->FindWidget(Name)))
-			{
-				Input->SetForegroundColor(FSlateColor(FLinearColor(0.04f, 0.06f, 0.08f)));
-				Input->SetMinFractionalDigits(0);
-				Input->SetMaxFractionalDigits(0);
-			}
 		}
 		FKismetEditorUtilities::CompileBlueprint(BP);
 		if (BP->Status == BS_Error)
@@ -293,35 +283,22 @@ bool ULSAutoBattleEditorLibrary::UpgradeAutoBattleWidget()
 	Button(TEXT("EditEnemies"), TEXT("적 배치"), 66, 174, 144);
 	Place(Label(TEXT("TeamStatus"), TEXT("")), 112, 30);
 	Place(Label(TEXT("EditorHelp"),
-	            TEXT("병종 선택 → 좌클릭 드래그 생성\nDelete → 드래그 삭제\nShift+클릭 선택 → 지면 클릭 이동\n적은 "
-	                 "예산·인구 제한 없이 배치"),
+	            TEXT("병종 선택 → 좌클릭 드래그 생성\nDelete → 드래그 삭제\nShift+클릭 선택 → 지면 클릭 이동\n아군은 "
+	                 "코스트·인구 상한 없이 배치"),
 	            14),
 	      152, 100);
-	Place(Label(TEXT("LimitTitle"), TEXT("아군 편성 조건"), 18), 264, 30);
-	Place(Label(TEXT("BudgetLabel"), TEXT("총 예산")), 310, 30, 18, 100);
-	Place(Label(TEXT("PopulationLabel"), TEXT("인구 상한")), 352, 30, 18, 100);
-	for (int32 I = 0; I < 2; ++I)
-	{
-		auto* Input = Tree->ConstructWidget<USpinBox>(USpinBox::StaticClass(),
-		                                              I == 0 ? TEXT("BudgetInput") : TEXT("PopulationInput"));
-		Input->SetMinValue(I == 0 ? 0 : 1);
-		Input->SetMaxValue(I == 0 ? 1000000 : 100);
-		Input->SetDelta(1);
-		Place(Input, 306 + I * 42, 34, 128, 190);
-	}
-	Button(TEXT("ApplyLimits"), TEXT("예산·인구 적용"), 396);
-	Place(Label(TEXT("PresetTitle"), TEXT("프리셋 저장 · 불러오기"), 18), 454, 30);
+	Place(Label(TEXT("PresetTitle"), TEXT("프리셋 저장 · 불러오기"), 18), 264, 30);
 	auto* Name = Tree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("PresetName"));
 	Name->SetHintText(FText::FromString(TEXT("새 이름: 창병 전열 테스트")));
-	Place(Name, 496, 38);
-	Button(TEXT("SaveNewPreset"), TEXT("새 이름 저장"), 544, 18, 144);
-	Button(TEXT("OverwritePreset"), TEXT("이름 덮어쓰기"), 544, 174, 144);
+	Place(Name, 306, 38);
+	Button(TEXT("SaveNewPreset"), TEXT("새 이름 저장"), 354, 18, 144);
+	Button(TEXT("OverwritePreset"), TEXT("이름 덮어쓰기"), 354, 174, 144);
 	auto* List = Tree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("PresetList"));
-	Place(List, 594, 38);
-	Button(TEXT("LoadSelectedPreset"), TEXT("선택 프리셋 불러오기"), 642, 18, 204);
-	Button(TEXT("ReloadPresetList"), TEXT("새로고침"), 642, 230, 88);
-	Place(Label(TEXT("EditorMessage"), TEXT(""), 14), 696, 74);
-	Place(Label(TEXT("PresetFolder"), TEXT("파일: Saved/AutoBattlePresets\nJSON을 복사해 팀원과 공유"), 12), 778, 48);
+	Place(List, 404, 38);
+	Button(TEXT("LoadSelectedPreset"), TEXT("선택 프리셋 불러오기"), 452, 18, 204);
+	Button(TEXT("ReloadPresetList"), TEXT("새로고침"), 452, 230, 88);
+	Place(Label(TEXT("EditorMessage"), TEXT(""), 14), 506, 74);
+	Place(Label(TEXT("PresetFolder"), TEXT("파일: Saved/AutoBattlePresets\nJSON을 복사해 팀원과 공유"), 12), 588, 48);
 	// 기존 WBP에 새 위젯을 추가할 때는 에디터의 변수 GUID 등록도 함께 수행한다.
 	BP->ForEachSourceWidget(
 	    [BP](UWidget* W)

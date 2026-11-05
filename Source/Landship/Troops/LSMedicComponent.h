@@ -43,6 +43,9 @@ class LANDSHIP_API ULSMedicComponent : public ULSTroopCombatComponent
 	float HealingPerSecond = 24;
 	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "1", Units = "cm"))
 	float HealingRange = 500;
+	/** 새 부상자를 찾는 거리(cm). 이미 선택한 환자는 병종 데이터의 감지 거리까지 추적한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "1", Units = "cm"))
+	float PatientDetectionRange = 1200;
 	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "0.01", Units = "s"))
 	float HealingInterval = 0.1f;
 	UPROPERTY(EditDefaultsOnly, Category = "Medic", meta = (ClampMin = "0.1", Units = "cm"))

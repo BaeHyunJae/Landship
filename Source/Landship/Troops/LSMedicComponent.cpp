@@ -22,6 +22,7 @@ bool ULSMedicComponent::IsConfigurationValid() const
 	return Super::IsConfigurationValid() && GetTroop()->GetTroopType() == ELSTroopType::Medic && BeamMesh &&
 	       FMath::IsFinite(HealingPerSecond) && HealingPerSecond > 0 && FMath::IsFinite(HealingRange) &&
 	       HealingRange > 0 && FMath::IsFinite(HealingInterval) && HealingInterval > 0 &&
+	       FMath::IsFinite(PatientDetectionRange) && PatientDetectionRange >= HealingRange &&
 	       FMath::IsFinite(HealingPerSecond * HealingInterval * 2) && FMath::IsFinite(BeamRadius) && BeamRadius > 0 &&
 	       FMath::IsFinite(MaxMana) && MaxMana > 0 && FMath::IsFinite(StartingMana) && StartingMana >= 0 &&
 	       StartingMana <= MaxMana && FMath::IsFinite(ManaRegenerationPerSecond) && ManaRegenerationPerSecond >= 0 &&
@@ -101,16 +102,12 @@ FLSCombatDirective ULSMedicComponent::EvaluateEngagement(AActor* Target, const T
 	FLSUnitStatRow Stats;
 	if (!Medic->TryGetStats(Stats))
 		return Result;
-	// 현재 부상자를 완치하거나 잃기 전까지 연결을 유지해 매 검사마다 빔이 튀지 않게 한다.
-	FLSHealthSnapshot Health;
+	const ALSTroopUnit* CurrentPatient = IsPatientValid() ? Patient.Get() : nullptr;
+	const bool bCanStartHealing = CanConnectHealing();
+	const bool bCanContinueHealing = HealingClaimSerial != 0 && CurrentMana > UE_SMALL_NUMBER;
 	ALSTroopUnit* Chosen = nullptr;
-	const bool bCanTreat = CanConnectHealing() || (HealingClaimSerial != 0 && CurrentMana > UE_SMALL_NUMBER);
-	if (bCanTreat && IsPatientValid() && Patient->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health) &&
-	    Health.CurrentHealth < Health.MaxHealth &&
-	    ULSCombatTargetLibrary::GetAttackDistance(Medic, Patient.Get()) <= Stats.DetectionRange)
-		Chosen = Patient.Get();
-	double BestRatio = 2;
-	const bool bKeepPatient = Chosen != nullptr;
+	float LowestHealth = TNumericLimits<float>::Max();
+	double PatientDistance = TNumericLimits<double>::Max();
 	double BestDistance = TNumericLimits<double>::Max();
 	ALSTroopUnit* Follow = nullptr;
 	for (ALSUnit* Ally : Allies)
@@ -125,17 +122,26 @@ FLSCombatDirective ULSMedicComponent::EvaluateEngagement(AActor* Target, const T
 			BestDistance = Distance;
 			Follow = Candidate;
 		}
-		if (bCanTreat && !bKeepPatient && Distance <= Stats.DetectionRange &&
-		    Candidate->FindComponentByClass<ULSHealthComponent>()->CanClaimHealing(this) &&
-		    Candidate->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health) &&
-		    Health.CurrentHealth < Health.MaxHealth)
+		const bool bCurrent = Candidate == CurrentPatient;
+		const float DetectionRange = bCurrent ? FMath::Max(PatientDetectionRange, Stats.DetectionRange)
+		                                      : PatientDetectionRange;
+		if ((!bCanStartHealing && !(bCurrent && bCanContinueHealing)) || Distance > DetectionRange)
+			continue;
+
+		const auto* CandidateHealth = Candidate->FindComponentByClass<ULSHealthComponent>();
+		FLSHealthSnapshot Health;
+		if (!CandidateHealth || !CandidateHealth->CanClaimHealing(this) ||
+		    !CandidateHealth->TryGetHealth(Health) || Health.CurrentHealth >= Health.MaxHealth)
+			continue;
+
+		// 같은 체력이면 현재 연결을 우선 유지하고, 새 환자끼리는 가까운 쪽을 고른다.
+		const bool bWinsTie = Health.CurrentHealth == LowestHealth &&
+		    (bCurrent || (Chosen != CurrentPatient && Distance < PatientDistance));
+		if (Health.CurrentHealth < LowestHealth || bWinsTie)
 		{
-			const double Ratio = Health.CurrentHealth / Health.MaxHealth;
-			if (Ratio < BestRatio)
-			{
-				BestRatio = Ratio;
-				Chosen = Candidate;
-			}
+			LowestHealth = Health.CurrentHealth;
+			PatientDistance = Distance;
+			Chosen = Candidate;
 		}
 	}
 	SetPatient(Chosen);

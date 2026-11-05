@@ -4,6 +4,7 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Match/LSAutoBattleScenario.h"
 #include "EngineUtils.h"
+#include "Engine/World.h"
 
 ALSFreeCameraPawn::ALSFreeCameraPawn()
 {
@@ -84,4 +85,33 @@ void ALSFreeCameraPawn::ChangeSpeed(float Steps)
 void ALSFreeCameraPawn::ResetView()
 {
 	SetActorLocationAndRotation(HomeLocation.BoundToBox(BoundsMin, BoundsMax), HomeRotation);
+}
+
+void ALSFreeCameraPawn::SetHomeView(const FVector& Location, const FRotator& Rotation)
+{
+	HomeLocation = Location;
+	HomeRotation = Rotation;
+	ResetView();
+}
+
+void ALSFreeCameraPawn::FollowCastle(const AActor& Castle, float DeltaSeconds, bool bSnap)
+{
+	const FVector Pivot = Castle.GetActorLocation() + FVector(0, 0, 120);
+	const FVector Desired = Pivot - Castle.GetActorForwardVector() * CastleCameraDistance +
+	                        FVector(0, 0, CastleCameraHeight);
+	FVector Position = bSnap ? Desired : FMath::VInterpTo(GetActorLocation(), Desired, DeltaSeconds, 8.0f);
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Ground);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSCastleFollowCamera), false, this);
+	Query.AddIgnoredActor(&Castle);
+	FHitResult Hit;
+	if (GetWorld()->SweepSingleByObjectType(Hit, Pivot, Position, FQuat::Identity, Objects,
+	                                      FCollisionShape::MakeSphere(Body->GetScaledSphereRadius()), Query))
+	{
+		Position = Hit.Location;
+	}
+	const FVector Look = Pivot - Position;
+	SetActorLocationAndRotation(Position, Look.IsNearlyZero() ? GetActorRotation() : Look.Rotation());
 }

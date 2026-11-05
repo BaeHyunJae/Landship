@@ -12,17 +12,16 @@
 ALSAutoBattleScenario::ALSAutoBattleScenario()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	EnemyDetectionRanges.Add(ELSTroopType::Spearman, 650.0f);
+	EnemyDetectionRanges.Add(ELSTroopType::Archer, 1400.0f);
+	EnemyDetectionRanges.Add(ELSTroopType::Cavalry, 1000.0f);
+	EnemyDetectionRanges.Add(ELSTroopType::Shieldbearer, 650.0f);
+	EnemyDetectionRanges.Add(ELSTroopType::Mortar, 1700.0f);
+	EnemyDetectionRanges.Add(ELSTroopType::Bomber, 900.0f);
 	for (int32 Index = 0; Index < ALSTroopUnit::GetTroopTypeCount(); ++Index)
 	{
 		const ELSTroopType Type = static_cast<ELSTroopType>(Index);
 		UnitCosts.Add(Type, GetDefaultUnitCost(Type));
-	}
-	for (int32 Index = 0; Index < 6; ++Index)
-	{
-		FLSAutoBattlePlacement Unit;
-		Unit.Type = static_cast<ELSTroopType>(Index % 3);
-		Unit.Position = FVector(Index < 3 ? 700 : 1100, (Index % 3 - 1) * 360, 0);
-		EnemyFormation.Add(Unit);
 	}
 }
 
@@ -34,6 +33,9 @@ int32 ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType Type)
 	case ELSTroopType::Archer: return 60;
 	case ELSTroopType::Cavalry: return 90;
 	case ELSTroopType::Medic: return 80;
+	case ELSTroopType::Shieldbearer: return 55;
+	case ELSTroopType::Mortar: return 120;
+	case ELSTroopType::Bomber: return 95;
 	default: return 0;
 	}
 }
@@ -41,20 +43,40 @@ int32 ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType Type)
 void ALSAutoBattleScenario::PostLoad()
 {
 	Super::PostLoad();
-	// 세 병종만 저장한 기존 개인 맵을 새 병종 목록으로 이행한다. 기존 비용은 보존한다.
-	if (!UnitCosts.Contains(ELSTroopType::Medic))
-		UnitCosts.Add(ELSTroopType::Medic, GetDefaultUnitCost(ELSTroopType::Medic));
+	// 기존 개인 맵에 저장된 비용과 감지 거리를 보존하면서 신규 병종 항목을 채운다.
+	const auto* Defaults = GetDefault<ALSAutoBattleScenario>();
+	for (const auto& Entry : Defaults->UnitCosts)
+	{
+		if (!UnitCosts.Contains(Entry.Key))
+			UnitCosts.Add(Entry.Key, Entry.Value);
+	}
+	for (const auto& Entry : Defaults->EnemyDetectionRanges)
+	{
+		if (!EnemyDetectionRanges.Contains(Entry.Key))
+			EnemyDetectionRanges.Add(Entry.Key, Entry.Value);
+	}
 }
 
 FString ALSAutoBattleScenario::GetConfigurationError() const
 {
+	if (!FMath::IsFinite(TargetRetentionPadding) || TargetRetentionPadding < 0)
+	{
+		return TEXT("표적 유지 여유 거리가 잘못되었습니다.");
+	}
+	for (const auto& Entry : GetDefault<ALSAutoBattleScenario>()->EnemyDetectionRanges)
+	{
+		const float* Range = EnemyDetectionRanges.Find(Entry.Key);
+		if (!Range || !FMath::IsFinite(*Range) || *Range <= 0)
+		{
+			return TEXT("모든 공격 병종에 유효한 적 감지 거리가 필요합니다.");
+		}
+	}
 	if (BoundsMin.ContainsNaN() || BoundsMax.ContainsNaN() || DeploymentMin.ContainsNaN() ||
 	    DeploymentMax.ContainsNaN() || BoundsMin.X >= BoundsMax.X || BoundsMin.Y >= BoundsMax.Y ||
-	    DeploymentMin.X >= DeploymentMax.X || DeploymentMin.Y >= DeploymentMax.Y || Budget < 0 || PopulationLimit < 1 ||
-	    PopulationLimit > 100 || EnemyFormation.IsEmpty() || EnemyFormation.Num() > 100 ||
+	    DeploymentMin.X >= DeploymentMax.X || DeploymentMin.Y >= DeploymentMax.Y || EnemyFormation.Num() > 100 ||
 	    CameraLocation.ContainsNaN() || CameraRotation.ContainsNaN())
 	{
-		return TEXT("시나리오 경계·예산·인구수·적 편성·카메라 설정이 잘못되었습니다.");
+		return TEXT("시나리오 경계·적 편성·카메라 설정이 잘못되었습니다.");
 	}
 	const FBox2D Bounds(BoundsMin, BoundsMax);
 	if (!Bounds.IsInsideOrOn(DeploymentMin) || !Bounds.IsInsideOrOn(DeploymentMax) || AllyCastleGround.ContainsNaN() ||
