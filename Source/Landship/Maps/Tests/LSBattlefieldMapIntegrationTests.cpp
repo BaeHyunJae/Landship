@@ -66,7 +66,7 @@
 
 namespace
 {
-constexpr float CastleNavigationRadius = 580.0f;
+constexpr float MapIntegrationCastleNavigationRadius = 580.0f;
 const TCHAR* BattlefieldMap = TEXT("/Game/Landship/Maps/L_BattlefieldPrototype");
 
 template <typename T> T* FindOnlyActor(UWorld* World)
@@ -392,7 +392,7 @@ bool FindBarricadeCrossing(UNavigationSystemV1* Nav, const ANavigationData* Data
 			FHitResult BodyHit;
 			if (!Body->LineTraceComponent(BodyHit, From.Location, To.Location, FCollisionQueryParams(SCENE_QUERY_STAT(LSBarricadeCrossingBody), false)) ||
 				!Data->Raycast(From.Location, To.Location, NavHit, Data->GetDefaultQueryFilter(), nullptr)) continue;
-			const ALSCastle* Castle = FMath::IsNearlyEqual(Data->GetConfig().AgentRadius, CastleNavigationRadius) ? FindOnlyActor<ALSCastle>(Barricade->GetWorld()) : nullptr;
+			const ALSCastle* Castle = FMath::IsNearlyEqual(Data->GetConfig().AgentRadius, MapIntegrationCastleNavigationRadius) ? FindOnlyActor<ALSCastle>(Barricade->GetWorld()) : nullptr;
 			const float BodyRadius = Castle ? Castle->GetCapsuleComponent()->GetScaledCapsuleRadius() : Data->GetNavAgentProperties().AgentRadius;
 			const float BodyHalfHeight = Castle ? Castle->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : Data->GetNavAgentProperties().AgentHeight * 0.5f;
 			const float ClearanceRadius = BodyRadius + 50;
@@ -611,7 +611,7 @@ public:
 				if (!Test.TestNotNull(TEXT("Supported profile resolves its registered NavData"), Registered)) continue;
 				Test.TestEqual(TEXT("Registration key matches generation settings"), GetTypeHash(Registered->GetNavAgentProperties()), GetTypeHash(static_cast<const FNavAgentProperties&>(Registered->GetConfig())));
 				Test.TestEqual(TEXT("Profile hash matches registration key"), GetTypeHash(static_cast<const FNavAgentProperties&>(Profile)), GetTypeHash(Registered->GetNavAgentProperties()));
-				if (FMath::IsNearlyEqual(Profile.AgentRadius, CastleNavigationRadius))
+				if (FMath::IsNearlyEqual(Profile.AgentRadius, MapIntegrationCastleNavigationRadius))
 				{
 					Data = Registered;
 					Test.TestEqual(TEXT("Castle navigation height"), Profile.AgentHeight, 1000.0f);
@@ -620,7 +620,7 @@ public:
 					{
 						Test.TestEqual(TEXT("Castle-only simplification error"), Recast->MaxSimplificationError, 0.5f);
 						Test.TestEqual(TEXT("Castle cell size is10"), Recast->GetCellSize(ENavigationDataResolution::Default), 10.0f);
-						Test.TestEqual(TEXT("Generated Castle radius stays580"), Recast->AgentRadius, CastleNavigationRadius);
+						Test.TestEqual(TEXT("Generated Castle radius stays580"), Recast->AgentRadius, MapIntegrationCastleNavigationRadius);
 					}
 				}
 				if (FMath::IsNearlyEqual(Profile.AgentRadius, 142.0f))
@@ -916,7 +916,7 @@ public:
 				const bool bComplete = CompletePath(Nav, CastleData, Castle.Get(), From, To, nullptr, &CastleCrossing, &Failure);
 				if (!bComplete && FPlatformTime::Seconds() - PhaseStarted < 20) return false;
 				if (!Test.TestTrue(BarrierId + TEXT(" restores complete physical500/Nav580 opening path: ") + Failure, bComplete)) return Finish();
-				Test.TestEqual(BarrierId + TEXT(" opening query uses Castle radius"), CastleData->GetConfig().AgentRadius, CastleNavigationRadius);
+				Test.TestEqual(BarrierId + TEXT(" opening query uses Castle radius"), CastleData->GetConfig().AgentRadius, MapIntegrationCastleNavigationRadius);
 				Test.AddInfo(FString::Printf(TEXT("%s opened physical500/Nav580 path from=%s to=%s points=%d partial=%d"), *BarrierId, *From.ToString(), *To.ToString(), CastleCrossing->GetPathPoints().Num(), CastleCrossing->IsPartial()));
 			}
 			if (!Test.TestTrue(BarrierId + TEXT(" preserves the other armed mine"), OtherMine.IsValid() && OtherMine->IsArmed())) ReportObstacleIsolation(BarrierId + TEXT(" independent mine changed"));
@@ -1140,7 +1140,7 @@ private:
 			if (!Test.TestTrue(Id.ToString() + TEXT(" has a blocked local body crossing for ") + Data->GetConfig().Name.ToString(),
 				Gate && FindBarricadeCrossing(Nav, Data, Gate, HomeGround.Z, From, To, Details))) { Test.AddInfo(Details); continue; }
 			Test.TestFalse(Id.ToString() + TEXT(" intact gate has no complete bypass through another lane"), CompletePath(Nav, Data, Castle.Get(), From, To));
-			if (FMath::IsNearlyEqual(Data->GetConfig().AgentRadius, CastleNavigationRadius)) CastleGateOpenings.Add(Id, TPair<FVector, FVector>(From, To));
+			if (FMath::IsNearlyEqual(Data->GetConfig().AgentRadius, MapIntegrationCastleNavigationRadius)) CastleGateOpenings.Add(Id, TPair<FVector, FVector>(From, To));
 		}
 	}
 	bool BeginGuardEncounter(UNavigationSystemV1* Nav, const ANavigationData* Data)
@@ -1277,7 +1277,7 @@ private:
 		const ULSCastleMovementComponent* Movement = Cast<ULSCastleMovementComponent>(Castle->GetMovementComponent());
 		if (Test.TestNotNull(TEXT("Castle uses path-owned turn-before-forward motor"), Movement))
 		{
-			Test.TestEqual(TEXT("Physical500 castle uses logical580 navigation radius"), Movement->NavAgentProps.AgentRadius, CastleNavigationRadius);
+			Test.TestEqual(TEXT("Physical500 castle uses logical580 navigation radius"), Movement->NavAgentProps.AgentRadius, MapIntegrationCastleNavigationRadius);
 			Test.TestEqual(TEXT("Castle logical navigation height stays1000"), Movement->NavAgentProps.AgentHeight, 1000.0f);
 			Test.TestTrue(TEXT("Battlefield castle opts into automatic turning"), Movement->bTurnBeforeForward);
 			Test.TestEqual(TEXT("Automatic turn rate is 90 degrees/sec"), Movement->TurnRate, 90.0f);
@@ -1661,7 +1661,7 @@ private:
 	bool CheckIntendedCombatBays(UNavigationSystemV1* Nav, const ANavigationData* Data)
 	{
 		FAutomationTestBase& Test = *State->Test;
-		if (!Test.TestEqual(TEXT("Combat bay terrain queries use logical Castle580 NavData"), Data->GetConfig().AgentRadius, CastleNavigationRadius)) return false;
+		if (!Test.TestEqual(TEXT("Combat bay terrain queries use logical Castle580 NavData"), Data->GetConfig().AgentRadius, MapIntegrationCastleNavigationRadius)) return false;
 		const FVector Entry(2500, 0, 0);
 		const FVector Mouths[] = {FVector(4000, -6300, 0), FVector(4000, 0, 0), FVector(4000, 4600, 0)};
 		const FVector Ends[] = {FVector(5200, -7200, 0), FVector(5200, -4600, 0), FVector(5200, -1000, 0), FVector(5400, 700, 0), FVector(5800, 5000, 0), FVector(5800, 3900, 0)};
