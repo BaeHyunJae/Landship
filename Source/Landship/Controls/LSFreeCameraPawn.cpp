@@ -84,6 +84,9 @@ void ALSFreeCameraPawn::ChangeSpeed(float Steps)
 
 void ALSFreeCameraPawn::ResetView()
 {
+	bTacticalView = false;
+	bBlendingView = false;
+	Camera->SetProjectionMode(ECameraProjectionMode::Perspective);
 	SetActorLocationAndRotation(HomeLocation.BoundToBox(BoundsMin, BoundsMax), HomeRotation);
 }
 
@@ -96,6 +99,12 @@ void ALSFreeCameraPawn::SetHomeView(const FVector& Location, const FRotator& Rot
 
 void ALSFreeCameraPawn::FollowCastle(const AActor& Castle, float DeltaSeconds, bool bSnap)
 {
+	if (bTacticalView)
+	{
+		bTacticalView = false;
+		bBlendingView = false;
+		bSnap = true;
+	}
 	const FVector Pivot = Castle.GetActorLocation() + FVector(0, 0, 120);
 	const FVector Desired = Pivot - Castle.GetActorForwardVector() * CastleCameraDistance +
 	                        FVector(0, 0, CastleCameraHeight);
@@ -104,6 +113,7 @@ void ALSFreeCameraPawn::FollowCastle(const AActor& Castle, float DeltaSeconds, b
 	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Ground);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::PathObstacle);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSCastleFollowCamera), false, this);
 	Query.AddIgnoredActor(&Castle);
 	FHitResult Hit;
@@ -113,5 +123,37 @@ void ALSFreeCameraPawn::FollowCastle(const AActor& Castle, float DeltaSeconds, b
 		Position = Hit.Location;
 	}
 	const FVector Look = Pivot - Position;
-	SetActorLocationAndRotation(Position, Look.IsNearlyZero() ? GetActorRotation() : Look.Rotation());
+	const FQuat Rotation = Look.IsNearlyZero() ? GetActorQuat() : Look.Rotation().Quaternion();
+	SetActorLocationAndRotation(Position, Rotation);
+}
+
+void ALSFreeCameraPawn::SetTacticalView(const FVector2D& BattlefieldSize, float AspectRatio)
+{
+	// 원근 투영을 유지해 카메라가 올라가는 동안 화면 투영이 갑자기 바뀌지 않게 한다.
+	const double Width = FMath::Max(BattlefieldSize.X * 1.45, BattlefieldSize.Y * AspectRatio * 1.12) * 0.5;
+	const double HalfFov = FMath::DegreesToRadians(static_cast<double>(Camera->FieldOfView) * 0.5);
+	TacticalHeight = Width / (2.0 * FMath::Tan(HalfFov));
+	BlendStartLocation = GetActorLocation();
+	BlendStartPitch = GetActorRotation().Pitch;
+	ViewBlendElapsed = 0;
+	bBlendingView = true;
+	bTacticalView = true;
+}
+
+void ALSFreeCameraPawn::UpdateTacticalView(const AActor& Castle, float DeltaSeconds)
+{
+	if (!bTacticalView)
+		return;
+	FVector Location = Castle.GetActorLocation() + FVector(0, 0, TacticalHeight);
+	double Pitch = -90.0;
+	if (bBlendingView)
+	{
+		ViewBlendElapsed += DeltaSeconds;
+		const float Progress = FMath::Clamp(ViewBlendElapsed / FMath::Max(ViewBlendDuration, 0.01f), 0.0f, 1.0f);
+		const float Alpha = FMath::SmoothStep(0.0f, 1.0f, Progress);
+		Location = FMath::Lerp(BlendStartLocation, Location, Alpha);
+		Pitch = FMath::Lerp(BlendStartPitch, Pitch, Alpha);
+		bBlendingView = Progress < 1.0f;
+	}
+	SetActorLocationAndRotation(Location, FRotator(Pitch, Castle.GetActorRotation().Yaw, 0.0));
 }

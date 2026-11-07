@@ -14,6 +14,7 @@ public:
 	virtual bool IsConfigurationValid() const override;
 	virtual FLSCombatDirective EvaluateEngagement(AActor* Target, const TArray<ALSUnit*>& Opponents) override;
 	virtual void ResetForNewLife() override;
+	void SetFieldAttackSpeed(float Multiplier);
 
 protected:
 	virtual void CancelSpecialAction() override;
@@ -32,4 +33,5 @@ private:
 	TWeakObjectPtr<AActor> SetupTarget;
 	double SetupCompleteTime = 0.0;
 	double NextFireTime = 0.0;
+	float FieldAttackSpeed = 1.0f;
 };

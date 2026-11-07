@@ -105,6 +105,18 @@ bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSe
 	return true;
 }
 
+bool ALSCastleProjectile::LaunchPayload(const FLSCastleWeaponSettings& Settings, const FLSDamageRequest& Request,
+                                        const FVector& Aim, const FLinearColor& Color, FLSCastlePayloadImpact Impact)
+{
+	if (!Impact.IsBound() || !Launch(ELSCastleWeapon::Cannon, Settings, Request, Aim))
+		return false;
+	bIsPayload = true;
+	PayloadImpact = MoveTemp(Impact);
+	if (auto* Material = Cast<UMaterialInstanceDynamic>(Bullets[0]->GetMaterial(0)))
+		Material->SetVectorParameterValue(TEXT("TeamColor"), Color);
+	return true;
+}
+
 void ALSCastleProjectile::BeginPlay()
 {
 	Super::BeginPlay();
@@ -286,6 +298,14 @@ void ALSCastleProjectile::Detonate()
 {
 	bResolved = true;
 	SetActorTickEnabled(false);
+	if (bIsPayload)
+	{
+		auto Impact = MoveTemp(PayloadImpact);
+		Impact.ExecuteIfBound(TargetLocation);
+		if (IsValid(this) && !IsActorBeingDestroyed())
+			Destroy();
+		return;
+	}
 	struct FLSCannonBlastTarget
 	{
 		TWeakObjectPtr<AActor> Actor;

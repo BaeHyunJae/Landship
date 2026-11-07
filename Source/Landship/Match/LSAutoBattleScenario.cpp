@@ -12,6 +12,14 @@
 ALSAutoBattleScenario::ALSAutoBattleScenario()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	const float Angles[] = {-30.0f, -15.0f, 0.0f, 15.0f, 30.0f};
+	const float TroopMultipliers[] = {1.15f, 1.10f, 1.0f, 0.75f, 0.55f};
+	const float CastleMultipliers[] = {1.08f, 1.05f, 1.0f, 0.82f, 0.65f};
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Angles); ++Index)
+	{
+		TroopSlopeSpeed.GetRichCurve()->AddKey(Angles[Index], TroopMultipliers[Index]);
+		CastleSlopeSpeed.GetRichCurve()->AddKey(Angles[Index], CastleMultipliers[Index]);
+	}
 	EnemyDetectionRanges.Add(ELSTroopType::Spearman, 650.0f);
 	EnemyDetectionRanges.Add(ELSTroopType::Archer, 1400.0f);
 	EnemyDetectionRanges.Add(ELSTroopType::Cavalry, 1000.0f);
@@ -31,7 +39,7 @@ int32 ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType Type)
 	{
 	case ELSTroopType::Spearman: return 40;
 	case ELSTroopType::Archer: return 60;
-	case ELSTroopType::Cavalry: return 90;
+	case ELSTroopType::Cavalry: return 120;
 	case ELSTroopType::Medic: return 80;
 	case ELSTroopType::Shieldbearer: return 55;
 	case ELSTroopType::Mortar: return 120;
@@ -43,6 +51,9 @@ int32 ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType Type)
 void ALSAutoBattleScenario::PostLoad()
 {
 	Super::PostLoad();
+	// 이전 기본 비용을 저장한 맵도 정예 기병 비용을 사용한다. 별도로 조정한 비용은 보존한다.
+	if (int32* Cost = UnitCosts.Find(ELSTroopType::Cavalry); Cost && *Cost == 90)
+		*Cost = GetDefaultUnitCost(ELSTroopType::Cavalry);
 	// 기존 개인 맵에 저장된 비용과 감지 거리를 보존하면서 신규 병종 항목을 채운다.
 	const auto* Defaults = GetDefault<ALSAutoBattleScenario>();
 	for (const auto& Entry : Defaults->UnitCosts)

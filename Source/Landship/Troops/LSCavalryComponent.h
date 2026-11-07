@@ -61,7 +61,6 @@ class LANDSHIP_API ULSCavalryComponent : public ULSTroopCombatComponent
 	FVector PreviousLocation = FVector::ZeroVector;
 	FVector ChargeDirection = FVector::ZeroVector;
 	double ChargeStarted = 0;
-	float OriginalSpeed = 0;
 	float RunUp = 0;
 	int32 ImpactCount = 0;
 	bool bCharging = false;

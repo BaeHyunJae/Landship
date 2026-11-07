@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameFramework/Actor.h"
+#include "Curves/CurveFloat.h"
 #include "Troops/LSTroopUnit.h"
 #include "Castle/LSCastleWeaponData.h"
 #include "LSAutoBattleScenario.generated.h"
@@ -73,6 +74,12 @@ class LANDSHIP_API ALSAutoBattleScenario : public AActor
 	/** 공격 병종이 새 표적을 발견하는 거리(cm). 실제 감지 거리는 공격 사거리 이상이다. */
 	UPROPERTY(EditAnywhere, Category = "Scenario|Engagement")
 	TMap<ELSTroopType, float> EnemyDetectionRanges;
+	/** 병력 경사 각도(도)별 이동 속도 배율이다. 양수는 오르막, 음수는 내리막이다. */
+	UPROPERTY(EditAnywhere, Category = "Scenario|Slope")
+	FRuntimeFloatCurve TroopSlopeSpeed;
+	/** 아군과 적군 성에 공통으로 적용하는 경사 각도별 속도 배율이다. */
+	UPROPERTY(EditAnywhere, Category = "Scenario|Slope")
+	FRuntimeFloatCurve CastleSlopeSpeed;
 	/** 기존 표적을 놓기 전 감지 거리에 더하는 여유 거리(cm). */
 	UPROPERTY(EditAnywhere, Category = "Scenario|Engagement", meta = (ClampMin = "0", Units = "cm"))
 	float TargetRetentionPadding = 250.0f;

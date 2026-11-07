@@ -129,7 +129,8 @@ void ALSUnit::BeginPlay()
 	bFactionLocked = true;
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
-		FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError()))
+		FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError(),
+		Stats.Armor, Stats.ArmorPenetration))
 	{
 		// 준비 실패는 사망이 아니므로 알림·랙돌·제거 없이 실행과 방해 충돌만 막는다.
 		NeutralizeCombat();
@@ -204,7 +205,8 @@ bool ALSUnit::PreparePooledCombat(ELSFaction NewFaction)
 	bBattleActionsEnded = false;
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
-	    FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError()))
+	    FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError(),
+	    Stats.Armor, Stats.ArmorPenetration))
 		return false;
 	FLSBasicAttackSettings AttackSettings;
 	AttackSettings.Damage = Stats.AttackPower;
@@ -287,6 +289,8 @@ void ALSUnit::EndBattleActions()
 	if (bBattleActionsEnded) return;
 	const FLSPreservedBattleMotion Motion(this);
 	bBattleActionsEnded = true;
+	if (auto* SlopeMovement = Cast<ULSSlopeMovementComponent>(GetCharacterMovement()))
+		SlopeMovement->ClearSlopeSpeedCurve();
 	Orders->EndBattleActions();
 	BasicAttack->EndBattleActions();
 	if (ULSEnemyBehaviorComponent* Enemy = FindComponentByClass<ULSEnemyBehaviorComponent>())

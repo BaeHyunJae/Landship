@@ -42,7 +42,7 @@ FLSCombatDirective ULSMortarComponent::EvaluateEngagement(AActor* Target, const 
 	if (SetupTarget.Get() != Target)
 	{
 		SetupTarget = Target;
-		SetupCompleteTime = Now + SetupSeconds;
+		SetupCompleteTime = Now + SetupSeconds / FieldAttackSpeed;
 		return Result;
 	}
 	if (Now >= SetupCompleteTime)
@@ -53,7 +53,7 @@ FLSCombatDirective ULSMortarComponent::EvaluateEngagement(AActor* Target, const 
 		FVector Aim = Target->GetActorLocation();
 		Aim.Z -= Target->GetSimpleCollisionHalfHeight();
 		// 재시도에도 간격을 적용해 생성에 실패했을 때 매 판단마다 포탄을 요청하지 않는다.
-		NextFireTime = Now + Stats.AttackInterval;
+		NextFireTime = Now + Stats.AttackInterval / FieldAttackSpeed;
 		CancelSpecialAction();
 		Fire(Aim, Stats);
 	}
@@ -71,6 +71,16 @@ void ULSMortarComponent::ResetForNewLife()
 	Super::ResetForNewLife();
 	CancelSpecialAction();
 	NextFireTime = 0;
+	FieldAttackSpeed = 1.0f;
+}
+
+void ULSMortarComponent::SetFieldAttackSpeed(float Multiplier)
+{
+	const double Now = GetWorld()->GetTimeSeconds();
+	const double Ratio = FieldAttackSpeed / Multiplier;
+	NextFireTime = Now + FMath::Max(0.0, NextFireTime - Now) * Ratio;
+	SetupCompleteTime = Now + FMath::Max(0.0, SetupCompleteTime - Now) * Ratio;
+	FieldAttackSpeed = Multiplier;
 }
 
 bool ULSMortarComponent::Fire(const FVector& Aim, const FLSUnitStatRow& Stats)

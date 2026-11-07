@@ -26,7 +26,8 @@
 - `ALSBasicProjectile::LaunchInDirection(...)`는 발리스타의 방향 사격이다. 발사자·시체와 피해 정책이 거부한 전투 몸체는 통과하며, 경로의 첫 피해 허용 전투 몸체와 `LSObstacleProjectile`을 막는 실제 지형 중 먼저 만난 곳에서 멈춘다. 투사체 반경·피해 정책·수명은 지정한 값을 유지한다. `LaunchFirstBlocking(...)`는 발사자를 제외하고 지형·같은 진영을 포함해 `LSObstacleProjectile`을 막는 첫 실제 몸체에서 멈추며, 그 대상의 피해는 공통 체력 정책이 결정한다.
 - `ULSHealthComponent::EvaluateDamagePolicy(Request, Receiver)`는 현재 오폭·자기 피해 설정만 판정하는 부작용 없는 C++ 함수다. `Applied`는 정책상 허용이라는 뜻이며 실제 피해·체력 준비·입력 유효성을 보장하지 않는다. 거부 시 `RejectedSelfDamageDisabled` 또는 `RejectedFriendlyFireDisabled`를 반환한다. 투사체의 통과 판정과 `ApplyDamage`가 이 규칙을 공유한다.
 - `bAllowFriendlyFire`와 `bAllowSelfDamage`의 기본값은 모두 true이며, 질의·피해 시점의 현재 값을 사용한다. 자기 피해는 오폭 설정과 독립적이다. `EnvironmentalHazard`는 같은 진영의 오폭 차단만 우회하며 자기 피해 설정은 유지한다.
-- 발사 시 진영과 피해량을 복사하고 공격자는 약한 참조로 보관하므로, 발사 뒤 공격자가 사라져도 비행과 피해 판정은 계속된다.
+- 발사 시 진영·피해량·관통력을 복사하고 공격자는 약한 참조로 보관하므로, 발사 뒤 공격자가 사라져도 비행과 피해 판정은 계속된다.
+- 양수 피해에는 대상 방어력에서 관통력을 뺀 값만큼 피해를 줄인다. 유효 방어력의 하한은 0이며, 감소 후 피해의 하한은 1과 원래 피해 중 작은 값이다. 방패의 정면 화살 차단은 피해 요청 전에 처리한다. 자폭병 자체 소모는 방어력을 무시한다.
 - `OnDamageApplied(Target, AppliedDamage)`는 실제 감소량이 양수일 때 실제 피격 대상을 전달한다. 같은 진영이나 최초 지정 목표 외의 적도 포함하며 발사자의 생존 여부와 별개다.
 - `FLSProjectileAttackSettings::VisualStyle`은 `Arrow`, `TurretBolt`, `BallistaBolt` 중 시각 형태를 정한다. `ALSBasicProjectile::SetVisualStyle`은 Deferred 생성 중에만 적용한다. 형태는 충돌·속도·피해를 바꾸지 않으며 시각 메시를 내비게이션에 등록하지 않는다. `IsInFlight`, `GetFlightOrigin`, `GetFlightDirection`, `GetRemainingFlightTime`과 액터 위치로 실제 비행을 조회한다.
 - `FLSDamageRequest`의 `AttackOrigin`, `ImpactLocation`, `IncomingDirection`은 각각의 `bHas...`가 참일 때만 알려진 값이다. 공격 생산자는 실행·명중 시점의 실제 값을 복사한다. 체력 컴포넌트는 모르는 공격 원점을 현재 주체 위치나 월드 원점으로 대체하지 않는다.

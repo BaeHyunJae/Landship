@@ -51,6 +51,8 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Troops")
 	TObjectPtr<ULSTroopCombatComponent> CombatBehavior;
 	void SetTacticalLabel(const FString& State);
+	void SetFieldSpeedMultiplier(float Multiplier);
+	void SetChargeMovementMultiplier(float Multiplier);
 	void SetLanceLowered(bool bLowered);
 	UPROPERTY(VisibleAnywhere, Category = "Landship|Troops")
 	TObjectPtr<UStaticMeshComponent> Lance;
@@ -82,6 +84,9 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	virtual void Tick(float DeltaSeconds) override;
 
   private:
+	void RefreshMovementSpeed();
+	float FieldSpeedMultiplier = 1.0f;
+	float ChargeMovementMultiplier = 1.0f;
 	friend class ULSTroopProductionComponent;
 	void RefreshDefinition();
 	void InitializeCombatBehavior();

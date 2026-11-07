@@ -26,7 +26,8 @@ public:
 
 	/** 소유 대상의 수치 읽기·구성 검사 이후 부모 BeginPlay 전에 한 번 호출한다. 수치 실패의 진단은 호출자가 먼저 수행해야 한다. */
 	bool InitializeHealth(ELSCombatStatsInitResult StatsResult, float InitialHealth,
-		const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError);
+		const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError,
+		float InitialArmor = 0.0f, float InitialArmorPenetration = 0.0f);
 
 	/** 준비 전·실패 시 false이며 출력을 보존한다. 준비 성공은 체력 0인 사망 상태도 포함한다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Health")
@@ -61,7 +62,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Landship|Health")
 	FLSOnCombatHealed OnHealedEvent;
 
-	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영을 보존한다. */
+	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영과 관통력을 보존한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	static FLSDamageRequest MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser);
 
@@ -102,6 +103,8 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Health")
 	FLSHealthSnapshot Health;
+	float Armor = 0.0f;
+	float ArmorPenetration = 0.0f;
 
 	FLSPrepareCombatDeath PrepareDeathEvent;
 	bool bProcessingDamage = false;

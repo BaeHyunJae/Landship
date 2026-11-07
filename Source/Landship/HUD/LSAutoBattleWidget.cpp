@@ -21,6 +21,8 @@ const TCHAR* PhaseNames[] = {TEXT("전장 준비 중"), TEXT("전투 준비"), T
                              TEXT("승리"),         TEXT("패배"),      TEXT("설정 오류")};
 const TCHAR* WeaponNames[] = {TEXT("일반 대포 · 밀집한 적"), TEXT("산탄포 · 가까운 적"),
                               TEXT("발리스타 · 체력이 높은 적")};
+const TCHAR* AutoBattleFieldButtons[] = {TEXT("SwampField"), TEXT("StimField"), TEXT("WallField")};
+const TCHAR* AutoBattleFieldNames[] = {TEXT("늪 소환"), TEXT("전투 자극제"), TEXT("벽 소환")};
 const TCHAR* AutoBattleTroopButtons[] = {
     TEXT("Spear"), TEXT("Archer"), TEXT("Cavalry"), TEXT("Medic"), TEXT("Shieldbearer"), TEXT("Mortar"), TEXT("Bomber")};
 const TCHAR* AutoBattleTroopLabels[] = {
@@ -58,6 +60,7 @@ void ULSAutoBattleWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	EnsureTroopButtons();
+	SetupFieldButtons();
 	SetupBattlefieldPicker();
 	for (const TCHAR* Name : {TEXT("LimitTitle"), TEXT("BudgetLabel"), TEXT("PopulationLabel"),
 	                          TEXT("BudgetInput"), TEXT("PopulationInput"), TEXT("ApplyLimits")})
@@ -95,6 +98,9 @@ void ULSAutoBattleWidget::NativeOnInitialized()
 	LS_BIND_BUTTON("Cannon", Cannon)
 	LS_BIND_BUTTON("Shotgun", Shotgun)
 	LS_BIND_BUTTON("Ballista", Ballista)
+	LS_BIND_BUTTON("SwampField", SwampField)
+	LS_BIND_BUTTON("StimField", StimField)
+	LS_BIND_BUTTON("WallField", WallField)
 	LS_BIND_BUTTON("Start", Start)
 	LS_BIND_BUTTON("Retry", Retry)
 	LS_BIND_BUTTON("Reset", Reset)
@@ -148,6 +154,50 @@ void ULSAutoBattleWidget::OnBattlefieldSelected(FString Selection, ESelectInfo::
 	auto* Picker = Cast<UComboBoxString>(GetWidgetFromName(TEXT("BattlefieldPicker")));
 	if (Mode && Picker && !Mode->SelectBattlefield(Picker->FindOptionIndex(Selection)))
 		Picker->SetSelectedIndex(Mode->GetCurrentBattlefieldIndex());
+}
+
+void ULSAutoBattleWidget::SetupFieldButtons()
+{
+	UWidget* SpearButton = GetWidgetFromName(TEXT("Spear"));
+	auto* Canvas = SpearButton ? Cast<UCanvasPanel>(SpearButton->GetParent()) : nullptr;
+	if (!Canvas || !WidgetTree)
+		return;
+
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(AutoBattleFieldButtons); ++Index)
+	{
+		const FName Name(AutoBattleFieldButtons[Index]);
+		auto* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		auto* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
+		    FName(*FString::Printf(TEXT("%sLabel"), AutoBattleFieldButtons[Index])));
+		FSlateFontInfo Font = Label->GetFont();
+		Font.Size = 13;
+		Label->SetFont(Font);
+		Label->SetJustification(ETextJustify::Center);
+		Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Button->SetContent(Label);
+		Button->SetVisibility(ESlateVisibility::Hidden);
+		auto* FieldSlot = Canvas->AddChildToCanvas(Button);
+		FieldSlot->SetPosition(FVector2D(18 + Index * 102, 238));
+		FieldSlot->SetSize(FVector2D(96, 42));
+	}
+}
+
+void ULSAutoBattleWidget::SwampField()
+{
+	if (auto* Controller = GetOwningPlayer<ALSAutoBattleController>())
+		Controller->ChooseField(ELSCastleField::Swamp);
+}
+
+void ULSAutoBattleWidget::StimField()
+{
+	if (auto* Controller = GetOwningPlayer<ALSAutoBattleController>())
+		Controller->ChooseField(ELSCastleField::Stim);
+}
+
+void ULSAutoBattleWidget::WallField()
+{
+	if (auto* Controller = GetOwningPlayer<ALSAutoBattleController>())
+		Controller->ChooseField(ELSCastleField::Wall);
 }
 
 void ULSAutoBattleWidget::EnsureTroopButtons()
@@ -230,6 +280,7 @@ void ULSAutoBattleWidget::RefreshState()
 	SetLabel(TEXT("Health"), FString::Printf(TEXT("아군 성  %s\n적 성      %s"), *CastleHealth(Mode->GetAllyCastle()),
 	                                         *CastleHealth(Mode->GetEnemyCastle())));
 	const TOptional<ELSCastleWeapon> Armed = Controller->GetArmedWeapon();
+	const TOptional<ELSCastleField> ArmedField = Controller->GetArmedField();
 	const ELSCastleWeapon PreparationWeapon = Controller->GetEditingFaction() == ELSFaction::Ally
 	    ? Mode->GetWeapon() : Mode->GetScenario()->EnemyWeapon;
 	FString WeaponStatus = FString::Printf(TEXT("선택 무장: %s"), WeaponNames[static_cast<uint8>(PreparationWeapon)]);
@@ -237,18 +288,22 @@ void ULSAutoBattleWidget::RefreshState()
 	{
 		WeaponStatus = Armed.IsSet()
 		    ? FString::Printf(TEXT("조준 중: %s"), WeaponNames[static_cast<uint8>(Armed.GetValue())])
-		    : TEXT("1 · 2 · 3으로 무장 선택");
+		    : TEXT("1–6으로 무장·스킬 선택");
+		if (ArmedField.IsSet())
+			WeaponStatus = FString::Printf(TEXT("조준 중: %s"), AutoBattleFieldNames[static_cast<uint8>(ArmedField.GetValue())]);
 		const auto CastResult = Controller->GetLastWeaponResult();
 		if (CastResult == ELSWeaponCastResult::OutOfRange)
 			WeaponStatus = TEXT("사거리 밖입니다. 지면을 다시 조준하세요.");
 		else if (CastResult == ELSWeaponCastResult::InvalidAim)
-			WeaponStatus = TEXT("유효한 지면을 조준하세요.");
+			WeaponStatus = ArmedField.Get(ELSCastleField::Swamp) == ELSCastleField::Wall
+			    ? TEXT("유닛이나 장애물과 겹치지 않는 지면을 조준하세요.")
+			    : TEXT("유효한 지면을 조준하세요.");
 		else if (CastResult == ELSWeaponCastResult::Cooldown)
 			WeaponStatus = TEXT("무장 재사용 대기 중");
 	}
 	SetLabel(TEXT("Weapon"), WeaponStatus);
 	SetLabel(TEXT("Help"), bFighting
-	    ? TEXT("W/S 전진·후진 · A/D 차체 회전\n1 대포 · 2 산탄포 · 3 발리스타\n좌클릭 발사 · 우클릭/Esc 조준 취소")
+	    ? TEXT("W/S 전진·후진 · A/D 차체 회전\n1–3 무장 · 4 늪 · 5 자극제 · 6 벽\n좌클릭 사용 · 우클릭/Esc 취소")
 	    : TEXT("우클릭 유지: 회전 + WASD / Q·E 상하\n가운데 드래그: 화면 이동\n휠: 앞뒤 · 우클릭+휠: 속도\nShift 가속 · Home 복귀"));
 	const TCHAR* WeaponButtons[] = {TEXT("Cannon"), TEXT("Shotgun"), TEXT("Ballista")};
 	const TCHAR* WeaponButtonNames[] = {TEXT("일반 대포"), TEXT("산탄포"), TEXT("발리스타")};
@@ -286,6 +341,21 @@ void ULSAutoBattleWidget::RefreshState()
 			Button->SetBackgroundColor(bSelected
 			                               ? FLinearColor(0.15f, 0.65f, 0.45f)
 			                               : FLinearColor(0.15f, 0.22f, 0.3f));
+		}
+	}
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(AutoBattleFieldButtons); ++Index)
+	{
+		const auto Field = static_cast<ELSCastleField>(Index);
+		if (auto* Button = Cast<UButton>(GetWidgetFromName(AutoBattleFieldButtons[Index])))
+		{
+			const float Remaining = Mode->GetFieldCooldown(Field);
+			Button->SetVisibility(bFighting ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+			Button->SetIsEnabled(Mode->GetFieldStatus(Field) == ELSWeaponCastResult::Ready);
+			Button->SetBackgroundColor(ArmedField.IsSet() && ArmedField.GetValue() == Field
+			    ? FLinearColor(0.15f, 0.65f, 0.45f) : FLinearColor(0.15f, 0.22f, 0.3f));
+			SetLabel(*FString::Printf(TEXT("%sLabel"), AutoBattleFieldButtons[Index]), Remaining > 0
+			    ? FString::Printf(TEXT("%d · %.0f초"), 4 + Index, FMath::CeilToFloat(Remaining))
+			    : FString::Printf(TEXT("%d %s"), 4 + Index, AutoBattleFieldNames[Index]));
 		}
 	}
 	for (const TCHAR* Name : {TEXT("Castle"), TEXT("Reset"), TEXT("Remove"), TEXT("Start")})

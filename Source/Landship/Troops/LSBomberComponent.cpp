@@ -71,6 +71,7 @@ FLSCombatDirective ULSBomberComponent::EvaluateEngagement(AActor* Target, const 
 	Blast.AttackOrigin = Origin;
 	auto Consumption = ULSHealthComponent::MakeDamageRequest(State.CurrentHealth, nullptr, Unit);
 	Consumption.Policy = ELSDamagePolicy::EnvironmentalHazard;
+	Consumption.bIgnoreArmor = true;
 	// 폭발에 소모되는 처리는 오폭 설정과 무관하다. 사망 알림으로 재진입해도 폭발은 한 번이다.
 	OwnHealth->ApplyDamage(Consumption);
 	if (ULSCombatTargetLibrary::IsCombatAlive(Unit))

@@ -132,6 +132,10 @@ bool FLSAutoBattlePresetStore::Encode(const FLSAutoBattlePreset& P, FString& Out
 	}
 	auto J = MakeShared<FJsonObject>();
 	J->SetNumberField(TEXT("version"), P.Version);
+	if (!P.Battlefield.IsEmpty())
+	{
+		J->SetStringField(TEXT("battlefield"), P.Battlefield);
+	}
 	J->SetNumberField(TEXT("budget"), P.Budget);
 	J->SetNumberField(TEXT("populationLimit"), P.PopulationLimit);
 	J->SetArrayField(TEXT("allyCastle"), VectorJson(P.AllyCastle));
@@ -178,6 +182,11 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 		return false;
 	}
 	FLSAutoBattlePreset P;
+	if (J->HasField(TEXT("battlefield")) &&
+	    (!J->TryGetStringField(TEXT("battlefield"), P.Battlefield) || P.Battlefield.IsEmpty()))
+	{
+		return false;
+	}
 	int32 AllyWeapon, EnemyWeapon;
 	if (!ReadInt(J, TEXT("version"), P.Version) || !ReadInt(J, TEXT("budget"), P.Budget) ||
 	    !ReadInt(J, TEXT("populationLimit"), P.PopulationLimit) || !ReadInt(J, TEXT("allyWeapon"), AllyWeapon) ||
@@ -253,6 +262,10 @@ bool FLSAutoBattlePresetStore::Decode(const FString& Json, FLSAutoBattlePreset& 
 	{
 		P.UnitCosts.Add(ALSAutoBattleScenario::GetDefaultUnitCost(static_cast<ELSTroopType>(Index)));
 	}
+	// 이전 기본 비용으로 저장한 편성도 현재 기병 비용으로 비교한다.
+	int32& CavalryCost = P.UnitCosts[static_cast<uint8>(ELSTroopType::Cavalry)];
+	if (CavalryCost == 90)
+		CavalryCost = ALSAutoBattleScenario::GetDefaultUnitCost(ELSTroopType::Cavalry);
 	P.Version = 4;
 	if (!P.IsValid())
 		return false;

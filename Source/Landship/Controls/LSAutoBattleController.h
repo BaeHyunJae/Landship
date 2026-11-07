@@ -29,6 +29,8 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	void ChooseTroop(ELSTroopType Type);
 	void ChooseCastle();
 	void ChooseWeapon(ELSCastleWeapon Weapon);
+	void ChooseField(ELSCastleField Field);
+	TOptional<ELSCastleField> GetArmedField() const { return ArmedField; }
 	TOptional<ELSCastleWeapon> GetArmedWeapon() const { return ArmedWeapon; }
 	ELSWeaponCastResult GetLastWeaponResult() const { return LastWeaponResult; }
 	void BeginBattle();
@@ -102,6 +104,11 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	void ArmCannon();
 	void ArmShotgun();
 	void ArmBallista();
+	void ArmSwamp();
+	void ArmStim();
+	void ArmWall();
+	void CancelCastleAim();
+	void RefreshFieldCamera();
 	void UpdateCastleAim(const ALSAutoBattleCastle& Castle) const;
 	void ConfirmCastleWeapon(ALSAutoBattleCastle& Castle);
 	UFUNCTION()
@@ -111,6 +118,7 @@ class LANDSHIP_API ALSAutoBattleController : public APlayerController
 	ELSTroopType ChosenTroop = ELSTroopType::Spearman;
 	ELSAutoBattleRequest LastRequest = ELSAutoBattleRequest::Success;
 	TOptional<ELSCastleWeapon> ArmedWeapon;
+	TOptional<ELSCastleField> ArmedField;
 	ELSWeaponCastResult LastWeaponResult = ELSWeaponCastResult::Ready;
 	ELSAutoBattlePhase LastPhase = ELSAutoBattlePhase::Loading;
 	int32 SelectionId = 0;

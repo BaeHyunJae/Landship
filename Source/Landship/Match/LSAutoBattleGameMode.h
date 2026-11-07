@@ -2,6 +2,7 @@
 
 #include "GameFramework/GameModeBase.h"
 #include "Match/LSAutoBattleScenario.h"
+#include "Match/LSAutoBattlePreset.h"
 #include "Match/LSMeleeApproachPlanner.h"
 #include "LSAutoBattleGameMode.generated.h"
 
@@ -9,7 +10,9 @@ class ALSAutoBattleCastle;
 class AAIController;
 class AStaticMeshActor;
 class ULevelStreamingDynamic;
-struct FLSAutoBattlePreset;
+class UDecalComponent;
+class UMaterialInterface;
+class ALSCastleProjectile;
 
 UENUM(BlueprintType)
 enum class ELSAutoBattlePhase : uint8
@@ -32,6 +35,13 @@ enum class ELSAutoBattleRequest : uint8
 	PopulationFull,
 	InvalidTarget,
 	Unavailable
+};
+
+enum class ELSCastleField : uint8
+{
+	Swamp,
+	Stim,
+	Wall
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLSAutoBattleChanged);
@@ -92,6 +102,12 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ELSAutoBattleRequest SelectWeapon(ELSCastleWeapon Weapon, ELSFaction Faction = ELSFaction::Ally);
 	ELSAutoBattleRequest StartBattle();
 	TOptional<ELSCastleWeapon> GetEnemyAimingWeapon() const;
+	ELSWeaponCastResult GetFieldStatus(ELSCastleField Field) const;
+	ELSWeaponCastResult ValidateFieldAim(ELSCastleField Field, const FVector& Aim) const;
+	ELSWeaponCastResult CastField(ELSCastleField Field, const FVector& Aim);
+	float GetFieldCooldown(ELSCastleField Field) const;
+	float GetFieldRadius() const { return FieldRadius; }
+	bool GetWallPreview(const FVector& Aim, FTransform& OutTransform, FVector& OutExtent) const;
 	struct FLSBattlefieldOption
 	{
 		const TCHAR* Label;
@@ -112,6 +128,7 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ELSAutoBattleRequest ApplyPreset(const FLSAutoBattlePreset& Preset);
 	bool SavePreset(const FString& Name, bool bOverwrite, FString& Error) const;
 	bool LoadPreset(const FString& Name, FString& Error);
+	FString TakePresetLoadMessage();
 	UPROPERTY(BlueprintAssignable)
 	FLSAutoBattleChanged OnChanged;
 
@@ -131,6 +148,24 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	float EnemyAimTime = 0.85f;
 	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Enemy Castle", meta = (ClampMin = "0.1", Units = "s"))
 	float EnemyWeaponRecovery = 1.25f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "1", Units = "cm"))
+	float FieldRadius = 450.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "1", Units = "cm"))
+	float FieldCastRange = 2200.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "0.1", Units = "s"))
+	float FieldDuration = 6.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "0.1", Units = "s"))
+	float FieldCooldown = 14.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "0.1", ClampMax = "1"))
+	float SwampSpeed = 0.7f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "1"))
+	float StimSpeed = 1.3f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields")
+	TObjectPtr<UMaterialInterface> FieldDecalMaterial;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "0.1", Units = "s"))
+	float WallDuration = 3.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "AutoBattle|Castle Fields", meta = (ClampMin = "1", Units = "cm"))
+	FVector WallHalfExtent = FVector(475.0, 35.0, 125.0);
 
   private:
 	struct FLSAutoBattleAgent
@@ -149,6 +184,11 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	void ReleaseUnitActor(ALSUnit* Unit);
 	void ReleaseUnitController(AAIController* Controller);
 	void AutoTick();
+	void UpdateCastleFields();
+	void ClearCastleFields();
+	bool LaunchCastleField(ELSCastleField Field, const FVector& Aim);
+	void OnCastleFieldImpact(const FVector& Impact, ELSCastleField Field, int32 SourceBattleId);
+	bool SpawnCastleWall(const FTransform& Transform, const FVector& Extent);
 	void UpdateAgent(FLSAutoBattleAgent& Agent, const TArray<ALSUnit*>& Opponents, const TArray<ALSUnit*>& Allies);
 	/** 조준 또는 발사 중이면 true를 반환해 적 성의 이동 판단을 한 번 건너뛴다. */
 	bool UpdateEnemyWeapons(const TArray<ALSUnit*>& Opponents);
@@ -180,6 +220,16 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	};
 	TOptional<FLSEnemyWeaponAim> EnemyWeaponAim;
 	double EnemyNextWeaponTime = 0;
+	struct FLSCastleFieldState
+	{
+		FVector Center = FVector::ZeroVector;
+		double Expires = 0;
+		double ReadyAt = 0;
+		TWeakObjectPtr<ALSCastleProjectile> Projectile;
+		TWeakObjectPtr<UDecalComponent> Decal;
+	};
+	FLSCastleFieldState CastleFields[3];
+	TWeakObjectPtr<AStaticMeshActor> SummonedWall;
 	FLSMeleeApproachPlanner MeleePlanner;
 	TArray<FLSAutoBattlePlacement> Formation;
 	FVector CastleGround = FVector::ZeroVector;
@@ -202,6 +252,9 @@ class LANDSHIP_API ALSAutoBattleGameMode : public AGameModeBase
 	ELSCastleWeapon SelectedWeapon = ELSCastleWeapon::Cannon;
 	ELSAutoBattlePhase Phase = ELSAutoBattlePhase::Loading;
 	FString Failure;
+	TOptional<FLSAutoBattlePreset> PendingPreset;
+	TOptional<FLSAutoBattlePreset> PreviousPreset;
+	FString PresetLoadMessage;
 	int32 NextPlacementId = 1;
 	int32 NextEnemyId = -1;
 	TArray<TWeakObjectPtr<AActor>> PlacementIgnoredActors;

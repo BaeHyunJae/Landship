@@ -6,10 +6,11 @@
 struct LANDSHIP_API FLSAutoBattlePreset
 {
 	int32 Version = 4;
+	FString Battlefield;
 	// 이전 JSON 도구와 호환하기 위한 필드다. 전투 편성의 상한으로 쓰지 않는다.
 	int32 Budget = 1000;
 	int32 PopulationLimit = 100;
-	TArray<int32> UnitCosts = {40, 60, 90, 80, 55, 120, 95};
+	TArray<int32> UnitCosts = {40, 60, 120, 80, 55, 120, 95};
 	FVector AllyCastle = FVector::ZeroVector;
 	FVector EnemyCastle = FVector::ZeroVector;
 	ELSCastleWeapon AllyWeapon = ELSCastleWeapon::Cannon;

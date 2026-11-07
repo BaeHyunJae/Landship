@@ -52,7 +52,6 @@ void ULSCavalryComponent::ResetForNewLife()
 	PreviousLocation = FVector::ZeroVector;
 	ChargeDirection = FVector::ZeroVector;
 	ChargeStarted = 0;
-	OriginalSpeed = 0;
 	RunUp = 0;
 	ImpactCount = 0;
 	bChargeSpent = false;
@@ -68,8 +67,8 @@ bool ULSCavalryComponent::TryStartCharge(AActor* Target)
 	{
 		return false;
 	}
-	OriginalSpeed = Unit->GetCharacterMovement()->MaxWalkSpeed;
-	if (!FMath::IsFinite(OriginalSpeed) || OriginalSpeed <= 0)
+	const float CurrentSpeed = Unit->GetCharacterMovement()->MaxWalkSpeed;
+	if (!FMath::IsFinite(CurrentSpeed) || CurrentSpeed <= 0)
 	{
 		return false;
 	}
@@ -80,7 +79,7 @@ bool ULSCavalryComponent::TryStartCharge(AActor* Target)
 	RunUp = 0;
 	bCharging = true;
 	Unit->BasicAttack->StopAttack();
-	Unit->GetCharacterMovement()->MaxWalkSpeed = OriginalSpeed * Settings.SpeedMultiplier;
+	Unit->SetChargeMovementMultiplier(Settings.SpeedMultiplier);
 	Unit->SetTacticalLabel(TEXT("CHARGE"));
 	Unit->SetLanceLowered(true);
 	RefreshTick();
@@ -92,7 +91,7 @@ void ULSCavalryComponent::StopCharge()
 	{
 		if (ALSTroopUnit* Unit = Cast<ALSTroopUnit>(GetOwner()))
 		{
-			Unit->GetCharacterMovement()->MaxWalkSpeed = OriginalSpeed;
+			Unit->SetChargeMovementMultiplier(1.0f);
 			Unit->SetLanceLowered(false);
 			Unit->SetTacticalLabel(TEXT(""));
 		}
@@ -154,11 +153,12 @@ void ULSCavalryComponent::TickSpecialAction(float DeltaTime)
 	{
 		const FVector Here = Unit->GetActorLocation();
 		const FVector Step = Here - PreviousLocation;
+		const float ChargeSpeed = Unit->GetCharacterMovement()->GetMaxSpeed();
 		// 텔레포트·급회전은 도움닫기로 세지 않는다.
 		if (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, ChargeTarget.Get()) ||
 		    Unit->GetCharacterMovement()->IsFalling() ||
 		    GetWorld()->GetTimeSeconds() - ChargeStarted > Settings.TimeoutSeconds ||
-		    (Step.Size2D() > OriginalSpeed * Settings.SpeedMultiplier * DeltaTime * 2 + 10) ||
+		    (Step.Size2D() > ChargeSpeed * DeltaTime * 2 + 10) ||
 		    (Step.Size2D() > 1 && FVector::DotProduct(Step.GetSafeNormal2D(), ChargeDirection) < 0.7))
 		{
 			StopCharge();
@@ -195,7 +195,8 @@ void ULSCavalryComponent::TickSpecialAction(float DeltaTime)
 			{
 				if (ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Hit.GetActor()))
 				{
-					if (RunUp >= Settings.RunUpDistance && Unit->GetVelocity().Size2D() >= OriginalSpeed)
+					if (RunUp >= Settings.RunUpDistance &&
+					    Unit->GetVelocity().Size2D() >= ChargeSpeed / Settings.SpeedMultiplier)
 					{
 						Impact(Hit.GetActor());
 					}

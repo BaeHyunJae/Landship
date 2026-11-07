@@ -23,6 +23,10 @@ class LANDSHIP_API ULSAutoBattleWidget : public UUserWidget
   private:
 	void SetLabel(const TCHAR* Name, const FString& Text);
 	void EnsureTroopButtons();
+	void SetupFieldButtons();
+	UFUNCTION() void SwampField();
+	UFUNCTION() void StimField();
+	UFUNCTION() void WallField();
 	void SetupBattlefieldPicker();
 	UFUNCTION() void OnBattlefieldSelected(FString Selection, ESelectInfo::Type SelectionType);
 	UFUNCTION() void Spear();

@@ -350,6 +350,7 @@ void ALSTroopUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ALSTroopUnit::OnTroopDied(const FLSDamageResult& Damage)
 {
+	SetFieldSpeedMultiplier(1.0f);
 	if (CombatBehavior)
 	{
 		CombatBehavior->SetBattleEnabled(false);
@@ -407,6 +408,7 @@ bool ALSTroopUnit::DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial)
 	GetWorldTimerManager().ClearTimer(HitFlashTimer);
 	if (CombatBehavior)
 		CombatBehavior->SetBattleEnabled(false);
+	SetFieldSpeedMultiplier(1.0f);
 	if (!SuspendCombatForPool())
 		return false;
 	SetActorTickEnabled(false);
@@ -438,6 +440,31 @@ bool ALSTroopUnit::DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial)
 	SetOwner(nullptr);
 	SetInstigator(nullptr);
 	return true;
+}
+
+void ALSTroopUnit::SetFieldSpeedMultiplier(float Multiplier)
+{
+	if (!FMath::IsFinite(Multiplier) || Multiplier <= 0 || FieldSpeedMultiplier == Multiplier)
+		return;
+	FieldSpeedMultiplier = Multiplier;
+	RefreshMovementSpeed();
+	if (SupportsBasicAttack())
+		BasicAttack->SetAttackIntervalMultiplier(TEXT("CastleField"), 1.0f / Multiplier);
+	if (auto* Mortar = Cast<ULSMortarComponent>(CombatBehavior))
+		Mortar->SetFieldAttackSpeed(Multiplier);
+}
+
+void ALSTroopUnit::SetChargeMovementMultiplier(float Multiplier)
+{
+	ChargeMovementMultiplier = Multiplier;
+	RefreshMovementSpeed();
+}
+
+void ALSTroopUnit::RefreshMovementSpeed()
+{
+	FLSUnitStatRow UnitStats;
+	if (TryGetStats(UnitStats))
+		GetCharacterMovement()->MaxWalkSpeed = UnitStats.MovementSpeed * FieldSpeedMultiplier * ChargeMovementMultiplier;
 }
 
 bool ALSTroopUnit::ActivateFromPool(ULSTroopPoolSubsystem* Pool, uint64 Serial, ELSFaction NewFaction,

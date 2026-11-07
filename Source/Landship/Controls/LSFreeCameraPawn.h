@@ -22,6 +22,9 @@ class LANDSHIP_API ALSFreeCameraPawn : public APawn
 	/** 관전 카메라의 현재 시점과 Home 복귀 위치를 함께 갱신한다. */
 	void SetHomeView(const FVector& Location, const FRotator& Rotation);
 	void FollowCastle(const AActor& Castle, float DeltaSeconds, bool bSnap);
+	void SetTacticalView(const FVector2D& BattlefieldSize, float AspectRatio);
+	void UpdateTacticalView(const AActor& Castle, float DeltaSeconds);
+	bool IsTacticalView() const { return bTacticalView; }
 	float GetMoveSpeed() const
 	{
 		return MoveSpeed;
@@ -49,10 +52,18 @@ class LANDSHIP_API ALSFreeCameraPawn : public APawn
 	float DollyStep = 200.0f;
 
   private:
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "0.01", Units = "s"))
+	float ViewBlendDuration = 0.3f;
+	FVector BlendStartLocation = FVector::ZeroVector;
+	double BlendStartPitch = 0;
+	float ViewBlendElapsed = 0;
+	bool bBlendingView = false;
+	double TacticalHeight = 0;
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
 	float CastleCameraDistance = 1100.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
 	float CastleCameraHeight = 850.0f;
+	bool bTacticalView = false;
 	FVector BoundsMin = FVector(-2500, -2000, 40);
 	FVector BoundsMax = FVector(2500, 2000, 3000);
 	FVector HomeLocation = FVector(-2000, -1600, 1800);
