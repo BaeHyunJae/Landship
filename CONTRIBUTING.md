@@ -62,6 +62,7 @@ Content/Landship/          Source/Landship/
 ├── Maps/       전장 맵, 적 배치안
 ├── Match/      승패 판정
 ├── HUD/        HUD, 전투 알림
+├── ShellExperiment/   포탄 조합·물리 연쇄를 검증하는 독립 실험
 └── SharedTestLevel/   공용 테스트 맵(콘텐츠만). 여러 사람이 확인에 쓰는 맵
 
 Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ

@@ -39,3 +39,8 @@
 /Source/Landship/Match/             @BaeHyunJae
 /Content/Landship/HUD/              @BaeHyunJae
 /Source/Landship/HUD/               @BaeHyunJae
+/Content/Landship/ShellExperiment/  @BaeHyunJae
+/Source/Landship/ShellExperiment/   @BaeHyunJae
+/Data/ShellExperiment/              @BaeHyunJae
+/Scripts/shell-experiment/          @BaeHyunJae
+/docs/procedures/shell-experiment.md @BaeHyunJae

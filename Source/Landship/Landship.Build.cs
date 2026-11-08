@@ -25,7 +25,7 @@ public class Landship : ModuleRules
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsCore" });
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "UMGEditor", "AssetRegistry" });
@@ -43,6 +43,7 @@ public class Landship : ModuleRules
 			"Landship/Maps",
 			"Landship/Match",
 			"Landship/HUD",
+			"Landship/ShellExperiment",
 			"Landship/Variant_Strategy",
 			"Landship/Variant_Strategy/UI",
 			"Landship/Variant_TwinStick",

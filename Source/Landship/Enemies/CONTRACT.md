@@ -31,6 +31,8 @@
   - `GetState()`, `GetTarget()`, `GetLastStopReason()`로 동작 상태·현재 표적·중단 사유를 조회한다.
 - 런타임에 병력을 생성할 때는 `SpawnActor`의 Transform에 실제 초기 위치를 넣고, 첫 행동 전에 `Role`과 `GuardedOutpost`를 지정한다. 복귀 기준 위치는 BeginPlay 때의 위치다. 구성 오류로 준비 대기 중인 병력도 올바른 참조를 받으면 다시 판단을 시작한다.
 - `ULSEnemyBehaviorComponent::EndBattleActions()`는 이동·표적·지원 상태를 비우고 이후 행동 재개를 거절한다. `Match`가 결과를 확정할 때 호출한다.
+  - `ShellExperiment`의 전용 적 클래스는 `ALSUnit` 기반에서 같은 행동 컴포넌트를 사용한다. 실험 모드가 아니거나 실행 설정이 유효하지 않으면 첫 행동 틱 전에 이 종료를 요청한다. 일반 병종 초기화·플레이어 명령은 사용하지 않는다.
+  - 실험의 강제 이동 중에는 전용 반응 컴포넌트가 행동 틱을 잠시 끄고 AI 이동·공격을 중단한다. 착지 후 틱을 복원한다. 이동 중단이 기존 경로 실패 처리로 기록되면 기존 재시도 간격(기본 1초)을 거친다.
 
 ## 동작 조건
 
@@ -42,7 +44,7 @@
 
 - 승패 판정, 결과 UI, 전역 정지는 `Match`가 맡는다. `IsBattleEndedForEnemies()`와 함락 알림은 판정이나 승리 표시가 아니다. `Match`가 판정을 관리하는 월드에서는 `Match`가 결과를 확정한 뒤 각 적이 새 이동·공격·지원을 멈춘다. 판정을 관리하지 않는 월드는 핵심 함락과 관찰된 성 사망을 기준으로 종료한다.
 - 핵심 거점의 공개 위치 표식은 위치만 공개한다. 실물 표시, 체력 선택, 공격 허용은 `Vision`의 시야 규칙을 따른다.
-- 기존 공용 `ALSTroopUnit`과 `ALSOutpost`에는 적 판단을 붙이지 않는다. 적 판단과 AI 이동은 `ALSEnemyTroop`과 `ALSEnemyOutpost`만 켠다. 플레이어 명령과 아군 자동 교전은 `Controls`와 `Combat`이 맡는다.
+- 기존 공용 `ALSTroopUnit`과 `ALSOutpost`에는 적 판단을 붙이지 않는다. 적 판단과 AI 이동은 `ALSEnemyTroop`, `ALSEnemyOutpost`, 실험 전용 `ALSShellExperimentEnemy`에서 켠다. 플레이어 명령과 아군 자동 교전은 `Controls`와 `Combat`이 맡는다.
 - 활동 도중 역할이나 담당 거점을 바꾸는 기능은 제공하지 않는다.
 - 적 이동은 `Controls`의 명령 큐와 별도 실행부를 쓴다. 요청 추적, 요청 교체 중 중단 구분, 사거리 안 공격 지점 탐색, 도착 오차 제한은 양쪽에 중복된다. `Controls`의 이동을 고친 PR은 적 이동에 같은 조건이 있는지 확인하고, 반대도 같다. 역할과 추적 경계 정책은 `Enemies`만 소유한다.
 

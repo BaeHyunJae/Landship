@@ -1,0 +1,4 @@
+Name,Health,AttackPower,AttackInterval,AttackRange,DetectionRange,VisionRadius,MovementSpeed
+Assault,100,15,2,180,10000,5000,100
+Carrier,120,0,2,180,10000,5000,90
+Heavy,600,30,3,1300,10000,5000,60
