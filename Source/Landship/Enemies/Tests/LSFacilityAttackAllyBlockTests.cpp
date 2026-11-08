@@ -2,15 +2,23 @@
 
 #include "AIController.h"
 #include "AssetCompilingManager.h"
+#include "Castle/LSCastle.h"
+#include "Castle/Tests/LSCastleTestFixture.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Controls/LSOrderComponent.h"
 #include "Engine/World.h"
+#include "Enemies/LSBattlefieldSetup.h"
+#include "Enemies/LSEnemyBehaviorComponent.h"
+#include "Enemies/LSEnemyOutpost.h"
+#include "Enemies/LSEnemyTroop.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "Maps/LSBattlefieldNavigationSystem.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
@@ -338,6 +346,107 @@ bool FLSFacilityAttackAllyBlockTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Facility preference accepts the nearby first candidate with a waiting ally"), FLSEnemyFacilityAttackTestAccess::FacilityGoal(
 		Attacker->Orders, Facility, PreferredNearDestination));
 	TestTrue(TEXT("Near-arrival first candidate stays preferred over farther alternatives"), PreferredNearDestination.Equals(FastDestination, 0.1));
+	Fixture.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSEnemyInvalidatedPathReplanTest,
+	"Landship.Enemies.Behavior.InvalidatedPathReplansWithoutFailureCooldown",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSEnemyInvalidatedPathReplanTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!TestTrue(TEXT("Isolated game world"), Fixture.CreateTestWorld(EWorldType::Game))) return false;
+	UWorld* World = Fixture.GetTestWorld();
+	FActorSpawnParameters Spawn;
+	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* Floor = World->SpawnActor<AActor>();
+	UBoxComponent* FloorBody = NewObject<UBoxComponent>(Floor);
+	Floor->SetRootComponent(FloorBody);
+	Floor->AddInstanceComponent(FloorBody);
+	FloorBody->SetBoxExtent(FVector(1800, 1800, 50));
+	FloorBody->SetMobility(EComponentMobility::Static);
+	FloorBody->SetCollisionObjectType(LSCollisionChannels::Ground);
+	FloorBody->SetCollisionResponseToAllChannels(ECR_Block);
+	FloorBody->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Floor->SetActorLocation(FVector(0, 0, -50));
+	FloorBody->RegisterComponent();
+	ANavMeshBoundsVolume* Bounds = World->SpawnActor<ANavMeshBoundsVolume>();
+	UBoxComponent* BoundsBox = NewObject<UBoxComponent>(Bounds);
+	Bounds->AddInstanceComponent(BoundsBox);
+	BoundsBox->SetupAttachment(Bounds->GetRootComponent());
+	BoundsBox->SetBoxExtent(FVector(1900, 1900, 600));
+	BoundsBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoundsBox->SetCanEverAffectNavigation(false);
+	BoundsBox->RegisterComponent();
+	ALSBattlefieldSetup* Setup = World->SpawnActor<ALSBattlefieldSetup>();
+	ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(1200, 1200, 142));
+	ALSEnemyOutpost* Core = World->SpawnActor<ALSEnemyOutpost>(FVector(-1200, 1200, 100), FRotator::ZeroRotator, Spawn);
+	ALSEnemyTroop* Guard = World->SpawnActor<ALSEnemyTroop>(FVector(-600, 0, 90), FRotator::ZeroRotator, Spawn);
+	ALSBasicAttackTestActor* Opponent = World->SpawnActor<ALSBasicAttackTestActor>(FVector(300, 0, 90), FRotator::ZeroRotator, Spawn);
+	if (!TestNotNull(TEXT("Battlefield setup"), Setup) || !TestNotNull(TEXT("Player castle"), Castle) ||
+		!TestNotNull(TEXT("Core outpost"), Core) || !TestNotNull(TEXT("Guard troop"), Guard) ||
+		!TestNotNull(TEXT("Opponent within guard domain"), Opponent)) return false;
+	Setup->PlayerCastle = Castle;
+	Setup->CoreOutpost = Core;
+	Castle->GetMovementComponent()->Deactivate();
+	Guard->Behavior->GuardAnchor = Floor;
+	Guard->Behavior->GuardAnchorRadius = 650;
+	ULSBattlefieldNavigationSystem* Nav = NewObject<ULSBattlefieldNavigationSystem>(World);
+	World->SetNavigationSystem(Nav);
+	Nav->InitializeForWorld(*World, FNavigationSystemRunMode::GameMode);
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	Nav->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+	if (!TestFalse(TEXT("Fixture navigation unlocked"), Nav->IsNavigationBuildingLocked())) return false;
+	Nav->Build();
+	if (!TestTrue(TEXT("Gameplay BeginPlay"), Fixture.BeginPlayInTestWorld())) return false;
+	Core->Behavior->SetComponentTickEnabled(false);
+	Core->BasicAttack->Deactivate();
+	Castle->Orders->SetComponentTickEnabled(false);
+	AAIController* AI = Cast<AAIController>(Guard->GetController());
+	UPathFollowingComponent* Following = AI ? AI->GetPathFollowingComponent() : nullptr;
+	if (!TestNotNull(TEXT("Production AI path follower"), Following)) return false;
+	auto Advance = [&](float Duration)
+	{
+		while (Duration > KINDA_SMALL_NUMBER)
+		{
+			const float Step = FMath::Min(Duration, 0.01f);
+			++GFrameCounter;
+			World->Tick(LEVELTICK_All, Step);
+			Duration -= Step;
+		}
+	};
+	Advance(0.2f);
+	const FNavPathSharedPtr OriginalPath = Following->GetPath();
+	if (!TestTrue(TEXT("Guard has a complete production movement path"), Following->GetStatus() == EPathFollowingStatus::Moving &&
+		OriginalPath.IsValid() && OriginalPath->IsValid() && !OriginalPath->IsPartial())) return false;
+	TestFalse(TEXT("Production path requires role validation before recalculation"), OriginalPath->WillRecalculateOnInvalidation());
+	const FAIRequestID OriginalRequest = Following->GetCurrentRequestId();
+	const FVector BeforeInvalidation = Guard->GetActorLocation();
+	OriginalPath->Invalidate();
+	Advance(0.2f);
+	const FNavPathSharedPtr ReplacementPath = Following->GetPath();
+	if (!TestTrue(TEXT("Invalidated movement replans within 0.2 seconds instead of the one-second failure cooldown"),
+		Following->GetStatus() == EPathFollowingStatus::Moving && Following->GetCurrentRequestId() != OriginalRequest &&
+		ReplacementPath.IsValid() && ReplacementPath->IsValid() && ReplacementPath != OriginalPath)) return false;
+	TestTrue(TEXT("Guard actually moves after native path invalidation"),
+		FVector::Dist2D(BeforeInvalidation, Guard->GetActorLocation()) > 10);
+	TestEqual(TEXT("Guard keeps its selected opponent after replanning"), Guard->Behavior->GetTarget(), static_cast<AActor*>(Opponent));
+	for (const FNavPathPoint& Point : ReplacementPath->GetPathPoints())
+		TestTrue(TEXT("Replacement path remains inside the guard domain"),
+			FVector::Dist2D(Point.Location, Floor->GetActorLocation()) <= Guard->Behavior->GuardAnchorRadius);
+	Opponent->SetActorLocation(FVector(1400, 0, 90));
+	ReplacementPath->Invalidate();
+	Advance(0.2f);
+	TestNull(TEXT("Replanning does not retain an opponent beyond guard reach"), Guard->Behavior->GetTarget());
+	TestTrue(TEXT("Guard returns or rests instead of pursuing outside its domain"),
+		Guard->Behavior->GetState() == ELSEnemyState::Returning || Guard->Behavior->GetState() == ELSEnemyState::GuardIdle);
+	const FNavPathSharedPtr ReturnPath = Following->GetPath();
+	if (ReturnPath.IsValid() && ReturnPath->IsValid())
+		for (const FNavPathPoint& Point : ReturnPath->GetPathPoints())
+			TestTrue(TEXT("Return path retains the guard domain after invalidation"),
+				FVector::Dist2D(Point.Location, Floor->GetActorLocation()) <= Guard->Behavior->GuardAnchorRadius);
 	Fixture.ForwardErrorMessages(this);
 	return true;
 }
