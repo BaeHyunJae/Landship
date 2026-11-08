@@ -4,12 +4,14 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "LSTroopUnit.generated.h"
 
+class ULSTroopCombatComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UAnimSequence;
+class ULSTroopPoolSubsystem;
 struct FLSDamageResult;
 
 UENUM(BlueprintType)
@@ -17,7 +19,11 @@ enum class ELSTroopType : uint8
 {
 	Spearman,
 	Archer,
-	Cavalry
+	Cavalry,
+	Medic,
+	Shieldbearer,
+	Mortar,
+	Bomber
 };
 
 /** 공통 전투·이동을 재사용하고 병종별 데이터 행과 임시 외형만 선택한다. */
@@ -28,6 +34,28 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 
   public:
 	ALSTroopUnit();
+	virtual bool SupportsBasicAttack() const override
+	{
+		return TroopType != ELSTroopType::Medic && TroopType != ELSTroopType::Mortar &&
+		       TroopType != ELSTroopType::Bomber;
+	}
+	static constexpr int32 GetTroopTypeCount() { return static_cast<int32>(ELSTroopType::Bomber) + 1; }
+	bool IsPoolManaged() const { return PoolOwner.IsValid(); }
+	uint64 GetActivationSerial() const { return ActivationSerial; }
+	bool CanReturnToPool() const;
+	/** 풀에서 생성한 기본 병력에만 연결한다. 일반 배치 액터는 자동 편입하지 않는다. */
+	bool PrepareForPool(ULSTroopPoolSubsystem* Pool);
+	bool ActivateFromPool(ULSTroopPoolSubsystem* Pool, uint64 Serial, ELSFaction NewFaction,
+	    const FTransform& Transform, AActor* NewOwner);
+	bool DeactivateForPool(ULSTroopPoolSubsystem* Pool, uint64 Serial);
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Landship|Troops")
+	TObjectPtr<ULSTroopCombatComponent> CombatBehavior;
+	void SetTacticalLabel(const FString& State);
+	void SetFieldSpeedMultiplier(float Multiplier);
+	void SetChargeMovementMultiplier(float Multiplier);
+	void SetLanceLowered(bool bLowered);
+	UPROPERTY(VisibleAnywhere, Category = "Landship|Troops")
+	TObjectPtr<UStaticMeshComponent> Lance;
 	virtual void OnConstruction(const FTransform& Transform) override;
 	UFUNCTION(BlueprintPure, Category = "Landship|Troops")
 	ELSTroopType GetTroopType() const
@@ -56,8 +84,14 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	virtual void Tick(float DeltaSeconds) override;
 
   private:
+	void RefreshMovementSpeed();
+	float FieldSpeedMultiplier = 1.0f;
+	float ChargeMovementMultiplier = 1.0f;
 	friend class ULSTroopProductionComponent;
 	void RefreshDefinition();
+	void InitializeCombatBehavior();
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Behavior")
+	TMap<ELSTroopType, TSubclassOf<ULSTroopCombatComponent>> CombatBehaviorClasses;
 	void InitializeAnimations();
 	void PlayIdleAnimation();
 	void RestoreMarkerColor();
@@ -101,6 +135,8 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	TObjectPtr<UAnimSequence> ActiveAttackAnimation;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> MarkerMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> MarkerMaterialSource;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback", meta = (ClampMin = "0.01", Units = "s"))
 	float HitFlashDuration = 0.12f;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Troops|Feedback")
@@ -110,4 +146,9 @@ class LANDSHIP_API ALSTroopUnit : public ALSUnit
 	FTimerHandle AttackAnimationTimer;
 	FTimerHandle HitFlashTimer;
 	bool bTroopTypeLocked = false;
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ULSTroopPoolSubsystem> PoolOwner;
+	uint64 ActivationSerial = 0;
+	FTimerHandle PoolDeathTimer;
+	bool bPoolRemovesOnDeath = false;
 };

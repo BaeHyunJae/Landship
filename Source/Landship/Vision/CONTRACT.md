@@ -2,6 +2,8 @@
 
 ## 제공하는 것
 
+- 병력 풀의 `SuspendForPool`은 시야 참여와 숨김 복원 기록을 정리한다. 재사용 액터는 새 진영·체력·표시 상태를 준비한 후 `ResumeFromPool`로 참여를 다시 등록한다. 비활성 병력은 시야와 미니맵 참여 목록에 남지 않는다.
+
 - `ULSVisionSubsystem`은 아군 시야 스냅샷을 관리한다. `UWorld`에서 얻어 조회한다.
   - `IsVisionEnabled()`는 이 월드에서 시야 규칙이 켜졌는지 반환한다.
   - `IsActorVisibleToFriendly(Actor)`는 액터가 현재 시야 안이거나 은폐 대상이 아니면 true다. 시야 규칙이 꺼진 월드에서는 항상 true다.

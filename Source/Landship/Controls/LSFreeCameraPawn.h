@@ -1,0 +1,71 @@
+#pragma once
+
+#include "GameFramework/Pawn.h"
+#include "LSFreeCameraPawn.generated.h"
+
+class USphereComponent;
+class UCameraComponent;
+
+/** 병력에 빙의하지 않는 자유 관전 카메라. 이동 입력과 커서 모드는 컨트롤러가 소유한다. */
+UCLASS()
+class LANDSHIP_API ALSFreeCameraPawn : public APawn
+{
+	GENERATED_BODY()
+  public:
+	ALSFreeCameraPawn();
+	void MoveCamera(const FVector& LocalDirection, float DeltaSeconds, bool bFast);
+	void Look(const FVector2D& MouseDelta);
+	void Pan(const FVector2D& MouseDelta);
+	void Dolly(float Steps);
+	void ChangeSpeed(float Steps);
+	void ResetView();
+	/** 관전 카메라의 현재 시점과 Home 복귀 위치를 함께 갱신한다. */
+	void SetHomeView(const FVector& Location, const FRotator& Rotation);
+	void FollowCastle(const AActor& Castle, float DeltaSeconds, bool bSnap);
+	void SetTacticalView(const FVector2D& BattlefieldSize, float AspectRatio);
+	void UpdateTacticalView(const AActor& Castle, float DeltaSeconds);
+	bool IsTacticalView() const { return bTacticalView; }
+	float GetMoveSpeed() const
+	{
+		return MoveSpeed;
+	}
+
+  protected:
+	virtual void BeginPlay() override;
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USphereComponent> Body;
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UCameraComponent> Camera;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "1"))
+	float MoveSpeed = 1000;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "1"))
+	float MinSpeed = 100;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "1"))
+	float MaxSpeed = 5000;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "1"))
+	float FastMultiplier = 3;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.01"))
+	float LookSensitivity = 0.3f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "0.01"))
+	float PanUnitsPerPixel = 1.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "1", Units = "cm"))
+	float DollyStep = 200.0f;
+
+  private:
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "0.01", Units = "s"))
+	float ViewBlendDuration = 0.3f;
+	FVector BlendStartLocation = FVector::ZeroVector;
+	double BlendStartPitch = 0;
+	float ViewBlendElapsed = 0;
+	bool bBlendingView = false;
+	double TacticalHeight = 0;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
+	float CastleCameraDistance = 1100.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Castle", meta = (ClampMin = "1", Units = "cm"))
+	float CastleCameraHeight = 850.0f;
+	bool bTacticalView = false;
+	FVector BoundsMin = FVector(-2500, -2000, 40);
+	FVector BoundsMax = FVector(2500, 2000, 3000);
+	FVector HomeLocation = FVector(-2000, -1600, 1800);
+	FRotator HomeRotation = FRotator(-38, 35, 0);
+};
