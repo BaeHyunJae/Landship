@@ -37,12 +37,6 @@ struct LANDSHIP_API FLSUnitStatRow : public FTableRowBase
 	/** 이동 속도(cm/s). 수치 조회용으로 저장하며 이동 컴포넌트에 자동 적용하지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats", meta = (Units = "cm/s"))
 	float MovementSpeed = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
-	float Armor = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
-	float ArmorPenetration = 0.0f;
 };
 
 /** 성의 초기 수치다. 무장별 공격 수치는 성의 수치에 포함하지 않는다. */

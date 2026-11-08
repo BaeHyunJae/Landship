@@ -1,7 +1,4 @@
 #include "Combat/LSBasicProjectile.h"
-#include "Troops/LSShieldbearerComponent.h"
-#include "Combat/LSProjectilePoolSubsystem.h"
-#include "Combat/LSBasicAttackComponent.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -13,7 +10,6 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 ALSBasicProjectile::ALSBasicProjectile()
@@ -46,50 +42,6 @@ ALSBasicProjectile::ALSBasicProjectile()
 	Tip->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.2f));
 	Tip->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Tip->SetCanEverAffectNavigation(false);
-}
-
-bool ALSBasicProjectile::SupportsPooling() const
-{
-	return GetClass() == ALSBasicProjectile::StaticClass();
-}
-
-bool ALSBasicProjectile::PrepareForPool(ULSProjectilePoolSubsystem* Pool)
-{
-	if (!IsValid(Pool) || Pool->GetWorld() != GetWorld() || HasActorBegunPlay() || IsPoolManaged() ||
-	    !SupportsPooling())
-		return false;
-	PoolOwner = Pool;
-	ResetForPool();
-	return true;
-}
-
-bool ALSBasicProjectile::ActivateFromPool(ULSProjectilePoolSubsystem* Pool, uint64 Serial,
-    const FTransform& Transform, AActor* NewOwner, APawn* NewInstigator)
-{
-	if (!IsValid(Pool) || PoolOwner.Get() != Pool || ActivationSerial != 0 ||
-	    !Pool->IsAcquired(this, Serial))
-		return false;
-	ActivationSerial = Serial;
-	SetActorTransform(Transform, false, nullptr, ETeleportType::TeleportPhysics);
-	SetOwner(NewOwner);
-	SetInstigator(NewInstigator);
-	return IsValid(this) && !IsActorBeingDestroyed() && Pool->IsAcquired(this, Serial) && ActivationSerial == Serial;
-}
-
-bool ALSBasicProjectile::DeactivateForPool(ULSProjectilePoolSubsystem* Pool, uint64 Serial)
-{
-	if (!IsValid(Pool) || PoolOwner.Get() != Pool || Serial == 0 || ActivationSerial != Serial ||
-	    Pool->IsAcquired(this, Serial))
-		return false;
-	ActivationSerial = 0;
-	ResetForPool();
-	return true;
-}
-
-bool ALSBasicProjectile::IsCurrentFlight(uint64 Serial) const
-{
-	return bLaunched && (!IsPoolManaged() || (Serial != 0 && Serial == ActivationSerial &&
-	    PoolOwner->IsAcquired(this, Serial)));
 }
 
 void ALSBasicProjectile::SetVisualStyle(ELSProjectileVisualStyle Style)
@@ -152,17 +104,13 @@ bool ALSBasicProjectile::LaunchFirstBlocking(const FLSDamageRequest& Request, co
 bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const FVector& Direction, float Speed,
                                           float Radius, float Lifetime, UMaterialInterface* Material)
 {
-	if (bLaunched || (IsPoolManaged() && !PoolOwner->IsAcquired(this, ActivationSerial)) ||
-	    Direction.ContainsNaN() || Direction.IsNearlyZero() || !FMath::IsFinite(Speed) || Speed <= 0 ||
+	if (bLaunched || Direction.ContainsNaN() || Direction.IsNearlyZero() || !FMath::IsFinite(Speed) || Speed <= 0 ||
 	    !FMath::IsFinite(Radius) || Radius <= 0 || !FMath::IsFinite(Lifetime) || Lifetime <= 0 ||
 	    !FMath::IsFinite(Request.DamageAmount) || Request.DamageAmount < 0 ||
 	    (Request.bHasSourceFaction && !LSFaction::IsValid(Request.SourceFaction)))
 		return false;
 	ShotRequest = Request;
 	OriginalSource = Request.SourceActor;
-	SourceAttack = IsValid(Request.SourceActor) ? Request.SourceActor->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
-	bHasSourceLife = SourceAttack.IsValid();
-	SourceLifeSerial = bHasSourceLife ? SourceAttack->GetCombatLifeSerial() : 0;
 	// 공격자를 강하게 보유하지 않는다. 제거된 뒤에도 저장된 진영으로 오폭을 판정한다.
 	ShotRequest.SourceActor = nullptr;
 	ShotRequest.DamageCauser = nullptr;
@@ -174,41 +122,19 @@ bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const
 	SetActorRotation(FlightVelocity.Rotation());
 	RemainingFlightTime = Lifetime;
 	bLaunched = true;
-	SetActorHiddenInGame(false);
-	SetActorEnableCollision(true);
-	SetActorTickEnabled(true);
-	if (IsPoolManaged())
-	{
-		const uint64 Serial = ActivationSerial;
-		GetWorldTimerManager().SetTimer(PoolLifetimeTimer, FTimerDelegate::CreateWeakLambda(this, [this, Serial]()
-		{
-			if (IsCurrentFlight(Serial))
-				FinishFlight();
-		}), Lifetime, false);
-	}
-	else
-		SetLifeSpan(Lifetime);
+	SetLifeSpan(Lifetime);
 	if (!Material)
 		Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Landship/Troops/Materials/M_TroopPrototype.M_TroopPrototype"));
 	if (Material)
 	{
-		if (FlightMaterial != Material || !FlightMaterialInstance)
-		{
-			FlightMaterial = Material;
-			FlightMaterialInstance = UMaterialInstanceDynamic::Create(Material, this);
-		}
+		UMaterialInstanceDynamic* Instance = UMaterialInstanceDynamic::Create(Material, this);
 		const FLinearColor Color = VisualStyle == ELSProjectileVisualStyle::TurretBolt
-		    ? FLinearColor(1.0f, 0.28f, 0.015f)
-		    : (Request.SourceFaction == ELSFaction::Ally ? FLinearColor(0.08f, 0.55f, 1.0f)
-		                                             : FLinearColor(0.95f, 0.12f, 0.05f));
-		FlightMaterialInstance->SetVectorParameterValue(TEXT("TeamColor"), Color);
-		Shaft->SetMaterial(0, FlightMaterialInstance);
-		Tip->SetMaterial(0, FlightMaterialInstance);
-	}
-	else
-	{
-		Shaft->SetMaterial(0, nullptr);
-		Tip->SetMaterial(0, nullptr);
+			? FLinearColor(1.0f, 0.28f, 0.015f)
+			: (Request.SourceFaction == ELSFaction::Ally ? FLinearColor(0.08f, 0.55f, 1.0f)
+			                                          : FLinearColor(0.95f, 0.12f, 0.05f));
+		Instance->SetVectorParameterValue(TEXT("TeamColor"), Color);
+		Shaft->SetMaterial(0, Instance);
+		Tip->SetMaterial(0, Instance);
 	}
 	return true;
 }
@@ -216,22 +142,10 @@ bool ALSBasicProjectile::InitializeFlight(const FLSDamageRequest& Request, const
 void ALSBasicProjectile::BeginPlay()
 {
 	Super::BeginPlay();
-	if (IsPoolManaged() && !bLaunched)
-		SetActorTickEnabled(false);
-	if (!bLaunched && !IsPoolManaged())
+	if (!bLaunched)
 	{
 		Destroy();
 	}
-}
-
-void ALSBasicProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	GetWorldTimerManager().ClearTimer(PoolLifetimeTimer);
-	ActivationSerial = 0;
-	bLaunched = false;
-	OnDamageApplied.Clear();
-	OnDamageAppliedNative.Clear();
-	Super::EndPlay(EndPlayReason);
 }
 
 void ALSBasicProjectile::Tick(float DeltaSeconds)
@@ -249,8 +163,8 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	{
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(LSObstacleBallista), false, this);
 		Query.bFindInitialOverlaps = true;
-		if (AActor* Source = MakeHitRequest().SourceActor)
-			Query.AddIgnoredActor(Source);
+		if (OriginalSource.IsValid())
+			Query.AddIgnoredActor(OriginalSource.Get());
 		FHitResult Hit;
 		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity,
 		                                      LSCollisionChannels::ObstacleProjectile,
@@ -274,7 +188,7 @@ void ALSBasicProjectile::Tick(float DeltaSeconds)
 	RemainingFlightTime -= TravelSeconds;
 	if (RemainingFlightTime <= 0)
 	{
-		FinishFlight();
+		Destroy();
 	}
 }
 
@@ -283,8 +197,6 @@ FLSDamageRequest ALSBasicProjectile::MakeHitRequest() const
 	FLSDamageRequest Request = ShotRequest;
 	AActor* Source = OriginalSource.Get();
 	Request.SourceActor = IsValid(Source) && !Source->IsActorBeingDestroyed() ? Source : nullptr;
-	if (bHasSourceLife && (!SourceAttack.IsValid() || SourceAttack->GetCombatLifeSerial() != SourceLifeSerial))
-		Request.SourceActor = nullptr;
 	return Request;
 }
 
@@ -294,9 +206,9 @@ bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, 
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBasicProjectile), false, this);
+	if (OriginalSource.IsValid())
+		Query.AddIgnoredActor(OriginalSource.Get());
 	const FLSDamageRequest Request = MakeHitRequest();
-	if (Request.SourceActor)
-		Query.AddIgnoredActor(Request.SourceActor);
 	bool bSkipped;
 	bool bHasDamageHit = false;
 	do
@@ -318,14 +230,6 @@ bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, 
 			AActor* Target = Hit.GetActor();
 			if (!IsValid(Target))
 				continue;
-			const auto* Shield = Target->FindComponentByClass<ULSShieldbearerComponent>();
-			if (Shield && Shield->IsShieldSurface(Hit.GetComponent()) &&
-			    (VisualStyle != ELSProjectileVisualStyle::Arrow || !Shield->BlocksArrow(FlightVelocity)))
-			{
-				Query.AddIgnoredComponent(Hit.GetComponent());
-				bSkipped = true;
-				continue;
-			}
 			const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Target);
 			if (!Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) && Faction &&
 			    LSFaction::IsValid(Faction->GetFaction()) &&
@@ -372,7 +276,6 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 		return;
 	}
 	bResolved = true;
-	const uint64 ShotSerial = ActivationSerial;
 	SetActorTickEnabled(false);
 	SetActorLocation(Hit.Location, false);
 	if (!IsValid(this) || IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown)
@@ -384,10 +287,7 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 	const ILSFactionInterface* Faction = IsValid(Target) ? Cast<ILSFactionInterface>(Target) : nullptr;
 	const bool bCanDamage = Faction && LSFaction::IsValid(Faction->GetFaction()) &&
 	    ULSCombatTargetLibrary::IsCombatAlive(Target);
-	const auto* Shield = IsValid(Target) ? Target->FindComponentByClass<ULSShieldbearerComponent>() : nullptr;
-	const bool bShieldBlocked = VisualStyle == ELSProjectileVisualStyle::Arrow && Shield &&
-	    Shield->IsShieldSurface(Hit.GetComponent()) && Shield->BlocksArrow(FlightVelocity);
-	if (Health && bCanDamage && !bShieldBlocked)
+	if (Health && bCanDamage)
 	{
 		FLSDamageRequest Request = MakeHitRequest();
 		Request.DamageCauser = this;
@@ -397,62 +297,13 @@ void ALSBasicProjectile::ResolveHit(const FHitResult& Hit)
 		Request.IncomingDirection = FlightVelocity.GetSafeNormal();
 		const FLSApplyDamageResult Result = Health->ApplyDamage(Request);
 		if (IsValid(this) && !IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown &&
-		    IsCurrentFlight(ShotSerial) && bResolved && Result.AppliedDamage > 0)
+		    Result.AppliedDamage > 0)
 		{
-			OnDamageAppliedNative.Broadcast(IsValid(Target) ? Target : nullptr, Result.AppliedDamage);
-			if (IsValid(this) && !IsActorBeingDestroyed() && IsCurrentFlight(ShotSerial) && bResolved)
-				OnDamageApplied.Broadcast(IsValid(Target) ? Target : nullptr, Result.AppliedDamage);
+			OnDamageApplied.Broadcast(IsValid(Target) ? Target : nullptr, Result.AppliedDamage);
 		}
 	}
-	if (IsValid(this) && !IsActorBeingDestroyed() && IsCurrentFlight(ShotSerial) && bResolved)
+	if (IsValid(this) && !IsActorBeingDestroyed())
 	{
-		FinishFlight();
+		Destroy();
 	}
-}
-
-void ALSBasicProjectile::LifeSpanExpired()
-{
-	FinishFlight();
-}
-
-void ALSBasicProjectile::FinishFlight()
-{
-	if (IsPoolManaged() && GetWorld() && !GetWorld()->bIsTearingDown)
-	{
-		PoolOwner->ReleaseProjectile({this, ActivationSerial});
-		return;
-	}
-	Destroy();
-}
-
-void ALSBasicProjectile::ResetForPool()
-{
-	SetLifeSpan(0);
-	GetWorldTimerManager().ClearTimer(PoolLifetimeTimer);
-	SetActorTickEnabled(false);
-	SetActorEnableCollision(false);
-	SetActorHiddenInGame(true);
-	OnDamageApplied.Clear();
-	OnDamageAppliedNative.Clear();
-	ShotRequest = FLSDamageRequest();
-	OriginalSource.Reset();
-	SourceAttack.Reset();
-	SourceLifeSerial = 0;
-	bHasSourceLife = false;
-	FlightVelocity = FVector::ZeroVector;
-	RemainingFlightTime = 0;
-	bLaunched = false;
-	bResolved = false;
-	bHitsFirstBlocking = false;
-	bStopsAtWorldGeometry = false;
-	FlightOrigin = FVector::ZeroVector;
-	VisualStyle = ELSProjectileVisualStyle::Arrow;
-	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	SetOwner(nullptr);
-	SetInstigator(nullptr);
-	const ALSBasicProjectile* Defaults = GetClass()->GetDefaultObject<ALSBasicProjectile>();
-	Shaft->SetRelativeTransform(Defaults->Shaft->GetRelativeTransform());
-	Tip->SetRelativeTransform(Defaults->Tip->GetRelativeTransform());
-	Collision->SetSphereRadius(Defaults->Collision->GetUnscaledSphereRadius());
-	SetActorTransform(FTransform::Identity, false, nullptr, ETeleportType::TeleportPhysics);
 }
