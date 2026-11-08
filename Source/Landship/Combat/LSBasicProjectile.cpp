@@ -1,4 +1,5 @@
 #include "Combat/LSBasicProjectile.h"
+#include "Combat/LSPhysicalBlocker.h"
 
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatTargetLibrary.h"
@@ -230,6 +231,12 @@ bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, 
 			AActor* Target = Hit.GetActor();
 			if (!IsValid(Target))
 				continue;
+			if (LSPhysicalBlocker::IsBlockingBody(Hit.GetComponent()))
+			{
+				OutHit = Hit;
+				bHasDamageHit = true;
+				break;
+			}
 			const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Target);
 			if (!Target->IsActorBeingDestroyed() && ULSCombatTargetLibrary::IsCombatAlive(Target) && Faction &&
 			    LSFaction::IsValid(Faction->GetFaction()) &&
@@ -256,8 +263,9 @@ bool ALSBasicProjectile::FindFirstHit(const FVector& Start, const FVector& End, 
 		GeometryQuery) && (GeometryHit.bBlockingHit || GeometryHit.bStartPenetrating))
 	{
 		AActor* Actor = GeometryHit.GetActor();
-		// 전투 몸체의 통과·명중은 위의 피해 정책이 정한다. 같은 진영과 시체를 지형으로 다시 막지 않는다.
-		if (IsValid(Actor) && Cast<ILSFactionInterface>(Actor) && Actor->FindComponentByClass<ULSHealthComponent>())
+		// 명시적 물리 차단만 체력·진영 통과 정책보다 우선한다. 그 밖의 전투 몸체는 기존 정책을 유지한다.
+		if (!LSPhysicalBlocker::IsBlockingBody(GeometryHit.GetComponent()) && IsValid(Actor) &&
+			Cast<ILSFactionInterface>(Actor) && Actor->FindComponentByClass<ULSHealthComponent>())
 		{
 			GeometryQuery.AddIgnoredActor(Actor);
 			continue;

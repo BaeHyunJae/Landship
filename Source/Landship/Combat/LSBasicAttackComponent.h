@@ -117,6 +117,9 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	/** 사거리 밖 대상도 지정할 수 있으며 사거리 안에 들어오면 공격한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
 	bool StartAttack(AActor* Target);
+	/** 명시적으로 참여한 살아 있는 물리 차단물 하나를 공격한다. 오폭을 포함한 공통 피해 정책을 따른다.
+	 * 자동 획득과 표적 resolver를 사용하지 않으며 사거리·쿨타임·실제 피해 처리는 기존 공격과 같다. */
+	bool StartPhysicalBlockerAttack(AActor* Target);
 
 	/** 현재 대상이 유효하면 유지하고, 대상을 잃었을 때 사거리 안의 적을 탐색한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Attack")
@@ -171,6 +174,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 
   private:
 	bool IsValidCombatPair(AActor* Target) const;
+	bool IsValidPhysicalBlockerPair(AActor* Target) const;
 	void FireProjectile(AActor* Target, const FLSAttackExecution& Execution);
 	UFUNCTION()
 	void OnProjectileDamage(AActor* Target, float AppliedDamage);
@@ -200,6 +204,7 @@ class LANDSHIP_API ULSBasicAttackComponent : public UActorComponent
 	float EffectiveInterval = 0.0f;
 	bool bResolvingAttack = false;
 	bool bAutoSearching = false;
+	bool bPhysicalBlockerAttack = false;
 	bool bBattleActionsEnded = false;
 	FLSResolveAttackTarget AttackTargetResolverEvent;
 	int64 LastExecutionId = 0;

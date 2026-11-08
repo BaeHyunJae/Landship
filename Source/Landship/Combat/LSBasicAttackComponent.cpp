@@ -1,4 +1,5 @@
 #include "Combat/LSBasicAttackComponent.h"
+#include "Combat/LSPhysicalBlocker.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
 
@@ -40,6 +41,8 @@ bool ULSBasicAttackComponent::HasClearAttackPathFromLocation(const FVector& Sour
 		AActor* Blocker = Hit.GetActor();
 		if (Blocker == Target)
 			return true;
+		if (LSPhysicalBlocker::IsBlockingBody(Hit.GetComponent()))
+			return false;
 		const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(Blocker);
 		const bool bCombatBody = IsValid(Blocker) && Faction && Blocker->FindComponentByClass<ULSHealthComponent>();
 		if (bCombatBody && (!LSFaction::IsValid(Faction->GetFaction()) ||
@@ -141,18 +144,43 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 	{
 		return false;
 	}
+	if (bPhysicalBlockerAttack) return IsValidPhysicalBlockerPair(Target);
 	return ULSCombatTargetLibrary::CanAutoAttackTarget(Owner, Target) &&
 	       ULSVisionSubsystem::PassesFriendlySight(Owner, Target);
 }
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)
 {
+	if (bPhysicalBlockerAttack) StopAttack();
+	bPhysicalBlockerAttack = false;
 	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured || !IsValidCombatPair(Target))
 	{
 		return false;
 	}
 	AttackTarget = Target;
 	bAutoSearching = false;
+	StartAttackTimer();
+	UpdateAttack();
+	return true;
+}
+
+bool ULSBasicAttackComponent::IsValidPhysicalBlockerPair(AActor* Target) const
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !IsValid(Target) || Target == Owner || Target->GetWorld() != GetWorld() ||
+		!ULSCombatTargetLibrary::IsCombatAlive(Owner) || !ULSCombatTargetLibrary::IsCombatAlive(Target) ||
+		!LSPhysicalBlocker::FindBlockingBody(Target) || !ULSVisionSubsystem::PassesFriendlySight(Owner, Target)) return false;
+	return ULSHealthComponent::EvaluateDamagePolicy(
+		ULSHealthComponent::MakeDamageRequest(Settings.Damage, Owner, Owner), Target) == ELSApplyDamageStatus::Applied;
+}
+
+bool ULSBasicAttackComponent::StartPhysicalBlockerAttack(AActor* Target)
+{
+	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured ||
+		!IsValidPhysicalBlockerPair(Target)) return false;
+	bPhysicalBlockerAttack = true;
+	bAutoSearching = false;
+	AttackTarget = Target;
 	StartAttackTimer();
 	UpdateAttack();
 	return true;
@@ -175,6 +203,8 @@ void ULSBasicAttackComponent::StartAttackTimer()
 
 bool ULSBasicAttackComponent::StartAutoAttack()
 {
+	if (bPhysicalBlockerAttack) StopAttack();
+	bPhysicalBlockerAttack = false;
 	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured)
 	{
 		return false;
@@ -259,7 +289,7 @@ void ULSBasicAttackComponent::UpdateAttack()
 		return;
 	}
 	TGuardValue<bool> ResolvingGuard(bResolvingAttack, true);
-	if (AttackTargetResolverEvent.IsBound())
+	if (AttackTargetResolverEvent.IsBound() && !bPhysicalBlockerAttack)
 	{
 		if (GetCooldownRemaining() > 0.0f)
 		{
@@ -338,6 +368,7 @@ float ULSBasicAttackComponent::GetCooldownRemaining() const
 void ULSBasicAttackComponent::StopAttack()
 {
 	++StopRevision;
+	bPhysicalBlockerAttack = false;
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(AttackTimer);
