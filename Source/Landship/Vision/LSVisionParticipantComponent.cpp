@@ -159,6 +159,13 @@ void ULSVisionParticipantComponent::NotifyCombatDeath()
 
 void ULSVisionParticipantComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SuspendForPool();
+	Super::EndPlay(EndPlayReason);
+}
+
+void ULSVisionParticipantComponent::SuspendForPool()
+{
+	bParticipationEnabled = false;
 	if (bRegistered && GetWorld())
 	{
 		if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
@@ -179,5 +186,20 @@ void ULSVisionParticipantComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 		}
 	}
 	ChildOriginalHidden.Reset();
-	Super::EndPlay(EndPlayReason);
+	bHiddenBySight = false;
+}
+
+void ULSVisionParticipantComponent::ResumeFromPool()
+{
+	bParticipationEnabled = true;
+	if (bRegistered || !GetWorld() || GetWorld()->bIsTearingDown)
+		return;
+	bOriginalHidden = GetOwner()->IsHidden();
+	if (ULSVisionSubsystem* Vision = GetWorld()->GetSubsystem<ULSVisionSubsystem>())
+	{
+		if (Vision->IsVisionEnabled() && ShouldConceal())
+			ApplySightVisibility(false);
+		bRegistered = true;
+		Vision->RegisterParticipant(this);
+	}
 }

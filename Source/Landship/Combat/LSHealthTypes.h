@@ -60,6 +60,14 @@ struct LANDSHIP_API FLSDamageRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
 	float DamageAmount = 0.0f;
 
+	/** 발사 시 고정한 관통력이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Damage")
+	float ArmorPenetration = 0.0f;
+
+	/** 자폭병 자체 소모처럼 방어력으로 감소하면 안 되는 피해에 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
+	bool bIgnoreArmor = false;
+
 	/** 공격한 유닛·성·거점 자체다. 무기·발사체는 DamageCauser에 넣는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
 	TObjectPtr<AActor> SourceActor = nullptr;

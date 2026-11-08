@@ -9,6 +9,7 @@
 DECLARE_DELEGATE(FLSPrepareCombatDeath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDamageApplied, const FLSDamageResult&, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLSOnCombatDeath, const FLSDamageResult&, Damage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLSOnCombatHealed, float, AppliedHealing, float, CurrentHealth);
 DECLARE_MULTICAST_DELEGATE_OneParam(FLSOnDamageCommitted, const FLSDamageResult&);
 
 /** 세 대상이 공유하는 체력 상태와 피해 처리다. 대상별 사망 처리는 네이티브 훅에 맡긴다. */
@@ -19,10 +20,14 @@ class LANDSHIP_API ULSHealthComponent : public UActorComponent
 
 public:
 	ULSHealthComponent();
+	/** 숨김·충돌 중지 상태의 풀 수명만 초기화한다. 피해 알림 실행 중에는 거부한다. */
+	bool ResetForPool();
+	bool IsProcessingDamage() const { return bProcessingDamage; }
 
 	/** 소유 대상의 수치 읽기·구성 검사 이후 부모 BeginPlay 전에 한 번 호출한다. 수치 실패의 진단은 호출자가 먼저 수행해야 한다. */
 	bool InitializeHealth(ELSCombatStatsInitResult StatsResult, float InitialHealth,
-		const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError);
+		const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError,
+		float InitialArmor = 0.0f, float InitialArmorPenetration = 0.0f);
 
 	/** 준비 전·실패 시 false이며 출력을 보존한다. 준비 성공은 체력 0인 사망 상태도 포함한다. */
 	UFUNCTION(BlueprintPure, Category = "Landship|Health")
@@ -44,8 +49,20 @@ public:
 	/** 체력 변경의 공통 진입점이다. UE TakeDamage에 자동 연결되지 않는다. 알림 중 재진입해도 반환값은 이 요청의 결과다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	FLSApplyDamageResult ApplyDamage(const FLSDamageRequest& Request);
+	/** 준비된 생존 대상만 최대 체력까지 회복한다. 잘못된 값·체력 알림 중·사망은 0을 반환한다. */
+	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
+	float RestoreHealth(float Amount);
+	/** 지속 치유의 독점 권한이다. 활성 권한이 있으면 다른 컴포넌트는 획득하지 못한다. */
+	bool CanClaimHealing(const UActorComponent* Healer) const;
+	uint64 TryClaimHealing(UActorComponent* Healer);
+	bool HasHealingClaim(const UActorComponent* Healer, uint64 Serial) const;
+	void ReleaseHealingClaim(const UActorComponent* Healer, uint64 Serial);
+	/** 권한과 세대가 일치하는 치유만 적용한다. 일반 회복 API의 생존·최대 체력 규칙도 유지한다. */
+	float RestoreClaimedHealth(UActorComponent* Healer, uint64 Serial, float Amount);
+	UPROPERTY(BlueprintAssignable, Category = "Landship|Health")
+	FLSOnCombatHealed OnHealedEvent;
 
-	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영을 보존한다. */
+	/** 발사·공격 실행 시 생성해 명중 시 전달한다. 주체가 제거돼도 최초 진영과 관통력을 보존한다. */
 	UFUNCTION(BlueprintCallable, Category = "Landship|Health")
 	static FLSDamageRequest MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser);
 
@@ -86,8 +103,15 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Landship|Health")
 	FLSHealthSnapshot Health;
+	float Armor = 0.0f;
+	float ArmorPenetration = 0.0f;
 
 	FLSPrepareCombatDeath PrepareDeathEvent;
+	bool bProcessingDamage = false;
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UActorComponent> ActiveHealer;
+	uint64 HealingClaimSerial = 0;
+	uint64 NextHealingClaimSerial = 0;
 	UPROPERTY(Transient)
 	FLSDamageResult LastDamage;
 	bool bHasTakenDamage = false;
