@@ -129,8 +129,7 @@ void ALSUnit::BeginPlay()
 	bFactionLocked = true;
 	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
 	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
-		FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError(),
-		Stats.Armor, Stats.ArmorPenetration))
+		FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError()))
 	{
 		// 준비 실패는 사망이 아니므로 알림·랙돌·제거 없이 실행과 방해 충돌만 막는다.
 		NeutralizeCombat();
@@ -177,48 +176,6 @@ bool ALSUnit::TryGetStats(FLSUnitStatRow& OutStats) const
 		return false;
 	}
 	OutStats = Stats;
-	return true;
-}
-
-bool ALSUnit::SuspendCombatForPool()
-{
-	if (Health->IsProcessingDamage() || BasicAttack->IsResolvingAttack())
-		return false;
-	Vision->SuspendForPool();
-	EndBattleActions();
-	Orders->SuspendForPool();
-	SetActorHiddenInGame(true);
-	SetActorEnableCollision(false);
-	Selection->SetPlayerControlled(false);
-	if (!BasicAttack->ResetForPool() || !Health->ResetForPool())
-		return false;
-	StatsInitResult = ELSCombatStatsInitResult::NotAttempted;
-	return true;
-}
-
-bool ALSUnit::PreparePooledCombat(ELSFaction NewFaction)
-{
-	if (!IsHidden() || GetActorEnableCollision() || !LSFaction::IsValid(NewFaction) ||
-	    Health->GetInitializationState() != ELSHealthInitializationState::NotAttempted)
-		return false;
-	Faction = NewFaction;
-	bBattleActionsEnded = false;
-	StatsInitResult = LSCombatStats::TryReadRow(StatsRow, this, Stats);
-	if (!Health->InitializeHealth(StatsInitResult, Stats.Health,
-	    FLSPrepareCombatDeath::CreateUObject(this, &ALSUnit::PrepareForDeath), GetCombatConfigurationError(),
-	    Stats.Armor, Stats.ArmorPenetration))
-		return false;
-	FLSBasicAttackSettings AttackSettings;
-	AttackSettings.Damage = Stats.AttackPower;
-	AttackSettings.Interval = Stats.AttackInterval;
-	AttackSettings.Range = Stats.AttackRange;
-	if (SupportsBasicAttack() && !BasicAttack->ConfigureAttack(AttackSettings))
-		return false;
-	BasicAttack->Activate();
-	Orders->ResumeFromPool();
-	Vision->SetSightRadius(Stats.VisionRadius);
-	Selection->SetPlayerControlled(NewFaction == ELSFaction::Ally);
-	GetCharacterMovement()->MaxWalkSpeed = Stats.MovementSpeed;
 	return true;
 }
 
@@ -289,8 +246,6 @@ void ALSUnit::EndBattleActions()
 	if (bBattleActionsEnded) return;
 	const FLSPreservedBattleMotion Motion(this);
 	bBattleActionsEnded = true;
-	if (auto* SlopeMovement = Cast<ULSSlopeMovementComponent>(GetCharacterMovement()))
-		SlopeMovement->ClearSlopeSpeedCurve();
 	Orders->EndBattleActions();
 	BasicAttack->EndBattleActions();
 	if (ULSEnemyBehaviorComponent* Enemy = FindComponentByClass<ULSEnemyBehaviorComponent>())

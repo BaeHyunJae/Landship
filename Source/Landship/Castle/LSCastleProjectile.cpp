@@ -1,7 +1,6 @@
 #include "Castle/LSCastleProjectile.h"
 
 #include "Combat/LSCollisionChannels.h"
-#include "Combat/LSBasicAttackComponent.h"
 #include "Obstacles/LSPathObstacle.h"
 #include "Obstacles/LSObstacleGeometry.h"
 #include "Components/PrimitiveComponent.h"
@@ -51,9 +50,6 @@ bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSe
 	ShotSettings = Settings;
 	ShotRequest = Request;
 	Source = Request.SourceActor;
-	SourceAttack = Source.IsValid() ? Source->FindComponentByClass<ULSBasicAttackComponent>() : nullptr;
-	bHasSourceLife = SourceAttack.IsValid();
-	SourceLifeSerial = bHasSourceLife ? SourceAttack->GetCombatLifeSerial() : 0;
 	ShotRequest.SourceActor = nullptr;
 	ShotRequest.DamageCauser = nullptr;
 	LaunchLocation = GetActorLocation();
@@ -105,18 +101,6 @@ bool ALSCastleProjectile::Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSe
 	return true;
 }
 
-bool ALSCastleProjectile::LaunchPayload(const FLSCastleWeaponSettings& Settings, const FLSDamageRequest& Request,
-                                        const FVector& Aim, const FLinearColor& Color, FLSCastlePayloadImpact Impact)
-{
-	if (!Impact.IsBound() || !Launch(ELSCastleWeapon::Cannon, Settings, Request, Aim))
-		return false;
-	bIsPayload = true;
-	PayloadImpact = MoveTemp(Impact);
-	if (auto* Material = Cast<UMaterialInstanceDynamic>(Bullets[0]->GetMaterial(0)))
-		Material->SetVectorParameterValue(TEXT("TeamColor"), Color);
-	return true;
-}
-
 void ALSCastleProjectile::BeginPlay()
 {
 	Super::BeginPlay();
@@ -135,9 +119,6 @@ FLSDamageRequest ALSCastleProjectile::MakeHitRequest() const
 {
 	FLSDamageRequest Request = ShotRequest;
 	Request.SourceActor = Source.IsValid() && !Source->IsActorBeingDestroyed() ? Source.Get() : nullptr;
-	// 포탄 비행 중 발사 병력이 풀에 반환되면 새 생명에 피해를 귀속하지 않는다.
-	if (bHasSourceLife && (!SourceAttack.IsValid() || SourceAttack->GetCombatLifeSerial() != SourceLifeSerial))
-		Request.SourceActor = nullptr;
 	return Request;
 }
 
@@ -298,14 +279,6 @@ void ALSCastleProjectile::Detonate()
 {
 	bResolved = true;
 	SetActorTickEnabled(false);
-	if (bIsPayload)
-	{
-		auto Impact = MoveTemp(PayloadImpact);
-		Impact.ExecuteIfBound(TargetLocation);
-		if (IsValid(this) && !IsActorBeingDestroyed())
-			Destroy();
-		return;
-	}
 	struct FLSCannonBlastTarget
 	{
 		TWeakObjectPtr<AActor> Actor;

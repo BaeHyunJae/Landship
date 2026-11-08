@@ -71,8 +71,7 @@ bool FLSTroopTypesTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("궁병과 창병 이동 속도 동일"), Stats[1].MovementSpeed, Stats[0].MovementSpeed);
 	TestEqual(TEXT("기마병 이동 속도 두 배"), Stats[2].MovementSpeed, Stats[0].MovementSpeed * 2);
-	TestEqual(TEXT("창병 근접 사거리"), Stats[0].AttackRange, 150.0f);
-	TestEqual(TEXT("기마병 근접 사거리 유지"), Stats[2].AttackRange, 250.0f);
+	TestEqual(TEXT("창병과 기마병 근접 사거리 동일"), Stats[2].AttackRange, Stats[0].AttackRange);
 	TestTrue(TEXT("궁병은 더 긴 공격 사거리"), Stats[1].AttackRange > Stats[0].AttackRange);
 	TestTrue(TEXT("서로 다른 세 도형"),
 	         Units[0]->GetTroopMarker()->GetStaticMesh() != Units[1]->GetTroopMarker()->GetStaticMesh() &&

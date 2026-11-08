@@ -8,19 +8,11 @@
 #include "HAL/ThreadSafeCounter64.h"
 #include "TimerManager.h"
 
-namespace
-{
-int64 NextLSDamageReceiverId()
-{
-	static FThreadSafeCounter64 NextReceiverId;
-	return NextReceiverId.Increment();
-}
-}
-
 ULSHealthComponent::ULSHealthComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	DamageReceiverId = NextLSDamageReceiverId();
+	static FThreadSafeCounter64 NextReceiverId;
+	DamageReceiverId = NextReceiverId.Increment();
 }
 
 bool ULSHealthComponent::TryGetLastDamage(FLSDamageResult& OutDamage) const
@@ -28,27 +20,6 @@ bool ULSHealthComponent::TryGetLastDamage(FLSDamageResult& OutDamage) const
 	if (!bHasTakenDamage)
 		return false;
 	OutDamage = LastDamage;
-	return true;
-}
-
-bool ULSHealthComponent::ResetForPool()
-{
-	if (bProcessingDamage || !IsValid(GetOwner()) || !GetOwner()->IsHidden() || GetOwner()->GetActorEnableCollision())
-		return false;
-	OnDamagedEvent.Clear();
-	OnDiedEvent.Clear();
-	OnHealedEvent.Clear();
-	PrepareDeathEvent.Unbind();
-	ActiveHealer.Reset();
-	HealingClaimSerial = 0;
-	LastDamage = FLSDamageResult();
-	bHasTakenDamage = false;
-	DamageReceiverId = NextLSDamageReceiverId();
-	Health = FLSHealthSnapshot();
-	Armor = 0.0f;
-	ArmorPenetration = 0.0f;
-	InitializationState = ELSHealthInitializationState::NotAttempted;
-	InitializationFailureReason.Reset();
 	return true;
 }
 
@@ -68,8 +39,7 @@ bool ULSHealthComponent::FailInitialization(const FString& Reason)
 }
 
 bool ULSHealthComponent::InitializeHealth(ELSCombatStatsInitResult StatsResult, float InitialHealth,
-	const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError,
-	float InitialArmor, float InitialArmorPenetration)
+	const FLSPrepareCombatDeath& InPrepareDeathEvent, const FString& OwnerConfigurationError)
 {
 	if (!ensureAlwaysMsgf(InitializationState == ELSHealthInitializationState::NotAttempted,
 		TEXT("[LSHealthComponent::InitializeHealth] Reinitialization rejected: Owner=%s"), *GetPathNameSafe(GetOwner())))
@@ -110,13 +80,6 @@ bool ULSHealthComponent::InitializeHealth(ELSCombatStatsInitResult StatsResult, 
 		return FailInitialization(TEXT("Initial health must be finite and > 0"));
 	}
 	PrepareDeathEvent = InPrepareDeathEvent;
-	if (!FMath::IsFinite(InitialArmor) || InitialArmor < 0.0f ||
-	    !FMath::IsFinite(InitialArmorPenetration) || InitialArmorPenetration < 0.0f)
-	{
-		return FailInitialization(TEXT("Armor and armor penetration must be finite and >= 0"));
-	}
-	Armor = InitialArmor;
-	ArmorPenetration = InitialArmorPenetration;
 	Health.MaxHealth = InitialHealth;
 	Health.CurrentHealth = InitialHealth;
 	Health.bIsDead = false;
@@ -134,63 +97,6 @@ bool ULSHealthComponent::TryGetHealth(FLSHealthSnapshot& OutHealth) const
 	return true;
 }
 
-float ULSHealthComponent::RestoreHealth(float Amount)
-{
-	if (!IsValid(this) || !IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed() || !GetWorld() || GetWorld()->bIsTearingDown ||
-	    InitializationState != ELSHealthInitializationState::Ready || Health.bIsDead || bProcessingDamage ||
-	    !FMath::IsFinite(Amount) || Amount <= 0)
-		return 0;
-	const float Applied = FMath::Min(Amount, Health.MaxHealth - Health.CurrentHealth);
-	if (Applied <= 0)
-		return 0;
-	TGuardValue<bool> ChangeGuard(bProcessingDamage, true);
-	Health.CurrentHealth += Applied;
-	OnHealedEvent.Broadcast(Applied, Health.CurrentHealth);
-	return Applied;
-}
-
-bool ULSHealthComponent::CanClaimHealing(const UActorComponent* Healer) const
-{
-	return IsValid(this) && IsValid(Healer) && IsValid(Healer->GetOwner()) &&
-	    !Healer->GetOwner()->IsActorBeingDestroyed() && Healer->GetWorld() == GetWorld() &&
-	    IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() &&
-	    GetWorld() && !GetWorld()->bIsTearingDown && InitializationState == ELSHealthInitializationState::Ready &&
-	    !Health.bIsDead && (!ActiveHealer.IsValid() || ActiveHealer.Get() == Healer);
-}
-
-uint64 ULSHealthComponent::TryClaimHealing(UActorComponent* Healer)
-{
-	if (!CanClaimHealing(Healer))
-		return 0;
-	if (ActiveHealer.Get() == Healer && HealingClaimSerial != 0)
-		return HealingClaimSerial;
-	if (++NextHealingClaimSerial == 0)
-		++NextHealingClaimSerial;
-	ActiveHealer = Healer;
-	HealingClaimSerial = NextHealingClaimSerial;
-	return HealingClaimSerial;
-}
-
-bool ULSHealthComponent::HasHealingClaim(const UActorComponent* Healer, uint64 Serial) const
-{
-	return Serial != 0 && Serial == HealingClaimSerial && ActiveHealer.Get() == Healer && CanClaimHealing(Healer);
-}
-
-void ULSHealthComponent::ReleaseHealingClaim(const UActorComponent* Healer, uint64 Serial)
-{
-	// 환자가 풀에서 새 생명으로 재사용된 뒤의 과거 반환도 현재 치유 권한을 지우지 않는다.
-	if (Serial != 0 && Serial == HealingClaimSerial && ActiveHealer.Get() == Healer)
-	{
-		ActiveHealer.Reset();
-		HealingClaimSerial = 0;
-	}
-}
-
-float ULSHealthComponent::RestoreClaimedHealth(UActorComponent* Healer, uint64 Serial, float Amount)
-{
-	return HasHealingClaim(Healer, Serial) ? RestoreHealth(Amount) : 0;
-}
-
 FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActor* SourceActor, AActor* DamageCauser)
 {
 	FLSDamageRequest Request;
@@ -199,10 +105,6 @@ FLSDamageRequest ULSHealthComponent::MakeDamageRequest(float DamageAmount, AActo
 	Request.DamageCauser = DamageCauser;
 	if (IsValid(SourceActor))
 	{
-		if (const auto* SourceHealth = SourceActor->FindComponentByClass<ULSHealthComponent>())
-		{
-			Request.ArmorPenetration = SourceHealth->ArmorPenetration;
-		}
 		if (const ILSFactionInterface* Faction = Cast<ILSFactionInterface>(SourceActor))
 		{
 			Request.bHasSourceFaction = true;
@@ -250,7 +152,6 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 		// 공개 알림 중 제거된 수신자에게 재진입한 요청은 상태와 필수 훅에 접근하지 않는다.
 		return {ELSApplyDamageStatus::RejectedInvalidTarget, 0.0f};
 	}
-	TGuardValue<bool> DamageGuard(bProcessingDamage, true);
 	if (InitializationState != ELSHealthInitializationState::Ready)
 	{
 		ensureAlwaysMsgf(false, TEXT("[LSHealthComponent::ApplyDamage] Health not ready: Owner=%s Reason=%s"),
@@ -264,7 +165,6 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 		return {ELSApplyDamageStatus::RejectedDead, 0.0f};
 	}
 	if (!ensureAlwaysMsgf(FMath::IsFinite(Request.DamageAmount) && Request.DamageAmount >= 0.0f
-		&& FMath::IsFinite(Request.ArmorPenetration) && Request.ArmorPenetration >= 0.0f
 		&& (Request.Policy == ELSDamagePolicy::Standard || Request.Policy == ELSDamagePolicy::EnvironmentalHazard)
 		&& (!Request.bHasSourceFaction || LSFaction::IsValid(Request.SourceFaction)),
 		TEXT("[LSHealthComponent::ApplyDamage] Invalid damage: Owner=%s Amount=%g HasSourceFaction=%d SourceFaction=%d"),
@@ -281,9 +181,7 @@ FLSApplyDamageResult ULSHealthComponent::ApplyDamage(const FLSDamageRequest& Req
 	{
 		return {PolicyStatus, 0.0f};
 	}
-	const float EffectiveArmor = Request.bIgnoreArmor ? 0.0f : FMath::Max(0.0f, Armor - Request.ArmorPenetration);
-	const float DamageAfterArmor = FMath::Max(FMath::Min(1.0f, Request.DamageAmount), Request.DamageAmount - EffectiveArmor);
-	const float AppliedDamage = FMath::Min(DamageAfterArmor, Health.CurrentHealth);
+	const float AppliedDamage = FMath::Min(Request.DamageAmount, Health.CurrentHealth);
 	const float PreviousHealth = Health.CurrentHealth;
 	Health.CurrentHealth -= AppliedDamage;
 	Health.bIsDead = Health.CurrentHealth == 0.0f;

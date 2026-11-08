@@ -25,7 +25,7 @@ public class Landship : ModuleRules
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Json" });
+		PrivateDependencyModuleNames.AddRange(new string[] { });
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "UMGEditor", "AssetRegistry" });
