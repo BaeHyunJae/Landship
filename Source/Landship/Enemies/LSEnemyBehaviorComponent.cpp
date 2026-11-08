@@ -668,9 +668,16 @@ void ULSEnemyBehaviorComponent::OnMovementFinished(FAIRequestID Id, const FPathF
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld())) return;
 	if (MovementRequestId == FAIRequestID::InvalidRequest || Id != MovementRequestId) { return; }
 	MovementRequestId = FAIRequestID::InvalidRequest;
-	bMovementFailed = !Result.IsSuccess();
+	const bool bPathInvalidated = Result.HasFlag(FPathFollowingResultFlags::InvalidPath);
+	bMovementFailed = !Result.IsSuccess() && !bPathInvalidated;
 	NextDecision = 0;
-	if (bMovementFailed)
+	if (bPathInvalidated)
+	{
+		// 무효화는 막힌 경로가 아니다. 다음 행동 틱의 기존 역할·경로 검사를 즉시 다시 수행한다.
+		NextMoveAttempt = GetWorld()->GetTimeSeconds();
+		LastStopReason = TEXT("Path invalidated; revalidating");
+	}
+	else if (bMovementFailed)
 	{
 		RecordMovementFailure();
 		NextMoveAttempt = GetWorld()->GetTimeSeconds() + FailedPathRetryInterval;
