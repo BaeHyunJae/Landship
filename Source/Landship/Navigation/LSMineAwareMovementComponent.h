@@ -1,11 +1,11 @@
 #pragma once
 
-#include "GameFramework/CharacterMovementComponent.h"
+#include "Navigation/LSSlopeMovementComponent.h"
 #include "LSMineAwareMovementComponent.generated.h"
 
 /** 자발적인 지상 이동만 제한하며 발사·강제 이동의 접촉은 면제하지 않는다. */
 UCLASS()
-class LANDSHIP_API ULSMineAwareMovementComponent : public UCharacterMovementComponent
+class LANDSHIP_API ULSMineAwareMovementComponent : public ULSSlopeMovementComponent
 {
 	GENERATED_BODY()
   public:

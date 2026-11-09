@@ -540,7 +540,8 @@ void ALSRTSHUD::Tick(float DeltaSeconds)
 		if (Damage.AppliedDamage <= 0 || !IsValid(Actor)) continue;
 		const auto* Health = Actor->FindComponentByClass<ULSHealthComponent>();
 		FLSHealthSnapshot LiveHealth;
-		if (!Health || !Health->TryGetHealth(LiveHealth) || LiveHealth.MaxHealth <= 0) continue;
+		if (!Health || Health->GetDamageReceiverId() != Damage.ReceiverId ||
+		    !Health->TryGetHealth(LiveHealth) || LiveHealth.MaxHealth <= 0) continue;
 		FLSCombatHealthDisplay& Display = DamagedActors.FindOrAdd(Actor);
 		const float PreviousGhost = Display.GetGhostFraction(Now);
 		Display.AfterFraction = FMath::Clamp(LiveHealth.CurrentHealth / LiveHealth.MaxHealth, 0.0f, 1.0f);
