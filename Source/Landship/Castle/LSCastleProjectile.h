@@ -6,6 +6,8 @@
 #include "LSCastleProjectile.generated.h"
 
 class UStaticMeshComponent;
+DECLARE_DELEGATE_OneParam(FLSCastlePayloadImpact, const FVector&);
+class ULSBasicAttackComponent;
 
 /** 곡사 포탄 또는 산탄 한 발의 탄환 묶음. 발사 수치와 진영을 보관한다. */
 UCLASS(NotPlaceable)
@@ -17,6 +19,9 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	/** Deferred 생성 중 한 번 준비한다. 곡사 충돌 오차를 지키기 위한 계산량 상한을 넘으면 거부하며, 성공했을 때만 FinishSpawning한다. */
 	bool Launch(ELSCastleWeapon Weapon, const FLSCastleWeaponSettings& Settings, const FLSDamageRequest& Request,
 	            const FVector& Aim, bool bFirstBlocking = false);
+	/** 대포 곡사와 충돌을 사용하고 착탄 시 피해 대신 페이로드를 한 번 실행한다. */
+	bool LaunchPayload(const FLSCastleWeaponSettings& Settings, const FLSDamageRequest& Request, const FVector& Aim,
+	                   const FLinearColor& Color, FLSCastlePayloadImpact Impact);
 	virtual void Tick(float DeltaSeconds) override;
 	bool IsInFlight() const { return bLaunched && !bResolved && !IsActorBeingDestroyed(); }
 	FVector GetFlightOrigin() const { return LaunchLocation; }
@@ -42,6 +47,9 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	TArray<TObjectPtr<UStaticMeshComponent>> Bullets;
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> Source;
+	TWeakObjectPtr<ULSBasicAttackComponent> SourceAttack;
+	uint64 SourceLifeSerial = 0;
+	bool bHasSourceLife = false;
 	UPROPERTY(Transient)
 	FLSDamageRequest ShotRequest;
 	UPROPERTY(Transient)
@@ -60,4 +68,6 @@ class LANDSHIP_API ALSCastleProjectile : public AActor
 	bool bLaunched = false;
 	bool bResolved = false;
 	bool bHitsFirstBlocking = false;
+	bool bIsPayload = false;
+	FLSCastlePayloadImpact PayloadImpact;
 };

@@ -1,6 +1,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSBasicProjectile.h"
+#include "Combat/LSProjectilePoolSubsystem.h"
 
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
@@ -18,6 +19,27 @@ ULSBasicAttackComponent::ULSBasicAttackComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	bAutoActivate = true;
+}
+
+bool ULSBasicAttackComponent::ResetForPool()
+{
+	if (bResolvingAttack || !IsValid(GetOwner()) || !GetOwner()->IsHidden() || GetOwner()->GetActorEnableCollision())
+		return false;
+	StopAttack();
+	Deactivate();
+	++CombatLifeSerial;
+	OnAttackPerformed.Clear();
+	OnProjectileLaunched.Clear();
+	OnAttackExecutedEvent.Clear();
+	AttackTargetResolverEvent.Unbind();
+	IntervalMultipliers.Reset();
+	NextAttackTime = 0;
+	AttackBlockedUntil = 0;
+	EffectiveInterval = 0;
+	bConfigured = false;
+	bHasPendingSettings = false;
+	bBattleActionsEnded = false;
+	return true;
 }
 
 bool ULSBasicAttackComponent::HasClearAttackPathFromLocation(const FVector& SourceLocation, const AActor* Target) const
@@ -94,7 +116,9 @@ bool ULSBasicAttackComponent::ConfigureAttack(const FLSBasicAttackSettings& NewS
 		const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
 		// 같은 검사 주기로 재설정할 때 다음 검사 시각까지 밀어내지 않는다.
 		if (GetWorld()->GetTimerManager().GetTimerRate(AttackTimer) != FMath::Min(Period, EffectiveInterval))
+		{
 			StartAttackTimer();
+		}
 	}
 	return true;
 }
@@ -105,10 +129,19 @@ bool ULSBasicAttackComponent::ResolveEffectiveInterval(float BaseInterval, float
 	    GetWorld() ? GetWorld()->GetSubsystem<ULSBasicAttackTuningSubsystem>() : nullptr;
 	float Multiplier = 0;
 	if (!Tuning || !Tuning->TryGetBasicAttackSpeedMultiplier(Multiplier))
+	{
 		return false;
-	const float Interval = BaseInterval / Multiplier;
+	}
+	double Combined = 1;
+	for (const auto& Pair : IntervalMultipliers)
+	{
+		Combined *= Pair.Value;
+	}
+	const float Interval = static_cast<float>(BaseInterval / Multiplier * Combined);
 	if (!FMath::IsFinite(Interval) || Interval <= 0)
+	{
 		return false;
+	}
 	OutInterval = Interval;
 	return true;
 }
@@ -121,9 +154,11 @@ void ULSBasicAttackComponent::BeginPlay()
 		bHasPendingSettings = false;
 		bConfigured = ResolveEffectiveInterval(Settings.Interval, EffectiveInterval);
 		if (!bConfigured)
+		{
 			UE_LOG(LogTemp, Warning,
 			       TEXT("Basic attack initialization rejected: unavailable tuning or invalid effective interval: %s"),
 			       *GetPathName());
+		}
 	}
 	if (!bBattleActionsEnded && bConfigured && bAutoAttackOnBeginPlay)
 	{
@@ -147,7 +182,8 @@ bool ULSBasicAttackComponent::IsValidCombatPair(AActor* Target) const
 
 bool ULSBasicAttackComponent::StartAttack(AActor* Target)
 {
-	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured || !IsValidCombatPair(Target))
+	if (bBattleActionsEnded || bResolvingAttack || !HasBegunPlay() || !IsActive() || !bConfigured ||
+	    !IsValidCombatPair(Target))
 	{
 		return false;
 	}
@@ -206,8 +242,10 @@ AActor* ULSBasicAttackComponent::FindNearestTarget() const
 	{
 		AActor* Candidate = Hit.GetActor();
 		if (const ALSPathObstacle* Obstacle = Cast<ALSPathObstacle>(Candidate);
-			Obstacle && !Obstacle->CanBeAutomaticallyAcquired())
+		    Obstacle && !Obstacle->CanBeAutomaticallyAcquired())
+		{
 			continue;
+		}
 		if (!IsValidCombatPair(Candidate))
 		{
 			continue;
@@ -332,7 +370,9 @@ void ULSBasicAttackComponent::UpdateAttack()
 }
 float ULSBasicAttackComponent::GetCooldownRemaining() const
 {
-	return GetWorld() ? static_cast<float>(FMath::Max(0.0, NextAttackTime - GetWorld()->GetTimeSeconds())) : 0.0f;
+	return GetWorld() ? static_cast<float>(FMath::Max(0.0, FMath::Max(NextAttackTime, AttackBlockedUntil) -
+	                                                           GetWorld()->GetTimeSeconds()))
+	                  : 0.0f;
 }
 
 void ULSBasicAttackComponent::StopAttack()
@@ -394,7 +434,12 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	Request.SourceFaction = Execution.SourceFaction;
 	Request.bHasAttackOrigin = true;
 	Request.AttackOrigin = Origin;
-	ALSBasicProjectile* Projectile =
+	const bool bUsePool = ProjectileSettings.bUsePool && ProjectileSettings.ProjectileClass &&
+	    ProjectileSettings.ProjectileClass->GetDefaultObject<ALSBasicProjectile>()->SupportsPooling();
+	ULSProjectilePoolSubsystem* Pool = bUsePool ? GetWorld()->GetSubsystem<ULSProjectilePoolSubsystem>() : nullptr;
+	const FLSProjectileLease Lease = Pool ? Pool->AcquireProjectile(ProjectileSettings.ProjectileClass, Transform) :
+	    FLSProjectileLease();
+	ALSBasicProjectile* Projectile = Pool ? Lease.Projectile.Get() :
 	    GetWorld()->SpawnActorDeferred<ALSBasicProjectile>(ProjectileSettings.ProjectileClass, Transform, nullptr,
 	                                                       nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!IsValid(Projectile))
@@ -405,19 +450,28 @@ void ULSBasicAttackComponent::FireProjectile(AActor* Target, const FLSAttackExec
 	if (!Projectile->Launch(Request, Target, Direction, ProjectileSettings.Speed, ProjectileSettings.Radius,
 	                        ProjectileSettings.Lifetime, ProjectileSettings.Material))
 	{
-		Projectile->Destroy();
+		if (Pool)
+			Pool->ReleaseProjectile(Lease);
+		else
+			Projectile->Destroy();
 		return;
 	}
-	Projectile->OnDamageApplied.AddDynamic(this, &ULSBasicAttackComponent::OnProjectileDamage);
-	Projectile->FinishSpawning(Transform);
+	const uint64 LifeSerial = CombatLifeSerial;
+	Projectile->OnDamageAppliedNative.AddWeakLambda(this, [this, LifeSerial](AActor* HitTarget, float Damage)
+	{
+		if (CombatLifeSerial == LifeSerial)
+			OnProjectileDamage(HitTarget, Damage);
+	});
+	if (!Pool)
+		Projectile->FinishSpawning(Transform);
 	if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
-	    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+	    !GetWorld()->bIsTearingDown && IsValid(Projectile) && (!Pool || Pool->IsAcquired(Projectile, Lease.Serial)))
 	{
 		FLSAttackExecution LaunchedExecution = Execution;
 		LaunchedExecution.ExecutionId = ++LastExecutionId;
 		OnAttackExecutedEvent.Broadcast(LaunchedExecution);
 		if (IsValid(this) && IsValid(GetOwner()) && !GetOwner()->IsActorBeingDestroyed() && GetWorld() &&
-		    !GetWorld()->bIsTearingDown && IsValid(Projectile))
+		    !GetWorld()->bIsTearingDown && IsValid(Projectile) && (!Pool || Pool->IsAcquired(Projectile, Lease.Serial)))
 		{
 			OnProjectileLaunched.Broadcast(Projectile);
 		}
@@ -431,4 +485,65 @@ void ULSBasicAttackComponent::OnProjectileDamage(AActor* Target, float AppliedDa
 	{
 		OnAttackPerformed.Broadcast(Target, AppliedDamage);
 	}
+}
+
+bool ULSBasicAttackComponent::DelayNextAttack(float Seconds)
+{
+	if (!GetWorld() || !FMath::IsFinite(Seconds) || Seconds < 0 || bBattleActionsEnded)
+	{
+		return false;
+	}
+	AttackBlockedUntil = FMath::Max(AttackBlockedUntil, GetWorld()->GetTimeSeconds() + Seconds);
+	return true;
+}
+
+bool ULSBasicAttackComponent::SetAttackIntervalMultiplier(FName Source, float Multiplier)
+{
+	if (Source.IsNone() || !FMath::IsFinite(Multiplier) || Multiplier <= 0 ||
+	    (Multiplier != 1 && (!bConfigured || bBattleActionsEnded || !GetWorld())))
+	{
+		return false;
+	}
+	if (!bConfigured || !GetWorld())
+	{
+		if (Multiplier == 1)
+		{
+			IntervalMultipliers.Remove(Source);
+			return true;
+		}
+		return false;
+	}
+	const float* Existing = IntervalMultipliers.Find(Source);
+	const float Previous = Existing ? *Existing : 1;
+	if (Previous == Multiplier)
+	{
+		return true;
+	}
+	const float NewInterval = static_cast<float>(static_cast<double>(EffectiveInterval) / Previous * Multiplier);
+	if (!FMath::IsFinite(NewInterval) || NewInterval <= 0)
+	{
+		return false;
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	// 같은 출처는 중첩하지 않는다. 공격 주기의 남은 비율만 바꾸고 별도의 경직 보류 시간은 유지한다.
+	const double Remaining = FMath::Max(0.0, NextAttackTime - Now);
+	NextAttackTime = Now + Remaining * static_cast<double>(NewInterval) / EffectiveInterval;
+	if (Multiplier == 1)
+	{
+		IntervalMultipliers.Remove(Source);
+	}
+	else
+	{
+		IntervalMultipliers.Add(Source, Multiplier);
+	}
+	EffectiveInterval = NewInterval;
+	if (!bBattleActionsEnded && HasBegunPlay() && GetWorld()->GetTimerManager().IsTimerActive(AttackTimer))
+	{
+		const float Period = FMath::IsFinite(CheckInterval) ? FMath::Max(0.01f, CheckInterval) : 0.05f;
+		if (GetWorld()->GetTimerManager().GetTimerRate(AttackTimer) != FMath::Min(Period, EffectiveInterval))
+		{
+			StartAttackTimer();
+		}
+	}
+	return true;
 }
