@@ -43,6 +43,8 @@ class LANDSHIP_API ULSVisionParticipantComponent : public UActorComponent
 
 	/** 생략 가능한 공개 사망 알림에만 기대지 않도록 필수 사망 처리에서도 호출한다. */
 	void NotifyCombatDeath();
+	void SuspendForPool();
+	void ResumeFromPool();
 
   protected:
 	virtual void BeginPlay() override;

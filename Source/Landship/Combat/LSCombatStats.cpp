@@ -17,6 +17,10 @@ namespace
 
 const TCHAR* LSCombatStats::Validate(const FLSUnitStatRow& Stats)
 {
+	if (!IsNonnegativeFinite(Stats.Armor) || !IsNonnegativeFinite(Stats.ArmorPenetration))
+	{
+		return TEXT("InvalidValue: Armor and ArmorPenetration must be finite and >= 0");
+	}
 	if (!IsPositiveFinite(Stats.Health))
 	{
 		return TEXT("InvalidValue: Health must be finite and > 0");

@@ -54,12 +54,18 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	GENERATED_BODY()
   public:
 	ULSOrderComponent();
+	/** 명령·경로·콜백을 중지한다. ResumeFromPool 전에는 새 명령을 받지 않는다. */
+	void SuspendForPool();
+	void ResumeFromPool();
+	bool IsUpdatingOrders() const { return bUpdatingOrders; }
 	/** 현재 명령과 예약을 비우고 이후 행동 재개를 거절한다. */
 	void EndBattleActions();
 	UFUNCTION(BlueprintCallable, Category = "Landship|Orders")
 	bool SubmitOrder(const FLSOrder& Order, bool bQueue = false);
 	/** 현재 명령과 예약은 보존하고, 넉백 착지 뒤 실행을 재개한다. */
 	bool ApplyKnockback(const FVector& Velocity);
+	/** 낙하와 최소 보류 시간이 끝났으면 넉백 표시만 해제한다. 이동·명령은 실행하지 않는다. */
+	bool TryCompleteKnockback();
 	bool IsKnockedBack() const
 	{
 		return bKnockbackActive;
@@ -215,4 +221,5 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	double KnockbackResumeAfter = 0;
 	TWeakObjectPtr<ALSBarricade> BlockingBarricade;
 	ELSOrderFailure LastFailure = ELSOrderFailure::None;
+	uint64 OrderLifeSerial = 0;
 };
