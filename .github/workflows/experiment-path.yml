@@ -1,0 +1,33 @@
+# 실험 폴더 아래 파일이 정규 브랜치로 들어가지 않는지 검사한다.
+# CONTRIBUTING.md의 '실험 브랜치'를 따른다. 모든 PR에서 실행하고(경로 필터 없음) PR이 바꾼 파일 목록으로 판정한다.
+# 필수 검사로 지정해도 다른 PR이 대기 상태로 막히지 않는다.
+# 필수 검사 이름은 job 이름 experiment-path다.
+name: Experiment 경로 검사
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  experiment-path:
+    name: experiment-path
+    runs-on: ubuntu-latest
+    steps:
+      - name: Experiment 폴더 아래 파일 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          files=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
+          found=$(printf '%s\n' "$files" | grep -E '^(Content|Source)/Landship/Experiment/' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Experiment 폴더 아래 파일은 실험 브랜치에만 있습니다. 이 PR이 담은 아래 파일을 PR에서 빼 주세요. (CONTRIBUTING.md의 '실험 브랜치')"
+            printf '%s\n' "$found"
+            exit 1
+          fi
+          echo "Experiment 폴더 아래 파일이 없습니다."
