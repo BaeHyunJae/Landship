@@ -14,9 +14,9 @@
 
 - 참조는 팀원 모두가 열 수 있는 것만 한다. 저장소에 커밋된 파일, 팀 Notion 페이지, 공개 웹 페이지가 그렇다. 한 사람에게만 있는 것(커밋하지 않은 파일, Git이 무시하는 경로, 개인 메모, 에이전트와의 대화나 작업 기록)에 담긴 내용이 필요하면 그 내용을 글에 직접 쓴다.
 - 개인 기록에서만 뜻을 정한 용어, 번호, 약어를 쓸 때는 글 안에서 그 뜻을 풀어 쓴다.
-- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「C-4. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한 형식을 따른다. 확인하지 못한 결론은 [가이드 「A-5. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)의 '사실과 추정'에 따라 추정으로 표시한다.
+- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한 형식을 따른다. 확인하지 못한 결론은 [가이드 「A-3. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)의 '사실과 추정'에 따라 추정으로 표시한다.
 - 글에는 읽는 사람이 그 글을 보고 할 일(리뷰, 확인, 결정, 이어서 작업)에 필요한 것을 쓴다. 다 쓴 뒤 문장마다 지워 보고, 지워도 읽는 사람이 할 일이 같으면 그 문장을 지운다. 시도한 순서, 결론의 근거가 되지 않는 점검 내역, 문장을 고친 경위 같은 작업 과정의 서술은 지워도 읽는 사람이 할 일이 같은 경우가 많다.
-- Notion 페이지와 댓글에 무엇을 어디에 쓰는지는 [가이드 「A-5. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)과 [가이드 「C-4. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한다. 위 지우기 기준은 그 자리에 쓰는 문장마다 적용한다.
+- Notion 페이지와 댓글에 무엇을 어디에 쓰는지는 [가이드 「A-3. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)과 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한다. 위 지우기 기준은 그 자리에 쓰는 문장마다 적용한다.
 
 ## 저장소
 
@@ -58,9 +58,9 @@
   - 없으면 PR을 열기 전에 만든다. 작업하다가 따로 다룰 일이 생겨 브랜치를 나눈 경우도 같다. Task는 [가이드 「B-3. 새 Task를 Backlog에 등록하기」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#b6ebdec6f07642378d84a20a60633a9e)를 따라 만들고, 이슈는 워크플로우 이슈 DB에 만든다.
 - PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task나 이슈를 여러 PR로 나눌 수 있다.
 - PR 본문은 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)의 절 순서대로 쓰고 체크 항목을 확인한다. 웹 화면이 아니라 `gh`나 API로 PR을 열 때도 같다.
-- Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「C-5. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#60e4330be3244e2b8b22a8b193c4442c)을 따른다.
+- Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「C-4. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#60e4330be3244e2b8b22a8b193c4442c)을 따른다.
 - 작업을 시작하거나 끝낼 때 Task 상태를 바꾸는 시점은 [가이드 「D-1. 상태별 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#6736ec73204042bb9d24d889b3b14711)을 따른다.
-- Task에 작업 중 경과를 쓸 때는 [가이드 「C-4. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)과 [가이드 「C-4. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을 따른다.
+- Task에 작업 중 경과를 쓸 때는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)과 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을 따른다.
 - 버그 Task를 고친 PR을 병합한 뒤에는 [가이드 「I-1. 버그 등록과 재검증」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f1da939ab98f45c2acf29aa0cb13b79e)의 '수정 후 검증'을 한다.
 - PR을 병합한 뒤 Task를 Done으로 바꿀지는 [가이드 「D-3. Done 조건」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
 
@@ -140,7 +140,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 
 ### 쓸 때 지킬 것
 
-- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문과 Notion Task에 쓴다(Task 안의 위치는 [가이드 「C-4. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
+- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문과 Notion Task에 쓴다(Task 안의 위치는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
 - 폴더 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다.
 - 절차 문서와 폴더 계약에서 확인에 쓸 맵을 지정할 때는 공용 테스트 맵(`Content/Landship/SharedTestLevel/`)만 지정한다. 개인 테스트 맵(`Content/Developers/<이니셜>/`)에서 실행하는 절차는 개인 절차로 보고 `docs/procedures/Developers/<이니셜>/`에 둔다. 그 맵을 공용 테스트 맵으로 옮기면 그 절차 문서도 `docs/procedures/`로 옮긴다.
 - 절차가 실행하는 스크립트는 '폴더와 담당'의 `Scripts/` 규칙대로 두고, 절차 문서에 그 경로를 적는다.
