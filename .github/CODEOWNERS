@@ -1,6 +1,5 @@
-# 폴더별 담당. 업무 분장이 바뀌면 이 파일을 고친다(CONTRIBUTING.md의 '폴더와 담당').
+# 폴더별 담당. 규칙은 CONTRIBUTING.md의 '폴더와 담당'을 따른다.
 # 아래쪽 줄이 위쪽 줄보다 우선한다.
-# 기능 폴더는 영역 담당(아군·조작 @samang22, 전장·판정 @BaeHyunJae)을 따른다. 공용 폴더는 두 사람 공동이다.
 
 # 기본값과 공용 파일
 *                                   @BaeHyunJae @samang22
@@ -12,9 +11,11 @@
 /Content/Landship/SharedTestLevel/  @BaeHyunJae @samang22
 /Data/Combat/                       @BaeHyunJae @samang22
 
-# 개인 테스트 맵에서 실행하는 개인 절차와 그 스크립트(Content/Developers/의 이니셜 폴더와 같다)
+# 개인 폴더
+/Content/Developers/BHJ/              @BaeHyunJae
 /docs/procedures/Developers/BHJ/      @BaeHyunJae
 /Scripts/Developers/BHJ/              @BaeHyunJae
+/Content/Developers/HMH/              @samang22
 /docs/procedures/Developers/HMH/      @samang22
 /Scripts/Developers/HMH/              @samang22
 
