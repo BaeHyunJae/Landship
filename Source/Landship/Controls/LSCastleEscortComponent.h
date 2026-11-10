@@ -21,7 +21,9 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	    FActorComponentTickFunction* ThisTickFunction) override;
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Escort")
-	TArray<ELSTroopType> FrontlineTroopTypes = {ELSTroopType::Spearman, ELSTroopType::Cavalry, ELSTroopType::Archer};
+	TArray<ELSTroopType> FrontlineTroopTypes = {ELSTroopType::Spearman, ELSTroopType::Cavalry,
+	    ELSTroopType::Archer, ELSTroopType::Medic, ELSTroopType::Shieldbearer,
+	    ELSTroopType::Mortar, ELSTroopType::Bomber};
 	/** 성의 몸체에서 첫 추종 열까지의 간격(cm). */
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Escort", meta = (ClampMin = "0", Units = "cm"))
 	float CastleClearance = 350.0f;
