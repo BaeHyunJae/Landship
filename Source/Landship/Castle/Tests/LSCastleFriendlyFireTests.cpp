@@ -9,6 +9,7 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -277,6 +278,8 @@ bool FLSCastleAlliedShotgunKnockbackTest::RunTest(const FString& Parameters)
 		auto* Source = MakeCastlePolicyTarget(World, FVector(0, 0, 100), Faction);
 		auto* Ally = World->SpawnActor<ALSTroopUnit>(FVector(400, 30, 100), FRotator::ZeroRotator);
 		Ally->SetInitialFaction(Faction);
+		if (!TestTrue(TEXT("아군 산탄 검사 고정 능력치 지정"),
+			LSCombatStatTestFixture::ConfigureUnit(Ally, LSCombatStatTestFixture::UnitStats(120.0f)))) return false;
 		if (!Fixture.BeginPlayInTestWorld()) return false;
 		Ally->Orders->SetComponentTickEnabled(false);
 		Ally->BasicAttack->StopAttack();
@@ -328,7 +331,7 @@ bool FLSCastleAlliedShotgunKnockbackEligibilityTest::RunTest(const FString& Para
 		AActor* Ally;
 		if (Case == 2)
 		{
-			auto* Castle = LSCastleTestFixture::Spawn(World, FVector(400, 0, 144));
+			auto* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(400, 0, 144));
 			Castle->SetInitialFaction(Faction);
 			Ally = Castle;
 		}
@@ -336,6 +339,8 @@ bool FLSCastleAlliedShotgunKnockbackEligibilityTest::RunTest(const FString& Para
 		{
 			auto* Troop = World->SpawnActor<ALSTroopUnit>(FVector(400, 0, 100), FRotator::ZeroRotator);
 			Troop->SetInitialFaction(Faction);
+			if (!TestTrue(TEXT("산탄 생존 조건 검사 고정 능력치 지정"),
+				LSCombatStatTestFixture::ConfigureUnit(Troop, LSCombatStatTestFixture::UnitStats(120.0f)))) return false;
 			Ally = Troop;
 		}
 		auto* Health = Ally->FindComponentByClass<ULSHealthComponent>();

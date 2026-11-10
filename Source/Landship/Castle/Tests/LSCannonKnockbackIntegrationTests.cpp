@@ -11,6 +11,7 @@
 #include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -119,6 +120,8 @@ bool FLSCannonKnockbackFactionIntegrationTest::RunTest(const FString& Parameters
 		auto* Other = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(400, -80, 100));
 		Same->SetInitialFaction(Faction);
 		Other->SetInitialFaction(Faction == ELSFaction::Ally ? ELSFaction::Enemy : ELSFaction::Ally);
+		for (auto* Unit : {Same, Other})
+			if (!TestTrue(TEXT("병력 스탯 설정"), LSCombatStatTestFixture::ConfigureUnit(Unit, LSCombatStatTestFixture::UnitStats(180.f)))) return false;
 		if (!Fixture.BeginPlayInTestWorld()) return false;
 		for (auto* Unit : {Same, Other}) PauseCannonIntegrationUnit(Unit);
 		const float SameHealth = CannonIntegrationHealth(Same), OtherHealth = CannonIntegrationHealth(Other);
@@ -165,18 +168,19 @@ bool FLSCannonKnockbackEligibilityIntegrationTest::RunTest(const FString& Parame
 			auto* Outpost = SpawnCannonIntegrationActor<ALSEnemyOutpost>(World, FVector(400, 0, 100));
 			Outpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
 			auto* Setup = SpawnCannonIntegrationActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-			Setup->PlayerCastle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200));
+			Setup->PlayerCastle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(10000, 0, 200));
 			Setup->CoreOutpost = Outpost;
 			Target = Outpost;
 		}
 		else if (Case == 5)
 			Target = SpawnCannonIntegrationActor<ALSBarricade>(World, FVector(400, 0, 100));
 		else if (Case == 2)
-			Target = LSCastleTestFixture::Spawn(World, FVector(400, 0, 144));
+			Target = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(400, 0, 144));
 		else
 		{
 			auto* Troop = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(Case == 3 ? 551 : 400, 0, 100));
 			if (Case == 6) Troop->Selection->Kind = ELSSelectionKind::Building;
+			if (!TestTrue(TEXT("병력 스탯 설정"), LSCombatStatTestFixture::ConfigureUnit(Troop, LSCombatStatTestFixture::UnitStats(180.f)))) return false;
 			Target = Troop;
 		}
 		Target->FindComponentByClass<ULSHealthComponent>()->bDestroyOnDeath = false;
@@ -219,8 +223,9 @@ bool FLSCannonKnockbackCastSnapshotIntegrationTest::RunTest(const FString& Param
 		FTestWorldWrapper Fixture;
 		if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = Fixture.GetTestWorld();
-		auto* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 144));
+		auto* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(0, 0, 144));
 		auto* Target = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(600, 0, 100));
+		if (!TestTrue(TEXT("병력 스탯 설정"), LSCombatStatTestFixture::ConfigureUnit(Target, LSCombatStatTestFixture::UnitStats(180.f)))) return false;
 		auto* Original = LoadObject<ULSCastleWeaponData>(nullptr, TEXT("/Game/Landship/Castle/Data/DA_Cannon.DA_Cannon"));
 		if (!TestNotNull(TEXT("기존 대포 Data Asset"), Original)) return false;
 		auto* Data = DuplicateObject<ULSCastleWeaponData>(Original, World);
@@ -269,7 +274,7 @@ bool FLSCannonKnockbackBattleEndIntegrationTest::RunTest(const FString& Paramete
 	UWorld* World = Fixture.GetTestWorld();
 	World->GetWorldSettings()->DefaultGameMode = ALSGameMode::StaticClass();
 	auto* Setup = SpawnCannonIntegrationActor<ALSBattlefieldSetup>(World, FVector::ZeroVector);
-	Setup->PlayerCastle = LSCastleTestFixture::Spawn(World, FVector(10000, 0, 200));
+	Setup->PlayerCastle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(10000, 0, 200));
 	Setup->CoreOutpost = SpawnCannonIntegrationActor<ALSEnemyOutpost>(World, FVector(0, 0, 200));
 	Setup->CoreOutpost->BasicAttack->SetAutoAttackOnBeginPlay(false);
 	auto* Floor = SpawnCannonIntegrationActor<AActor>(World, FVector::ZeroVector);
@@ -285,6 +290,7 @@ bool FLSCannonKnockbackBattleEndIntegrationTest::RunTest(const FString& Paramete
 	Collision->RegisterComponent();
 	auto* Enemy = SpawnCannonIntegrationActor<ALSTroopUnit>(World, FVector(20000, 0, 100));
 	Enemy->SetInitialFaction(ELSFaction::Enemy);
+	if (!TestTrue(TEXT("병력 스탯 설정"), LSCombatStatTestFixture::ConfigureUnit(Enemy, LSCombatStatTestFixture::UnitStats(180.f)))) return false;
 	if (!Fixture.BeginPlayInTestWorld()) return false;
 	auto* State = World->GetGameState<ALSGameState>();
 	if (!TestNotNull(TEXT("실제 GameState"), State) || !TestTrue(TEXT("전투 결과 판정 활성"), State->IsBattleOutcomeEnabled())) return false;

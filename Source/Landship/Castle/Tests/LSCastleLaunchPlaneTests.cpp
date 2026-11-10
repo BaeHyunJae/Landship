@@ -8,6 +8,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/CapsuleComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -32,14 +33,17 @@ bool FLSCastleLaunchPlaneTest::RunTest(const FString& Parameters)
 			FTestWorldWrapper Fixture;
 			if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 			UWorld* World = Fixture.GetTestWorld();
-			auto* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 500), FRotator::ZeroRotator);
+			auto* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(0, 0, 500));
 			Castle->GetCapsuleComponent()->SetCapsuleSize(500, 500);
 			auto* Target = World->SpawnActor<ALSTroopUnit>(FVector(900, 0, 88), FRotator::ZeroRotator);
 			Target->SetInitialFaction(ELSFaction::Enemy);
+			if (!TestTrue(TEXT("발사 평면 검사 고정 능력치 지정"),
+				LSCombatStatTestFixture::ConfigureUnit(Target, LSCombatStatTestFixture::UnitStats()))) return false;
 			Target->BasicAttack->SetAutoAttackOnBeginPlay(false);
 			auto* Data = NewObject<ULSCastleWeaponData>(World);
 			Data->Weapon = Weapon;
 			FLSCastleWeaponSettings Settings;
+			Settings.Damage = 60;
 			Settings.Range = 1600;
 			Settings.Radius = 5;
 			Settings.PelletCount = 1;
@@ -74,7 +78,7 @@ bool FLSCastleLaunchPlaneTest::RunTest(const FString& Parameters)
 		FTestWorldWrapper Fixture;
 		if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 		UWorld* World = Fixture.GetTestWorld();
-		auto* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 500), FRotator::ZeroRotator);
+		auto* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(0, 0, 500));
 		Castle->GetCapsuleComponent()->SetCapsuleSize(500, 500);
 		Castle->Weapons->ShotgunLaunchOffset = FVector(0, 0, -412);
 		Castle->Weapons->BallistaLaunchOffset = FVector(0, 0, -412);
@@ -210,11 +214,13 @@ bool FLSShotgunContactDefenseTest::RunTest(const FString& Parameters)
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game)) return false;
 	UWorld* World = Fixture.GetTestWorld();
-	auto* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 500), FRotator::ZeroRotator);
+	auto* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(0, 0, 500));
 	Castle->GetCapsuleComponent()->SetCapsuleSize(500, 500);
 	Castle->Weapons->ShotgunLaunchOffset = FVector(0, 0, -412);
 	auto* Spearman = World->SpawnActor<ALSTroopUnit>(FVector(400, 0, 88), FRotator::ZeroRotator);
 	Spearman->SetInitialFaction(ELSFaction::Enemy);
+	if (!TestTrue(TEXT("접촉 검사 고정 능력치 지정"),
+		LSCombatStatTestFixture::ConfigureUnit(Spearman, LSCombatStatTestFixture::UnitStats()))) return false;
 	Spearman->BasicAttack->SetAutoAttackOnBeginPlay(false);
 	auto* Data = NewObject<ULSCastleWeaponData>(World);
 	Data->Weapon = ELSCastleWeapon::Shotgun;
@@ -234,6 +240,7 @@ bool FLSShotgunContactDefenseTest::RunTest(const FString& Parameters)
 	FLSHealthSnapshot Before, After;
 	auto* Health = Spearman->FindComponentByClass<ULSHealthComponent>();
 	if (!Health->TryGetHealth(Before)) return false;
+	TestEqual(TEXT("접촉 검사 고정 초기 체력"), Before.CurrentHealth, 180.0f);
 	if (!TestTrue(TEXT("접촉 거리의 창병을 향해 산탄 발사"), Castle->Weapons->CastWeapon(
 		ELSCastleWeapon::Shotgun, FVector(1000, 0, 0)) == ELSWeaponCastResult::Ready)) return false;
 	for (TActorIterator<ALSCastleProjectile> It(World); It; ++It) It->Tick(1);

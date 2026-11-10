@@ -10,6 +10,7 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
 #include "Components/BoxComponent.h"
 #include "Controls/LSPlayerController.h"
@@ -150,8 +151,8 @@ bool FLSShotgunTest::RunTest(const FString& Parameters)
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 		return false;
 	UWorld* World = TestWorld.GetTestWorld();
-	ALSCastle* Castle = LSCastleTestFixture::Spawn(World, FVector(0, 0, 144), FRotator::ZeroRotator);
-	ALSCastle* Structure = LSCastleTestFixture::Spawn(World, FVector(500, 200, 144), FRotator::ZeroRotator);
+	ALSCastle* Castle = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(0, 0, 144));
+	ALSCastle* Structure = LSCastleTestFixture::SpawnWithStats(World, LSCastleTestFixture::FixedStats(), FVector(500, 200, 144));
 	Structure->SetInitialFaction(ELSFaction::Enemy);
 	TArray<ALSTroopUnit*> Units;
 	const FVector Locations[] = {FVector(400, 0, 96), FVector(400, 400, 96), FVector(1250, 0, 96),
@@ -160,8 +161,27 @@ bool FLSShotgunTest::RunTest(const FString& Parameters)
 	{
 		ALSTroopUnit* Unit = World->SpawnActor<ALSTroopUnit>(Locations[Index], FRotator::ZeroRotator);
 		Unit->SetInitialFaction(Index == 3 ? ELSFaction::Ally : ELSFaction::Enemy);
+		if (!TestTrue(TEXT("부채꼴 검사 고정 능력치 지정"),
+			LSCombatStatTestFixture::ConfigureUnit(Unit, LSCombatStatTestFixture::UnitStats(120.0f)))) return false;
 		Units.Add(Unit);
 	}
+	auto* Shotgun = NewObject<ULSCastleWeaponData>(World);
+	Shotgun->Weapon = ELSCastleWeapon::Shotgun;
+	FLSCastleWeaponSettings Settings;
+	Settings.Damage = 35;
+	Settings.Cooldown = 4.2f;
+	Settings.Range = 1200;
+	Settings.Radius = 250;
+	Settings.ConeAngle = 70;
+	Settings.KnockbackSpeed = 650;
+	Settings.KnockbackLift = 180;
+	Settings.ProjectileSpeed = 1800;
+	Settings.ArcHeight = 350;
+	Settings.ShellRadius = 18;
+	Settings.PelletCount = 13;
+	Settings.PelletRadius = 6;
+	Shotgun->Levels = {Settings};
+	if (!TestTrue(TEXT("부채꼴 검사 고정 산탄 수치 지정"), Castle->Weapons->SetWeaponDefinitions({Shotgun}))) return false;
 	if (!TestWorld.BeginPlayInTestWorld())
 		return false;
 	Castle->Orders->SetComponentTickEnabled(false);
