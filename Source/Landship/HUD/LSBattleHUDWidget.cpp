@@ -42,7 +42,9 @@ FString OrderName(ELSOrderKind Order)
 		return TEXT("대기");
 	}
 }
-const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
+const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병"),
+    TEXT("방패병"), TEXT("중화기병"), TEXT("자폭병")};
+static_assert(UE_ARRAY_COUNT(TroopNames) == ALSTroopUnit::GetTroopTypeCount());
 } // namespace
 
 void ULSBattleHUDWidget::NativeOnInitialized()
@@ -66,7 +68,11 @@ FText ULSBattleHUDWidget::GetSelectionDescription() const
 	if (Selection && Selection->Kind == ELSSelectionKind::Castle)
 		Name = TEXT("이동 성");
 	else if (const ALSTroopUnit* Unit = Cast<ALSTroopUnit>(Actor))
-		Name = TroopNames[static_cast<int32>(Unit->GetTroopType())];
+	{
+		const int32 TypeIndex = static_cast<int32>(Unit->GetTroopType());
+		Name = TypeIndex >= 0 && TypeIndex < UE_ARRAY_COUNT(TroopNames)
+		    ? TroopNames[TypeIndex] : TEXT("알 수 없는 병종");
+	}
 	const auto* Health = Actor->FindComponentByClass<ULSHealthComponent>();
 	FLSHealthSnapshot HP;
 	const FString Prefix = Actors.Num() > 1 ? TEXT("첫 대상 ") : TEXT("");
