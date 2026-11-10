@@ -11,12 +11,13 @@ TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implement
 	if (!PC || !Castle || PC->GetSelectedArmedCastle() != Castle)
 		return Result;
 	const TCHAR* WeaponNames[] = {TEXT("일반 대포"), TEXT("산탄"), TEXT("발리스타")};
-	const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
+	const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병"), TEXT("의무병"),
+	    TEXT("방패병"), TEXT("중화기병"), TEXT("자폭병")};
 	const FKey WeaponKeys[] = {
-        PC->UsesDirectCastleControl() ? EKeys::One : EKeys::Q,
-        PC->UsesDirectCastleControl() ? EKeys::Two : EKeys::W,
-        PC->UsesDirectCastleControl() ? EKeys::Three : EKeys::E};
-	const FKey ProductionKeys[] = {EKeys::F1, EKeys::F2, EKeys::F3};
+	    PC->UsesDirectCastleControl() ? EKeys::One : EKeys::Q,
+	    PC->UsesDirectCastleControl() ? EKeys::Two : EKeys::W,
+	    PC->UsesDirectCastleControl() ? EKeys::Three : EKeys::E};
+	const FKey ProductionKeys[] = {EKeys::F1, EKeys::F2, EKeys::F3, EKeys::F4, EKeys::F5, EKeys::F6, EKeys::F7};
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		FLSCommandEntry Weapon;
@@ -43,10 +44,13 @@ TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implement
 		}
 		Weapon.Tooltip = FText::FromString(TEXT("선택 후 전장 좌클릭으로 발사 · 우클릭/Esc 취소"));
 		Result.Add(Weapon);
+	}
+	for (int32 Index = 0; Index < ALSTroopUnit::GetTroopTypeCount(); ++Index)
+	{
 		FLSCommandEntry Production;
 		Production.Id = FName(*FString::Printf(TEXT("CastleProduce%d"), Index));
 		Production.Title = FText::FromString(TroopNames[Index]);
-		Production.Cell = 10 + Index;
+		Production.Cell = 8 + Index;
 		Production.Hotkey = ProductionKeys[Index];
 		const auto Type = static_cast<ELSTroopType>(Index);
 		const auto Status = PC->Production->GetStatus(Type);
@@ -73,9 +77,9 @@ bool ULSCastleCommandProviderComponent::ExecuteCommand_Implementation(FName Id, 
 	for (const auto& Entry : GetCommands_Implementation(PC))
 		if (Entry.Id == Id && Entry.bEnabled)
 		{
-			if (Entry.Cell >= 10)
+			if (Entry.Cell >= 8)
 			{
-				PC->ProduceTroop(static_cast<ELSTroopType>(Entry.Cell - 10));
+				PC->ProduceTroop(static_cast<ELSTroopType>(Entry.Cell - 8));
 				return PC->GetLastProductionResult() == ELSProductionResult::Ready;
 			}
 			return PC->ArmCastleWeapon(static_cast<ELSCastleWeapon>(Entry.Cell - 5));
