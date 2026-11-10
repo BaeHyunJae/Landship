@@ -24,7 +24,7 @@
 #include "Logging/StructuredLog.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "NavigationSystem.h"
-#include "NavigationPath.h"
+#include "NavigationData.h"
 #include "Navigation/PathFollowingComponent.h"
 
 ALSCastle::ALSCastle()
@@ -249,9 +249,10 @@ bool ALSCastle::RequestMove(const FVector& Destination)
 		return false;
 	}
 	// 도달 불가능한 명령이 진행 중인 이동을 취소하지 않도록 먼저 경로를 검사한다.
-	UNavigationPath* Path =
-	    Navigation->FindPathToLocationSynchronously(GetWorld(), GetNavAgentLocation(), Goal.Location, this);
-	if (!Path || !Path->IsValid() || Path->IsPartial())
+	if (!Navigation->GetDefaultNavDataInstance()) { return false; }
+	const FPathFindingResult Result = Navigation->FindPathSync(FPathFindingQuery(this, *NavData, GetNavAgentLocation(), Goal.Location));
+	const FNavPathSharedPtr& Path = Result.Path;
+	if (!Result.IsSuccessful() || !Path.IsValid() || !Path->IsValid() || Path->IsPartial())
 	{
 		return false;
 	}
