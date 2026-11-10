@@ -9,6 +9,7 @@ permissions: {}
 
 jobs:
   title:
+    name: pr-title
     runs-on: ubuntu-latest
     steps:
       - name: 제목 형식 확인
