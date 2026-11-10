@@ -43,6 +43,7 @@
   - 궁병은 `RangedAttack` 설정의 투사체 클래스로 원거리 공격을 하며 화살 형태를 쓴다. 클래스·속도·수명·반경은 `ALSTroopUnit` 기본값에서 조정한다. 창병·기마병은 투사체 클래스를 비워 근접 즉시 피해를 쓴다. 투사체의 비행·명중 규칙은 `Combat` 계약을 따른다.
   - 창병·기마병은 `MeleeIdleAnimation`·`MeleeAttackAnimation`, 궁병은 `ArcherIdleAnimation`·`ArcherAttackAnimation`을 대기 반복과 공격 시 한 번 재생에 쓴다. 클립은 `Landship|Troops|Animation` 속성에서 바꾼다.
 - `ULSTroopProductionComponent`는 플레이어 컨트롤러가 가지며 병종별 생산 쿨타임과 아군 인구수를 관리한다. 호출은 `ALSPlayerController::ProduceTroop()`을 거친다.
+  - 생산 확정 전 모든 병종의 전용 행동 컴포넌트 구성을 검사한다. 기본 공격 설정은 `SupportsBasicAttack()`이 참인 병종에만 요구하며, 의무병·중화기병·자폭병에는 요구하지 않는다. 구성 실패 시 생산 묶음을 취소하고 인구수·쿨타임을 소비하지 않는다.
   - `Produce(Type)`: 병종을 넘기면 선택된 성 주변의 서로 겹치지 않는 빈 자리 두 곳에 같은 병종의 아군 병력 두 기를 만들고 `ELSProductionResult::Ready`를 반환한다. 생산 요청이 있을 때 부른다. 성공할 때만 해당 병종의 쿨타임이 시작되고 인구수 2가 쓰인다. 두 자리 중 하나라도 없거나 어느 한 병력의 생성·수치 초기화·컨트롤러 준비가 실패하면 두 기를 모두 취소한다. 취소 중에는 인구 알림, 시야 등록, 최초 발견, 생산 기록이 발생하지 않는다. 실패하면 인구수와 쿨타임은 바뀌지 않는다.
   - `GetStatus(Type)`: 상태를 바꾸지 않고 지금 생산할 수 있는지(`Ready`, `SelectCastle`, `Cooldown`, `PopulationFull`, `Unavailable`, `Busy`)를 반환한다. 버튼·표시를 갱신할 때 부른다. 빈 자리가 없는 경우의 `NoSpace`는 `Produce()`만 반환한다.
   - `GetRemainingCooldown(Type)`과 `GetCooldownSeconds()`: 남은 쿨타임과 전체 쿨타임(초)을 반환한다. 병종마다 쿨타임이 독립이다. 컨트롤러가 관리하므로 성을 바꾸거나 선택을 해제해도 초기화되지 않는다. 전체 쿨타임은 `CooldownSeconds`로 조정한다.

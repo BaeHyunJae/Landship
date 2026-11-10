@@ -15,6 +15,7 @@
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "Navigation/LSMineAvoidance.h"
+#include "Troops/LSTroopCombatComponent.h"
 #include "TimerManager.h"
 
 ULSTroopProductionComponent::ULSTroopProductionComponent()
@@ -291,7 +292,8 @@ ELSProductionResult ULSTroopProductionComponent::Produce(ELSTroopType Type)
 		FLSHealthSnapshot Health;
 		if (!IsValid(Unit) || Unit->IsActorBeingDestroyed() || !Unit->IsStatsInitialized() ||
 			!Unit->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health) || Health.bIsDead ||
-			!Unit->BasicAttack->IsConfigured())
+			(Unit->SupportsBasicAttack() && !Unit->BasicAttack->IsConfigured()) ||
+			!IsValid(Unit->CombatBehavior) || !Unit->CombatBehavior->IsConfigurationValid())
 		{
 			Rollback();
 			return ELSProductionResult::Unavailable;
@@ -329,7 +331,9 @@ ELSProductionResult ULSTroopProductionComponent::Produce(ELSTroopType Type)
 			!IsValid(Controllers[Index]) || Controllers[Index]->IsActorBeingDestroyed() ||
 			Units[Index]->GetController() != Controllers[Index] ||
 			!Units[Index]->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health) || Health.bIsDead ||
-			!Units[Index]->BasicAttack->IsConfigured() || LSBattleOutcome::AreActionsStopped(GetWorld()))
+			(Units[Index]->SupportsBasicAttack() && !Units[Index]->BasicAttack->IsConfigured()) ||
+			!IsValid(Units[Index]->CombatBehavior) || !Units[Index]->CombatBehavior->IsConfigurationValid() ||
+			LSBattleOutcome::AreActionsStopped(GetWorld()))
 		{
 			Rollback();
 			return ELSProductionResult::Unavailable;
