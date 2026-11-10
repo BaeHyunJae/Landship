@@ -8,6 +8,7 @@
 #include "Controls/LSSelectableComponent.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMesh.h"
@@ -20,6 +21,7 @@ ALSTurret::ALSTurret()
 	UBoxComponent* Body = CreateDefaultSubobject<UBoxComponent>(TEXT("Body"));
 	Body->SetBoxExtent(FVector(70, 70, 120));
 	SetObstacleBody(Body, true);
+	Body->SetCanEverAffectNavigation(false);
 	BasicAttack = CreateDefaultSubobject<ULSBasicAttackComponent>(TEXT("BasicAttack"));
 	AttackSettings.Damage = 50;
 	AttackSettings.Interval = 2;
@@ -39,6 +41,14 @@ ALSTurret::ALSTurret()
 	Barrel->SetRelativeScale3D(FVector(.35, .35, 1.5));
 	Barrel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Barrel->SetCanEverAffectNavigation(false);
+}
+void ALSTurret::PreRegisterAllComponents()
+{
+	// 기존 블루프린트·맵에 저장된 설정도 내비게이션에 등록되기 전에 해제한다.
+	TInlineComponentArray<UPrimitiveComponent*> Components(this);
+	for (UPrimitiveComponent* Component : Components)
+		Component->SetCanEverAffectNavigation(false);
+	Super::PreRegisterAllComponents();
 }
 FString ALSTurret::GetConfigurationError() const
 {

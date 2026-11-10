@@ -17,6 +17,7 @@ class LANDSHIP_API ALSTurret : public ALSPathObstacle
 #endif
 
   protected:
+	virtual void PreRegisterAllComponents() override;
 	virtual void BeginPlay() override;
 	virtual void PrepareForDeath() override;
 	virtual void Tick(float DeltaSeconds) override;
