@@ -21,6 +21,10 @@ public:
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Landship|Battlefield")
 	TObjectPtr<ALSOutpost> CoreOutpost;
 
+	/** 아군 병력은 직접 명령 대신 시야 내 교전과 성 추종을 사용한다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Landship|Battlefield")
+	bool bAutomaticAlliedTroops = true;
+
 	FString GetConfigurationError() const;
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

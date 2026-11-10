@@ -2,12 +2,19 @@
 #include "Vision/LSVisionSubsystem.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Controls/LSOrderComponent.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 
 ULSSelectableComponent::ULSSelectableComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+bool ULSSelectableComponent::CanPlayerControl() const
+{
+	const auto* Orders = GetOwner()->FindComponentByClass<ULSOrderComponent>();
+	return bPlayerControlled && IsSelectable() && (!Orders || !Orders->IsAutomaticTroop());
 }
 
 bool ULSSelectableComponent::IsSelectable() const

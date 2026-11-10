@@ -2,6 +2,10 @@
 
 ## 제공하는 것
 
+- SetPlayerDriveInput은 실제 성의 이동을 WASD용 직접 주행으로 전환한다. 기존 전진 가속·선회 속도·최대 속도를 사용하고 후진은 ReverseSpeedRatio를 적용한다. 무입력·역방향 입력에는 PlayerBrakingDeceleration으로 제동하며, 충돌 스윕과 아군 밀어내기는 유지한다. 직접 주행은 경로 명령을 사용하지 않는다.
+
+- ULSCastleMovementComponent는 전진 스윕을 막은 같은 진영의 생존 지상 병력을 접촉 지점의 좌우로 밀어낸 뒤 남은 성 이동을 다시 스윕한다. 병력의 NavData에서 지면을 확인하고 실제 충돌 스윕으로 변위시키므로 벽·다른 몸체·통행 불가능한 지형에 막히면 성도 멈출 수 있다. 피해와 공중 넉백은 발생하지 않는다. FriendlyPushSpeed와 FriendlyPushRecovery로 밀기 속도와 자동 병력의 추종 재개 대기를 조정한다.
+
 - `ULSSlopeMovementComponent`는 경사 속도 커브가 설정된 지상 이동에 한해 기본 최대 속도에 배율을 곱한다. 이동 방향은 AI 경로 요청 또는 직접 입력의 가속도로 정한다. 커브를 비우면 기본 속도로 동작한다.
 
 - `LSMineAvoidance::Snapshot()`은 현재 발동 가능한 지뢰와 발동 대기 중인 지뢰의 접촉 구를 반환한다.

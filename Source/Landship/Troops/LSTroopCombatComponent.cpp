@@ -22,6 +22,13 @@ bool ULSTroopCombatComponent::IsConfigurationValid() const
 	return IsValid(GetTroop());
 }
 
+float ULSTroopCombatComponent::GetEngagementSearchRadius() const
+{
+	FLSUnitStatRow Stats;
+	const auto* Troop = GetTroop();
+	return Troop && Troop->TryGetStats(Stats) ? Stats.VisionRadius : 0.0f;
+}
+
 void ULSTroopCombatComponent::SetBattleEnabled(bool bEnabled)
 {
 	bBattleEnabled = bEnabled && IsConfigurationValid();

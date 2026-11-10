@@ -48,6 +48,7 @@ void ULSBattlefieldStateSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	CastleHealth = Setup->PlayerCastle->FindComponentByClass<ULSHealthComponent>();
 	CoreOutpost = Setup->CoreOutpost.Get();
 	bSetupValid = true;
+	bAutomaticAlliedTroops = Setup->bAutomaticAlliedTroops;
 	CastleHealth->OnDiedEvent.AddUniqueDynamic(this, &ThisClass::OnCastleDied);
 	PlayerCastle->OnEndPlay.AddUniqueDynamic(this, &ThisClass::OnCastleEndPlay);
 	ObserveCastleDeath();

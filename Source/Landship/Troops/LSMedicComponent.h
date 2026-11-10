@@ -15,6 +15,7 @@ class LANDSHIP_API ULSMedicComponent : public ULSTroopCombatComponent
 	GENERATED_BODY()
   public:
 	ULSMedicComponent();
+	virtual float GetEngagementSearchRadius() const override { return PatientDetectionRange; }
 	virtual bool IsConfigurationValid() const override;
 	virtual bool IsSupportBehavior() const override
 	{

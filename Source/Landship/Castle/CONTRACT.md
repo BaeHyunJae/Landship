@@ -2,6 +2,8 @@
 
 ## 제공하는 것
 
+- ALSCastle은 Controls의 ULSCastleEscortComponent를 기본 소유한다. 이 컴포넌트는 자동 아군 병력의 전후방 자리와 추종 방향만 제공하고 성이나 병력을 직접 이동시키지 않는다.
+
 - `ALSCastleProjectile::LaunchPayload`는 일반 대포와 같은 곡사 및 지형 충돌을 사용한다. 착탄 시 폭발 피해와 넉백 없이 호출자가 바인딩한 페이로드를 최대 한 번 실행한다.
 
 - `ALSMobileCastle`은 병력 이동을 시험하는 테스트 전용 클래스다. 실제 게임의 성 기능은 `ALSCastle`에 구현하며 이 클래스에는 기능을 추가하지 않는다. 기존 병력 기반 이동과 시험용 몸체만 유지한다.

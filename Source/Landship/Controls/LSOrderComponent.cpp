@@ -13,8 +13,10 @@
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Controls/LSSelectableComponent.h"
+#include "Controls/LSCastleEscortComponent.h"
 #include "Troops/LSUnit.h"
 #include "Troops/LSTroopUnit.h"
+#include "Troops/LSTroopCombatComponent.h"
 #include "Castle/LSCastle.h"
 #include "Navigation/LSCastleMovementComponent.h"
 #include "Enemies/LSBattlefieldStateSubsystem.h"
@@ -96,6 +98,8 @@ void ULSOrderComponent::EndBattleActions()
 	bKnockbackActive = false;
 	if (bBattleActionsEnded) return;
 	bBattleActionsEnded = true;
+	if (const auto* Troop = Cast<ALSTroopUnit>(GetOwner()); Troop && Troop->CombatBehavior)
+		Troop->CombatBehavior->SetBattleEnabled(false);
 	CancelIdleYield();
 	GetWorld()->GetTimerManager().ClearTimer(OrderUpdateTimer);
 	CancelDisarm();
@@ -113,6 +117,7 @@ void ULSOrderComponent::EndBattleActions()
 
 void ULSOrderComponent::SuspendForPool()
 {
+	CastlePushResumeAfter = 0;
 	++OrderLifeSerial;
 	EndBattleActions();
 	SetComponentTickEnabled(false);
@@ -194,22 +199,35 @@ bool ULSOrderComponent::ResolveDestination(const FVector& Goal, FVector& OutDest
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	const ANavigationData* Data = Nav && Pawn ? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
+	const bool bCastle = Cast<ALSCastle>(Pawn) != nullptr;
+	const FVector QueryExtent = bCastle && Data ? Data->GetDefaultQueryExtent() : FVector(150, 150, 300);
+	FNavLocation Start;
+	Start.Location = Pawn->GetNavAgentLocation();
 	FNavLocation Point;
-	if (!Data || !Nav->ProjectPointToNavigation(Goal, Point, FVector(150, 150, 300), Data))
+	if (!Data || (bCastle && !Nav->ProjectPointToNavigation(Pawn->GetNavAgentLocation(), Start, QueryExtent, Data)) ||
+	    !Nav->ProjectPointToNavigation(Goal, Point, QueryExtent, Data))
 	{
+		if (bCastle)
+			UE_LOG(LogTemp, Warning, TEXT("CASTLE_ORDER_NAV projection failed owner=%s start=%s goal=%s data=%s building=%d"),
+			    *GetNameSafe(Pawn), *Pawn->GetNavAgentLocation().ToString(), *Goal.ToString(), *GetNameSafe(Data),
+			    Nav && Nav->IsNavigationBuildInProgress());
 		return false;
 	}
 	// 이미 목적지에 있는 경우 한 점짜리 경로가 반환되어도 유효한 명령이다.
-	if (FVector::DistSquared(Pawn->GetNavAgentLocation(), Point.Location) <= FMath::Square(ArrivalTolerance))
+	if (FVector::DistSquared(Start.Location, Point.Location) <= FMath::Square(ArrivalTolerance))
 	{
 		OutDestination = Point.Location;
 		return true;
 	}
-	FPathFindingQuery Query(Pawn, *Data, Pawn->GetNavAgentLocation(), Point.Location);
+	FPathFindingQuery Query(Pawn, *Data, Start.Location, Point.Location);
 	Query.SetAllowPartialPaths(false);
 	const FNavPathSharedPtr Path = Nav->FindPathSync(Pawn->GetNavAgentPropertiesRef(), Query).Path;
 	if (!Path.IsValid() || !Path->IsValid() || Path->IsPartial())
 	{
+		if (bCastle)
+			UE_LOG(LogTemp, Warning, TEXT("CASTLE_ORDER_NAV full path failed owner=%s start=%s goal=%s data=%s building=%d"),
+			    *GetNameSafe(Pawn), *Start.Location.ToString(), *Point.Location.ToString(), *GetNameSafe(Data),
+			    Nav->IsNavigationBuildInProgress());
 		if (OutFullPathFailed) *OutFullPathFailed = true;
 		return false;
 	}
@@ -264,6 +282,12 @@ bool ULSOrderComponent::GetNavigationOriginHeight(double& OutHeight) const
 
 bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 {
+	const auto* Castle = Cast<ALSCastle>(GetOwner());
+	const auto* Movement = Castle ? Cast<ULSCastleMovementComponent>(Castle->GetMovementComponent()) : nullptr;
+	if (Movement && Movement->IsPlayerDriveEnabled())
+		return false;
+	if (IsAutomaticTroop())
+		return false;
 	switch (Kind)
 	{
 	case ELSOrderKind::Disarm:
@@ -287,6 +311,10 @@ bool ULSOrderComponent::CanExecuteOrderKind(ELSOrderKind Kind) const
 
 bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder)
 {
+	const auto* Castle = Cast<ALSCastle>(GetOwner());
+	const auto* Movement = Castle ? Cast<ULSCastleMovementComponent>(Castle->GetMovementComponent()) : nullptr;
+	if (Movement && Movement->IsPlayerDriveEnabled())
+		return false;
 	BlockingBarricade.Reset();
 	const ULSSelectableComponent* Selection = GetOwner()->FindComponentByClass<ULSSelectableComponent>();
 	if (!Selection || !Selection->CanPlayerControl())
@@ -322,7 +350,7 @@ bool ULSOrderComponent::PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder)
 
 bool ULSOrderComponent::SubmitOrder(const FLSOrder& Order, bool bQueue)
 {
-	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
+	if (IsAutomaticTroop() || bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 	{
 		LastFailure = ELSOrderFailure::Unavailable;
 		return false;
@@ -432,7 +460,7 @@ void ULSOrderComponent::BeginOrder(const FLSOrder& Order)
 	}
 }
 
-bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
+bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach, float CustomAcceptance)
 {
 	if (bBattleActionsEnded || LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return false;
@@ -440,7 +468,7 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 	{
 		// RVO의 예측 반경이 공격 진입을 막지 않도록 교전 접근에서는 사용하지 않는다.
 		// 실제 충돌과 NavMesh 경로·공격 위치의 점유 검사는 그대로 유지한다.
-		Character->GetCharacterMovement()->SetAvoidanceEnabled(!bAttackApproach);
+		Character->GetCharacterMovement()->SetAvoidanceEnabled(!bAttackApproach && CustomAcceptance < 0);
 	}
 	bAttackApproaching = bAttackApproach;
 	SetMineAvoidance(UsesMineAvoidance());
@@ -483,6 +511,12 @@ bool ULSOrderComponent::MoveTo(const FVector& Goal, bool bAttackApproach)
 	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
 	{
 		AcceptanceRadius = 5;
+		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetReachTestIncludesGoalRadius(false);
+	}
+	if (CustomAcceptance >= 0)
+	{
+		AcceptanceRadius = CustomAcceptance;
 		Request.SetReachTestIncludesAgentRadius(false);
 		Request.SetReachTestIncludesGoalRadius(false);
 	}
@@ -781,6 +815,7 @@ float ULSOrderComponent::GetDetectionRange() const
 
 AActor* ULSOrderComponent::FindEnemy(float Range) const
 {
+	const bool bUseSightRadius = IsAutomaticTroop();
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
 	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
@@ -801,6 +836,9 @@ AActor* ULSOrderComponent::FindEnemy(float Range) const
 		{
 			continue;
 		}
+		if (bUseSightRadius &&
+		    FVector::DistSquared(GetOwner()->GetActorLocation(), Candidate->GetActorLocation()) > FMath::Square(Range))
+			continue;
 		const double Distance = ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Candidate);
 		if (Distance < BestDistance ||
 		    (Distance == BestDistance && (!Best || Candidate->GetUniqueID() < Best->GetUniqueID())))
@@ -1043,7 +1081,8 @@ void ULSOrderComponent::UpdateIdleYield()
 {
 	ALSTroopUnit* Troop = Cast<ALSTroopUnit>(GetOwner());
 	const ULSSelectableComponent* Selection = Troop ? Troop->Selection.Get() : nullptr;
-	if (!Troop || Troop->GetFaction() != ELSFaction::Ally || !Selection || !Selection->CanPlayerControl() ||
+	if (!Troop || Troop->GetFaction() != ELSFaction::Ally || !Selection ||
+	    (!Selection->CanPlayerControl() && !IsAutomaticTroop()) ||
 	    ActiveOrder.Kind != ELSOrderKind::Idle || !PendingOrders.IsEmpty() || bHasEngagement ||
 	    EngagedTarget.IsValid() || (Attack && Attack->GetAttackTarget()) || DisarmMine.IsValid() ||
 	    bKnockbackActive || (!bYieldingToCastle && IsMoving()) || !CanMove() ||
@@ -1206,6 +1245,187 @@ void ULSOrderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	UpdateOrders(DeltaTime);
 }
 
+bool ULSOrderComponent::IsAutomaticTroop() const
+{
+	const auto* Unit = Cast<ALSUnit>(GetOwner());
+	const auto* Battlefield = GetWorld() ? GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>() : nullptr;
+	return Unit && Unit->GetFaction() == ELSFaction::Ally && Battlefield &&
+	    Battlefield->UsesAutomaticAlliedTroops();
+}
+
+void ULSOrderComponent::PauseAfterCastlePush(float Seconds)
+{
+	if (!IsAutomaticTroop() || bBattleActionsEnded || !FMath::IsFinite(Seconds) || Seconds < 0)
+		return;
+	CancelIdleYield();
+	StopMovement();
+	CastlePushResumeAfter = GetWorld()->GetTimeSeconds() + Seconds;
+	NextRepathTime = 0;
+}
+
+TArray<ALSUnit*> ULSOrderComponent::GatherEngagementTroops(float Radius, bool bAllies) const
+{
+	TArray<ALSUnit*> Units;
+	const auto* Owner = Cast<ALSUnit>(GetOwner());
+	if (!Owner || !FMath::IsFinite(Radius) || Radius <= 0)
+		return Units;
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Unit);
+	TArray<FOverlapResult> Hits;
+	GetWorld()->OverlapMultiByObjectType(Hits, Owner->GetActorLocation(), FQuat::Identity, Objects,
+	    FCollisionShape::MakeSphere(Radius), FCollisionQueryParams(SCENE_QUERY_STAT(LSTroopEngagement), false, Owner));
+	for (const auto& Hit : Hits)
+	{
+		auto* Candidate = Cast<ALSUnit>(Hit.GetActor());
+		if (ULSCombatTargetLibrary::IsCombatAlive(Candidate) &&
+		    (Candidate->GetFaction() == Owner->GetFaction()) == bAllies &&
+		    (bAllies || ULSVisionSubsystem::PassesFriendlySight(Owner, Candidate)))
+			Units.AddUnique(Candidate);
+	}
+	return Units;
+}
+
+void ULSOrderComponent::ExecuteAutomaticDirective(const FLSCombatDirective& Directive)
+{
+	AActor* Target = Directive.Target;
+	if (!Directive.bSuppressBasicAttack && !Directive.bHoldPosition)
+	{
+		Engage(Target, true);
+		return;
+	}
+	if (EngagedTarget.Get() != Target)
+		NextRepathTime = 0;
+	SetEngagementTarget(Target);
+	bHasEngagement = Target != nullptr;
+	if (Directive.bHoldPosition || !Target ||
+	    ULSCombatTargetLibrary::GetAttackDistance(GetOwner(), Target) <= Directive.ApproachRange)
+	{
+		StopMovement();
+		if (!Directive.bSuppressBasicAttack && Target && CanAttack() && IsInAttackRange(Target))
+			Attack->StartAttack(Target);
+		else if (Attack)
+			Attack->StopAttack();
+		return;
+	}
+	if (Attack) Attack->StopAttack();
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextRepathTime || !CanMove())
+		return;
+	NextRepathTime = Now + RepathInterval;
+	float Radius, Height, TargetRadius, TargetHeight;
+	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
+	Target->GetSimpleCollisionCylinder(TargetRadius, TargetHeight);
+	FVector Direction = (GetOwner()->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
+	if (Direction.IsNearlyZero()) Direction = -GetOwner()->GetActorForwardVector();
+	const float Acceptance = FMath::Min(ArrivalTolerance, static_cast<float>(Directive.ApproachRange * 0.1));
+	for (const float Angle : {0.0f, 45.0f, -45.0f, 90.0f, -90.0f})
+	{
+		const FVector Goal = Target->GetActorLocation() - FVector(0, 0, TargetHeight) +
+		    Direction.RotateAngleAxis(Angle, FVector::UpVector) *
+		    (Radius + TargetRadius + Directive.ApproachRange * 0.75);
+		FVector Destination;
+		if (ResolveDestination(Goal, Destination) && MoveTo(Destination, false, Acceptance))
+			return;
+	}
+	StopMovement();
+	LastFailure = ELSOrderFailure::Unreachable;
+}
+
+void ULSOrderComponent::UpdateAutomaticTroop()
+{
+	FLSPlayerCastleState Castle;
+	const auto* Battlefield = GetWorld()->GetSubsystem<ULSBattlefieldStateSubsystem>();
+	if (!Battlefield || !Battlefield->TryGetPlayerCastleState(Castle) || Castle.bIsDead ||
+	    !Castle.Castle.IsValid())
+	{
+		StopMovement();
+		SetEngagementTarget(nullptr);
+		bHasEngagement = false;
+		if (Attack) Attack->StopAttack();
+		return;
+	}
+	FLSUnitStatRow Stats;
+	const auto* Unit = Cast<ALSUnit>(GetOwner());
+	if (!Unit || !Unit->TryGetStats(Stats))
+		return;
+	auto* Troop = Cast<ALSTroopUnit>(GetOwner());
+	auto* Behavior = Troop ? Troop->CombatBehavior.Get() : nullptr;
+	if (Behavior && !Behavior->IsBattleEnabled())
+		Behavior->SetBattleEnabled(true);
+	const bool bSupport = Behavior && Behavior->IsSupportBehavior();
+
+	// 각 병사의 시야 반경과 아군 공유 시야를 모두 통과한 적만 추적한다.
+	AActor* Enemy = bSupport ? nullptr : EngagedTarget.Get();
+	if (!IsHostile(Enemy) ||
+	    FVector::DistSquared(GetOwner()->GetActorLocation(), Enemy->GetActorLocation()) > FMath::Square(Stats.VisionRadius))
+		Enemy = !bSupport && (Behavior || CanAttack()) ? FindEnemy(Stats.VisionRadius) : nullptr;
+	if (Behavior)
+	{
+		const auto Nearby = GatherEngagementTroops(Behavior->GetEngagementSearchRadius(), bSupport);
+		const FLSCombatDirective Directive = Behavior->EvaluateEngagement(Enemy, Nearby);
+		if (!ULSCombatTargetLibrary::IsCombatAlive(GetOwner()))
+			return;
+		if (Directive.bHoldPosition || ULSCombatTargetLibrary::IsCombatAlive(Directive.Target))
+		{
+			ExecuteAutomaticDirective(Directive);
+			return;
+		}
+	}
+	else if (Enemy)
+	{
+		Engage(Enemy, true);
+		return;
+	}
+	if (bHasEngagement)
+	{
+		StopMovement();
+		SetEngagementTarget(nullptr);
+		bHasEngagement = false;
+		if (Attack) Attack->StopAttack();
+		NextRepathTime = 0;
+	}
+	auto* Escort = Castle.Castle->FindComponentByClass<ULSCastleEscortComponent>();
+	FVector Goal;
+	if (!Escort || !Escort->TryGetDestination(Cast<ALSTroopUnit>(GetOwner()), Goal))
+		return;
+	float Radius, Height;
+	GetOwner()->GetSimpleCollisionCylinder(Radius, Height);
+	const double Distance = FVector::Dist2D(GetOwner()->GetActorLocation(), Goal);
+	const double StopDistance = ArrivalTolerance + Radius;
+	if (Distance <= StopDistance)
+	{
+		if (IsMoving() && !bYieldingToCastle) StopMovement();
+		UpdateIdleYield();
+		return;
+	}
+	if (!IsMoving() && Distance <= StopDistance + CastleFollowSlack)
+	{
+		UpdateIdleYield();
+		return;
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextRepathTime || !CanMove())
+		return;
+	NextRepathTime = Now + RepathInterval;
+	const double SearchOffset = Escort->GetSlotSpacing() * 0.25;
+	const FVector Offsets[] = {FVector::ZeroVector, FVector(SearchOffset, 0, 0), FVector(-SearchOffset, 0, 0),
+	    FVector(0, SearchOffset, 0), FVector(0, -SearchOffset, 0)};
+	for (const FVector& Offset : Offsets)
+	{
+		FVector Destination;
+		if (ResolveDestination(Goal + Offset, Destination) &&
+		    FVector::DistSquared2D(Goal, Destination) <= FMath::Square(Escort->GetSlotSpacing() * 0.4))
+		{
+			CancelIdleYield();
+			MoveTo(Destination);
+			return;
+		}
+	}
+	if (IsMoving())
+		StopMovement();
+	LastFailure = ELSOrderFailure::Unreachable;
+}
+
 void ULSOrderComponent::UpdateOrders(float DeltaTime)
 {
 	if (bUpdatingOrders) return;
@@ -1232,6 +1452,12 @@ void ULSOrderComponent::UpdateOrders(float DeltaTime)
 		if (!TryCompleteKnockback()) return;
 		const FLSOrder ResumeOrder = ActiveOrder;
 		BeginOrder(ResumeOrder);
+	}
+	if (IsAutomaticTroop())
+	{
+		if (GetWorld()->GetTimeSeconds() >= CastlePushResumeAfter)
+			UpdateAutomaticTroop();
+		return;
 	}
 	if (ActiveOrder.Kind == ELSOrderKind::Disarm)
 	{

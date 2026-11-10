@@ -3,8 +3,10 @@
 #include "Combat/LSCollisionChannels.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/LSFactionInterface.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "Engine/OverlapResult.h"
 #include "Troops/LSTroopUnit.h"
 
 bool ULSBomberComponent::IsConfigurationValid() const
@@ -34,15 +36,16 @@ FLSCombatDirective ULSBomberComponent::EvaluateEngagement(AActor* Target, const 
 	const FVector Origin = Unit->GetActorLocation();
 	const double BlastReach = BlastRadius - Unit->GetSimpleCollisionRadius();
 	UWorld* World = GetWorld();
-	const auto IsOccluded = [World, Unit, &Origin](const ALSUnit* Opponent)
+	const auto IsOccluded = [World, Unit, &Origin](const AActor* Opponent)
 	{
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(LSBomberBlast), false, Unit);
 		Query.AddIgnoredActor(Opponent);
 		return World->LineTraceTestByChannel(Origin, Opponent->GetActorLocation(),
 		                                     LSCollisionChannels::ExplosionOcclusion, Query);
 	};
-	TArray<TWeakObjectPtr<ALSUnit>, TInlineAllocator<16>> Victims;
-	bool bContact = false;
+	TArray<TWeakObjectPtr<AActor>, TInlineAllocator<16>> Victims;
+	bool bContact = ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Target) &&
+	    ULSCombatTargetLibrary::GetAttackDistance(Unit, Target) <= Stats.AttackRange && !IsOccluded(Target);
 	for (ALSUnit* Opponent : Opponents)
 	{
 		if (!ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Opponent))
@@ -53,9 +56,21 @@ FLSCombatDirective ULSBomberComponent::EvaluateEngagement(AActor* Target, const 
 		if (Gap <= BlastReach)
 			Victims.Add(Opponent);
 	}
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(LSCollisionChannels::Building);
+	TArray<FOverlapResult> Buildings;
+	World->OverlapMultiByObjectType(Buildings, Origin, FQuat::Identity, Objects,
+	    FCollisionShape::MakeSphere(BlastRadius), FCollisionQueryParams(SCENE_QUERY_STAT(LSBomberBuildings), false, Unit));
+	for (const auto& Hit : Buildings)
+	{
+		AActor* Building = Hit.GetActor();
+		if (ULSCombatTargetLibrary::CanAutoAttackTarget(Unit, Building) &&
+		    ULSCombatTargetLibrary::GetAttackDistance(Unit, Building) <= BlastReach)
+			Victims.AddUnique(Building);
+	}
 	if (!bContact)
 		return Result;
-	Victims.RemoveAll([&IsOccluded](const TWeakObjectPtr<ALSUnit>& Candidate)
+	Victims.RemoveAll([&IsOccluded](const TWeakObjectPtr<AActor>& Candidate)
 	{
 		return !Candidate.IsValid() || IsOccluded(Candidate.Get());
 	});
@@ -84,8 +99,9 @@ FLSCombatDirective ULSBomberComponent::EvaluateEngagement(AActor* Target, const 
 	DrawDebugSphere(World, Origin, BlastRadius, 20, FColor::Orange, false, 0.3f, 0, 3.0f);
 	for (const auto& Victim : Victims)
 	{
-		ALSUnit* Opponent = Victim.Get();
-		if (!ULSCombatTargetLibrary::IsCombatAlive(Opponent) || Opponent->GetFaction() == Blast.SourceFaction)
+		AActor* Opponent = Victim.Get();
+		const auto* Faction = Cast<ILSFactionInterface>(Opponent);
+		if (!ULSCombatTargetLibrary::IsCombatAlive(Opponent) || !Faction || Faction->GetFaction() == Blast.SourceFaction)
 			continue;
 		if (!IsValid(Blast.SourceActor) || Blast.SourceActor->IsActorBeingDestroyed())
 		{

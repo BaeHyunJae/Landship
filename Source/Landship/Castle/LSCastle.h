@@ -24,6 +24,8 @@ class LANDSHIP_API ALSCastle : public APawn, public ILSFactionInterface
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSOrderComponent> Orders;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
+	TObjectPtr<class ULSCastleEscortComponent> Escort;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Components")
 	TObjectPtr<class ULSVisionParticipantComponent> Vision;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Weapons")
 	TObjectPtr<class ULSCastleWeaponComponent> Weapons;

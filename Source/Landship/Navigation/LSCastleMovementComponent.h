@@ -21,6 +21,18 @@ class LANDSHIP_API ULSCastleMovementComponent : public UFloatingPawnMovement, pu
 	/** 경로의 정지 경계와 방향 변경에 적용하는 감속도(cm/초²). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Castle Movement", meta = (ClampMin = "1"))
 	float ForwardBrakingDeceleration = 400;
+	/** 이동을 막는 같은 진영의 생존 병력을 수평으로 밀어내는 속도(cm/s). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Castle Movement", meta = (ClampMin = "1"))
+	float FriendlyPushSpeed = 600.0f;
+	/** 밀려난 자동 병력이 즉시 제자리로 복귀하지 않게 하는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Castle Movement", meta = (ClampMin = "0", Units = "s"))
+	float FriendlyPushRecovery = 0.25f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Castle Movement", meta = (ClampMin = "0.01", ClampMax = "1"))
+	float ReverseSpeedRatio = 0.55f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Landship|Castle Movement", meta = (ClampMin = "1"))
+	float PlayerBrakingDeceleration = 1250.0f;
+	void SetPlayerDriveInput(float Throttle, float Steering);
+	bool IsPlayerDriveEnabled() const { return bPlayerDrive; }
 
 	float GetMaxBrakingDeceleration() const;
 	virtual void RequestDirectMove(const FVector& MoveVelocity, bool bForceMaxSpeed) override;
@@ -54,11 +66,16 @@ class LANDSHIP_API ULSCastleMovementComponent : public UFloatingPawnMovement, pu
 
   private:
 	void CalcForwardVelocity(float DeltaTime);
+	void CalcPlayerDriveVelocity(float DeltaTime);
+	bool TryPushFriendlyTroop(const FHitResult& Hit, const FVector& Delta);
 	void ClearMoveIntent();
 	void RemoveAvoidanceObstacle();
 	FVector RequestedVelocity = FVector::ZeroVector;
 	bool bHasRequestedVelocity = false;
 	bool bRequestedMoveWithMaxSpeed = false;
+	bool bPlayerDrive = false;
+	float PlayerThrottle = 0;
+	float PlayerSteering = 0;
 	int32 AvoidanceUID = INDEX_NONE;
 	float AvoidanceWeight = 1;
 	int32 AvoidanceGroup = 1;

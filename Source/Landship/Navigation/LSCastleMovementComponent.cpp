@@ -3,6 +3,13 @@
 #include "AIController.h"
 #include "AI/Navigation/AvoidanceManager.h"
 #include "Components/CapsuleComponent.h"
+#include "Combat/LSCombatTargetLibrary.h"
+#include "Combat/LSFactionInterface.h"
+#include "Controls/LSOrderComponent.h"
+#include "Troops/LSUnit.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationSystem.h"
+#include "NavigationData.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 
@@ -25,11 +32,13 @@ void ULSCastleMovementComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	if (ShouldSkipUpdate(DeltaTime) || !PawnOwner || !UpdatedComponent)
 		return;
 	// 경로를 따르는 AI는 ApplyControlInputToVelocity를 건너뛸 수 있다. 스윕보다 먼저 계산한다.
-	if (bTurnBeforeForward && DeltaTime > SMALL_NUMBER)
+	if (bPlayerDrive && DeltaTime > SMALL_NUMBER)
+		CalcPlayerDriveVelocity(DeltaTime);
+	else if (bTurnBeforeForward && DeltaTime > SMALL_NUMBER)
 		CalcForwardVelocity(DeltaTime);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	ClearMoveIntent();
-	if (bTurnBeforeForward)
+	if (bTurnBeforeForward || bPlayerDrive)
 		ConsumeInputVector();
 	if (IsActive() && UpdatedComponent && PawnOwner)
 	{
@@ -46,7 +55,7 @@ void ULSCastleMovementComponent::TickComponent(float DeltaTime, ELevelTick TickT
 
 void ULSCastleMovementComponent::ApplyControlInputToVelocity(float DeltaTime)
 {
-	if (bTurnBeforeForward)
+	if (bTurnBeforeForward || bPlayerDrive)
 		ConsumeInputVector();
 	else
 		Super::ApplyControlInputToVelocity(DeltaTime);
@@ -97,6 +106,30 @@ void ULSCastleMovementComponent::CalcForwardVelocity(float DeltaTime)
 	Velocity = TravelDirection * Speed;
 }
 
+void ULSCastleMovementComponent::SetPlayerDriveInput(float Throttle, float Steering)
+{
+	if (!FMath::IsFinite(Throttle) || !FMath::IsFinite(Steering))
+		return;
+	bPlayerDrive = true;
+	PlayerThrottle = FMath::Clamp(Throttle, -1.0f, 1.0f);
+	PlayerSteering = FMath::Clamp(Steering, -1.0f, 1.0f);
+}
+
+void ULSCastleMovementComponent::CalcPlayerDriveVelocity(float DeltaTime)
+{
+	const FVector Forward = UpdatedComponent->GetForwardVector().GetSafeNormal2D();
+	const float Speed = static_cast<float>(FVector::DotProduct(Velocity, Forward));
+	const float Goal = PlayerThrottle * GetMaxSpeed() * (PlayerThrottle < 0 ? ReverseSpeedRatio : 1.0f);
+	const bool bBraking = FMath::IsNearlyZero(Goal) || Speed * Goal < 0;
+	const float TargetSpeed = bBraking ? 0.0f : Goal;
+	const float NewSpeed = FMath::FInterpConstantTo(Speed, TargetSpeed, DeltaTime,
+	    FMath::Max(1.0f, bBraking ? PlayerBrakingDeceleration : ForwardAcceleration));
+	FRotator Rotation = UpdatedComponent->GetComponentRotation();
+	Rotation.Yaw += PlayerSteering * TurnRate * DeltaTime;
+	MoveUpdatedComponent(FVector::ZeroVector, Rotation, true);
+	Velocity = Rotation.Vector().GetSafeNormal2D() * NewSpeed;
+}
+
 float ULSCastleMovementComponent::GetMaxBrakingDeceleration() const
 {
 	return FMath::Max(1.0f, bTurnBeforeForward ? ForwardBrakingDeceleration : Deceleration);
@@ -105,12 +138,69 @@ float ULSCastleMovementComponent::GetMaxBrakingDeceleration() const
 float ULSCastleMovementComponent::SlideAlongSurface(const FVector& Delta, float Time, const FVector& Normal,
 	                                               FHitResult& Hit, bool bHandleImpact)
 {
+	const bool bPushed = TryPushFriendlyTroop(Hit, Delta);
+	if (!IsValid(PawnOwner) || !IsValid(UpdatedComponent))
+		return 0;
+	if (bPushed)
+	{
+		FHitResult Retry;
+		SafeMoveUpdatedComponent(Delta * Time, UpdatedComponent->GetComponentQuat(), true, Retry);
+		Hit = Retry;
+		return Retry.Time * Time;
+	}
 	// 성의 전진 스윕이 막히면 멈춘다. 표면을 따라 옆으로 미끄러지지 않는다.
 	return bTurnBeforeForward ? 0 : Super::SlideAlongSurface(Delta, Time, Normal, Hit, bHandleImpact);
 }
 
+bool ULSCastleMovementComponent::TryPushFriendlyTroop(const FHitResult& Hit, const FVector& Delta)
+{
+	ALSUnit* Troop = Cast<ALSUnit>(Hit.GetActor());
+	const auto* Faction = Cast<ILSFactionInterface>(PawnOwner);
+	if (!IsValid(Troop) || !Faction || Troop->GetFaction() != Faction->GetFaction() ||
+	    !ULSCombatTargetLibrary::IsCombatAlive(PawnOwner) || !ULSCombatTargetLibrary::IsCombatAlive(Troop) ||
+	    Delta.IsNearlyZero() || !FMath::IsFinite(FriendlyPushSpeed) || FriendlyPushSpeed <= 0)
+		return false;
+	auto* Movement = Troop->GetCharacterMovement();
+	if (!Movement || !Movement->IsMovingOnGround() || !IsValid(Movement->UpdatedComponent))
+		return false;
+	const FVector Forward = Delta.GetSafeNormal2D();
+	if (Forward.IsNearlyZero())
+		return false;
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+	const float Side = FVector::DotProduct(Troop->GetActorLocation() - PawnOwner->GetActorLocation(), Right) < 0 ? -1 : 1;
+	auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const auto* Data = Nav ? Nav->GetNavDataForProps(Troop->GetNavAgentPropertiesRef(), Troop->GetNavAgentLocation()) : nullptr;
+	if (!Data)
+		return false;
+	const float Distance = FriendlyPushSpeed * FMath::Clamp(GetWorld()->GetDeltaSeconds(), 0.0f, 0.05f);
+	for (const float Sign : {Side, -Side})
+	{
+		const FVector Push = (Right * Sign + Forward * 0.25f).GetSafeNormal() * Distance;
+		FNavLocation Ground;
+		const FVector Feet = Troop->GetNavAgentLocation();
+		if (!Nav->ProjectPointToNavigation(Feet + Push, Ground, FVector(10, 10, 100), Data) ||
+		    FVector::DistSquared2D(Feet + Push, Ground.Location) > FMath::Square(10.0) ||
+		    FMath::Abs(Ground.Location.Z - Feet.Z) > Movement->MaxStepHeight)
+			continue;
+		const FVector Before = Troop->GetActorLocation();
+		FHitResult PushHit;
+		Movement->SafeMoveUpdatedComponent(Push, Movement->UpdatedComponent->GetComponentQuat(), true, PushHit);
+		if (!IsValid(Troop) || !IsValid(Movement) || !IsValid(PawnOwner) || !IsValid(UpdatedComponent))
+			return false;
+		if (FVector::DistSquared2D(Before, Troop->GetActorLocation()) > 0.01)
+		{
+			if (auto* Orders = Troop->FindComponentByClass<ULSOrderComponent>())
+				Orders->PauseAfterCastlePush(FriendlyPushRecovery);
+			return true;
+		}
+	}
+	return false;
+}
+
 void ULSCastleMovementComponent::ClearMoveIntent()
 {
+	PlayerThrottle = 0;
+	PlayerSteering = 0;
 	RequestedVelocity = FVector::ZeroVector;
 	bHasRequestedVelocity = false;
 	bRequestedMoveWithMaxSpeed = false;

@@ -36,6 +36,7 @@ class LANDSHIP_API ULSTroopCombatComponent : public UActorComponent
 	virtual bool IsConfigurationValid() const;
 	/** 지원 병종은 EvaluateEngagement에 적 목록 대신 같은 진영 목록을 받는다. 이동 실행은 Match가 맡는다. */
 	virtual bool IsSupportBehavior() const { return false; }
+	virtual float GetEngagementSearchRadius() const;
 	virtual void SetBattleEnabled(bool bEnabled);
 	/** 추가 상태를 초기화한 뒤 새 생명의 교전 제어를 기다린다. */
 	virtual void ResetForNewLife();

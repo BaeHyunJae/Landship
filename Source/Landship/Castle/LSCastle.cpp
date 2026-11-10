@@ -6,6 +6,7 @@
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Controls/LSSelectableComponent.h"
 #include "Controls/LSOrderComponent.h"
+#include "Controls/LSCastleEscortComponent.h"
 #include "Combat/LSBasicAttackComponent.h"
 #include "AIController.h"
 
@@ -35,6 +36,7 @@ ALSCastle::ALSCastle()
 	CreateDefaultSubobject<ULSCastleCommandProviderComponent>(TEXT("CommandProvider"));
 	Weapons = CreateDefaultSubobject<ULSCastleWeaponComponent>(TEXT("Weapons"));
 	Orders = CreateDefaultSubobject<ULSOrderComponent>(TEXT("Orders"));
+	Escort = CreateDefaultSubobject<ULSCastleEscortComponent>(TEXT("Escort"));
 	Vision = CreateDefaultSubobject<ULSVisionParticipantComponent>(TEXT("Vision"));
 	Vision->MarkerKind = ELSMinimapMarkerKind::Castle;
 	Vision->bTriggersEnemyDiscovery = true;

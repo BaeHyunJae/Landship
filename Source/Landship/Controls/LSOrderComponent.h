@@ -10,6 +10,8 @@ class ULSBasicAttackComponent;
 class ALSMine;
 class ALSBarricade;
 class ALSUnit;
+class ALSTroopUnit;
+struct FLSCombatDirective;
 struct FLSDamageResult;
 struct FPathFollowingResult;
 
@@ -86,6 +88,10 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 		return EngagedTarget.Get();
 	}
 	bool CanAttack() const;
+	/** 전장 설정이 자동 병력을 사용하면 아군 병력의 직접 명령을 거부한다. */
+	bool IsAutomaticTroop() const;
+	/** 성이 밀어낸 자동 병력의 이동만 잠시 보류한다. 교전 표적과 추종 자리는 보존한다. */
+	void PauseAfterCastlePush(float Seconds);
 	bool PrepareDisarm(ALSMine* Mine, FVector& Destination, double& Length) const;
 	bool BeginClaimedDisarm(ALSMine* Mine, const FVector& Destination);
 	void CancelDisarm();
@@ -138,6 +144,9 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	/** 성의 진로와 주변 양보 이동이 안정된 상태에서 허용할 양보 탐색 횟수. */
 	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Yield", meta = (ClampMin = "1"))
 	int32 MaxYieldAttempts = 3;
+	/** 추종 재개와 정지 사이의 여유 거리(cm). */
+	UPROPERTY(EditDefaultsOnly, Category = "Landship|Orders|Escort", meta = (ClampMin = "1", Units = "cm"))
+	float CastleFollowSlack = 150.0f;
 
   private:
 #if WITH_DEV_AUTOMATION_TESTS
@@ -149,6 +158,9 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	friend class FLSCastleBrakingCorridorTest;
 	friend struct FLSEnemyFacilityAttackTestAccess;
 	void UpdateOrders(float DeltaTime);
+	void UpdateAutomaticTroop();
+	TArray<ALSUnit*> GatherEngagementTroops(float Radius, bool bAllies) const;
+	void ExecuteAutomaticDirective(const FLSCombatDirective& Directive);
 	void UpdateIdleYield();
 	void CancelIdleYield();
 	bool IsIdleYieldPathClear(const TArray<FVector>& BodyCenters) const;
@@ -175,7 +187,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	                              bool* OutMineBlocked = nullptr) const;
 	bool PrepareOrder(const FLSOrder& Order, FLSOrder& OutOrder);
 	void OnMovementFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
-	bool MoveTo(const FVector& Goal, bool bAttackApproach = false);
+	bool MoveTo(const FVector& Goal, bool bAttackApproach = false, float CustomAcceptance = -1.0f);
 	void StopMovement();
 	bool IsMoving() const;
 	bool IsHostile(AActor* Target) const;
@@ -204,6 +216,7 @@ class LANDSHIP_API ULSOrderComponent : public UActorComponent
 	FVector LastAttackTargetLocation = FVector::ZeroVector;
 	FTimerHandle OrderUpdateTimer;
 	bool bUpdatingOrders = false;
+	double CastlePushResumeAfter = 0;
 	bool bAttackApproaching = false;
 	bool bHasEngagement = false;
 	bool bBattleActionsEnded = false;

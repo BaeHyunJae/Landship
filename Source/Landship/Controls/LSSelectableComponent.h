@@ -22,10 +22,7 @@ class LANDSHIP_API ULSSelectableComponent : public UActorComponent
 	UFUNCTION(BlueprintPure, Category = "Landship|Selection")
 	bool IsSelectable() const;
 	UFUNCTION(BlueprintPure, Category = "Landship|Selection")
-	bool CanPlayerControl() const
-	{
-		return bPlayerControlled && IsSelectable();
-	}
+	bool CanPlayerControl() const;
 	UFUNCTION(BlueprintCallable, Category = "Landship|Selection")
 	void SetPlayerControlled(bool bControlled)
 	{

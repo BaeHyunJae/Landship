@@ -49,6 +49,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
 	bool IsSetupValid() const { return bSetupValid; }
+	bool UsesAutomaticAlliedTroops() const { return bSetupValid && bAutomaticAlliedTroops; }
 	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
 	bool TryGetPlayerCastleState(FLSPlayerCastleState& Out) const;
 	UFUNCTION(BlueprintPure, Category = "Landship|Battlefield")
@@ -81,6 +82,7 @@ private:
 	FLSOutpostCaptureSnapshot CoreCapture;
 	FTimerHandle CaptureNotificationTimer;
 	bool bSetupValid = false;
+	bool bAutomaticAlliedTroops = false;
 	mutable bool bCastleDeathObserved = false;
 	bool bCoreCaptured = false;
 	bool bCaptureBroadcast = false;
