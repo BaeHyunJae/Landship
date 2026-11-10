@@ -3,12 +3,43 @@
 #include "Troops/LSSpearmanComponent.h"
 #include "Troops/LSTroopUnit.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Controls/LSOrderComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Engine/World.h"
 #include <limits>
+
+namespace
+{
+FLSUnitStatRow LanceTestStats(ELSTroopType Type)
+{
+	FLSUnitStatRow Stats = LSCombatStatTestFixture::UnitStats(Type == ELSTroopType::Cavalry ? 300.0f : 180.0f);
+	if (Type == ELSTroopType::Cavalry)
+	{
+		Stats.AttackPower = 24.0f;
+		Stats.AttackRange = 200.0f;
+		Stats.MovementSpeed = 600.0f;
+		Stats.Armor = 5.0f;
+		Stats.ArmorPenetration = 2.0f;
+	}
+	else if (Type == ELSTroopType::Spearman)
+	{
+		Stats.Armor = 2.0f;
+		Stats.ArmorPenetration = 7.0f;
+	}
+	else if (Type == ELSTroopType::Archer)
+	{
+		Stats.AttackPower = 15.0f;
+		Stats.AttackRange = 1800.0f;
+		Stats.DetectionRange = 1400.0f;
+		Stats.VisionRadius = 1600.0f;
+		Stats.ArmorPenetration = 1.0f;
+	}
+	return Stats;
+}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSLanceChargeTest, "Landship.Troops.LanceCharge.GuardAndLifecycle",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -42,6 +73,8 @@ bool FLSLanceChargeTest::RunTest(const FString& Parameters)
 	}
 	Cavalry->SetInitialTroopType(ELSTroopType::Cavalry);
 	Cavalry->SetInitialFaction(ELSFaction::Enemy);
+	if (!TestTrue(TEXT("창병 고정 능력치 지정"), LSCombatStatTestFixture::ConfigureUnit(Spear, LanceTestStats(ELSTroopType::Spearman))) ||
+	    !TestTrue(TEXT("기마병 고정 능력치 지정"), LSCombatStatTestFixture::ConfigureUnit(Cavalry, LanceTestStats(ELSTroopType::Cavalry)))) return false;
 	if (!Play.BeginPlayInTestWorld())
 	{
 		return false;
@@ -50,7 +83,8 @@ bool FLSLanceChargeTest::RunTest(const FString& Parameters)
 	{
 		Unit->Orders->SetComponentTickEnabled(false);
 		Unit->BasicAttack->StopAttack();
-		Unit->GetCharacterMovement()->DisableMovement();
+		Unit->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		Unit->GetCharacterMovement()->SetComponentTickEnabled(false);
 	}
 	TestFalse(TEXT("일반 RTS에서는 돌격 기본 비활성"),
 	          Cast<ULSCavalryComponent>(Cavalry->CombatBehavior)->TryStartCharge(Spear));
@@ -74,6 +108,8 @@ bool FLSLanceChargeTest::RunTest(const FString& Parameters)
 	FLSHealthSnapshot InitialHealth;
 	Spear->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(InitialHealth);
 	const float HealthBefore = InitialHealth.CurrentHealth;
+	Cavalry->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(InitialHealth);
+	const float CavalryHealthBefore = InitialHealth.CurrentHealth;
 	for (int32 Index = 0; Index < 60 && Cast<ULSCavalryComponent>(Cavalry->CombatBehavior)->IsCharging(); ++Index)
 	{
 		Cavalry->SetActorLocation(Cavalry->GetActorLocation() + FVector(16, 0, 0));
@@ -98,7 +134,7 @@ bool FLSLanceChargeTest::RunTest(const FString& Parameters)
 	                 HealthBefore - Cavalry->BasicAttack->GetAttackSettings().Damage *
 	                                    Cast<ULSCavalryComponent>(Cavalry->CombatBehavior)->Settings.DamageMultiplier);
 	Cavalry->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Snapshot);
-	TestTrue(TEXT("공통 체력 경로로 반격 피해"), Snapshot.CurrentHealth < HealthBefore);
+	TestTrue(TEXT("공통 체력 경로로 반격 피해"), Snapshot.CurrentHealth < CavalryHealthBefore);
 	TestFalse(TEXT("명중한 돌격 재사용 거부"),
 	          Cast<ULSCavalryComponent>(Cavalry->CombatBehavior)->TryStartCharge(Spear));
 	Cast<ULSCavalryComponent>(Cavalry->CombatBehavior)->SetBattleEnabled(false);
@@ -124,7 +160,7 @@ bool FLSLanceExposureTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	UWorld* World = Play.GetTestWorld();
-	auto SpawnUnit = [World](ELSTroopType Type, ELSFaction Faction, const FVector& Position)
+	auto SpawnUnit = [World, this](ELSTroopType Type, ELSFaction Faction, const FVector& Position)
 	{
 		const FTransform Transform(FRotator::ZeroRotator, Position);
 		auto* Unit = World->SpawnActorDeferred<ALSTroopUnit>(ALSTroopUnit::StaticClass(), Transform, nullptr, nullptr,
@@ -135,10 +171,12 @@ bool FLSLanceExposureTest::RunTest(const FString& Parameters)
 		}
 		Unit->SetInitialTroopType(Type);
 		Unit->SetInitialFaction(Faction);
+		if (!TestTrue(TEXT("돌격 검사 고정 능력치 지정"), LSCombatStatTestFixture::ConfigureUnit(Unit, LanceTestStats(Type)))) return static_cast<ALSTroopUnit*>(nullptr);
 		Unit->FinishSpawning(Transform);
 		Unit->Orders->SetComponentTickEnabled(false);
 		Unit->BasicAttack->StopAttack();
-		Unit->GetCharacterMovement()->DisableMovement();
+		Unit->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		Unit->GetCharacterMovement()->SetComponentTickEnabled(false);
 		Unit->CombatBehavior->SetBattleEnabled(true);
 		return Unit;
 	};
