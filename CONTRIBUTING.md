@@ -88,7 +88,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 - DataTable 원본 CSV와 절차가 실행하는 스크립트는 `Source/`·`Content/` 밖의 다음 두 폴더에 둔다.
   - `Data/<폴더>/`: DataTable 에셋의 원본 CSV. 하위 폴더 이름은 그 DataTable 에셋이 있는 기능·공용 폴더 이름과 같고(예: `Data/Troops/`는 `Content/Landship/Troops/Data/`의 원본), 담당도 그 폴더를 따른다. DataTable 에셋을 바꾸는 PR에서 원본 CSV도 같은 값으로 맞춘다.
   - `Scripts/<절차 이름>/`: 절차 문서 `docs/procedures/<절차 이름>.md`가 실행하는 스크립트. 폴더 이름은 그 절차 문서 이름과 같고, 그 절차가 실행하는 스크립트를 모두 이 폴더에 모은다. `Scripts/` 아래 스크립트는 모두 어느 절차 문서가 실행하는 것이다. 개인 절차('문서' 절)의 스크립트는 `Scripts/Developers/<이니셜>/<절차 이름>/`에 둔다.
-- 프로젝트를 만들 때 템플릿이 만든 폴더와 코드(저장소 첫 커밋의 템플릿 산출물)는 참고용으로 두고 고치지 않는다. 쓰려면 담당 폴더로 복사한다.
+- 프로젝트를 만들 때 템플릿이 만든 에셋과 클래스(저장소 첫 커밋에 들어 있는 `Content/` 아래 파일과 `Source/Landship/` 아래 클래스)는 참고용으로 두고, 쓰려면 담당 폴더로 복사한다. 모듈 파일(`Landship.Build.cs`, `Landship.h`, `Landship.cpp`), `Config/`, `.uproject`는 여기에 들지 않는다.
 
 ## 코딩 규칙
 
