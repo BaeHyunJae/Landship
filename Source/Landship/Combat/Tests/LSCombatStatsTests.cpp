@@ -81,8 +81,36 @@ namespace
 		Test.TestTrue(TEXT("Optional zero values are copied"), RowT::StaticStruct()->CompareScriptStruct(&Output, &ZeroOptional, 0));
 	}
 
+	struct FLSInvalidStatCase
+	{
+		FFloatProperty* Property;
+		float Value;
+	};
+
 	template <typename RowT>
-	void CheckInvalidValues(FAutomationTestBase& Test)
+	TArray<FLSInvalidStatCase> MakeInvalidCases(FAutomationTestBase& Test)
+	{
+		TArray<FLSInvalidStatCase> Cases;
+		for (TFieldIterator<FProperty> It(RowT::StaticStruct()); It; ++It)
+		{
+			FFloatProperty* Property = CastField<FFloatProperty>(*It);
+			if (!Test.TestNotNull(*FString::Printf(TEXT("%s is a float property"), *It->GetName()), Property))
+			{
+				continue;
+			}
+			Cases.Add({Property, -1.0f});
+			Cases.Add({Property, std::numeric_limits<float>::infinity()});
+			Cases.Add({Property, std::numeric_limits<float>::quiet_NaN()});
+			if (Property->GetFName() == TEXT("Health") || Property->GetFName() == TEXT("AttackInterval"))
+			{
+				Cases.Add({Property, 0.0f});
+			}
+		}
+		return Cases;
+	}
+
+	template <typename RowT>
+	void CheckInvalidValues(FAutomationTestBase& Test, const TArray<FLSInvalidStatCase>& Cases)
 	{
 		const RowT Source = MakeValidRow<RowT>();
 		UDataTable* Table = MakeTable(Source);
@@ -90,27 +118,14 @@ namespace
 		RowT Output = Source;
 		Output.Health = 987.0f;
 		const RowT Sentinel = Output;
-		const float InvalidValues[] = { -1.0f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN() };
-
-		for (TFieldIterator<FFloatProperty> It(RowT::StaticStruct()); It; ++It)
+		for (const FLSInvalidStatCase& Case : Cases)
 		{
-			const auto CheckValue = [&](float Value)
-			{
-				RowT InvalidRow = Source;
-				It->SetPropertyValue_InContainer(&InvalidRow, Value);
-				Table->AddRow(Handle.RowName, InvalidRow);
-				Test.TestTrue(*FString::Printf(TEXT("%s rejects invalid value"), *It->GetName()),
-					LSCombatStats::TryReadRow(Handle, Table, Output) == ELSCombatStatsInitResult::InvalidValue);
-				Test.TestTrue(TEXT("Invalid row preserves every output field"), RowT::StaticStruct()->CompareScriptStruct(&Output, &Sentinel, 0));
-			};
-			for (float Value : InvalidValues)
-			{
-				CheckValue(Value);
-			}
-			if (It->GetFName() == TEXT("Health") || It->GetFName() == TEXT("AttackInterval"))
-			{
-				CheckValue(0.0f);
-			}
+			RowT InvalidRow = Source;
+			Case.Property->SetPropertyValue_InContainer(&InvalidRow, Case.Value);
+			Table->AddRow(Handle.RowName, InvalidRow);
+			Test.TestTrue(*FString::Printf(TEXT("%s rejects invalid value"), *Case.Property->GetName()),
+				LSCombatStats::TryReadRow(Handle, Table, Output) == ELSCombatStatsInitResult::InvalidValue);
+			Test.TestTrue(TEXT("Invalid row preserves every output field"), RowT::StaticStruct()->CompareScriptStruct(&Output, &Sentinel, 0));
 		}
 	}
 }
@@ -158,16 +173,19 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSCombatStatsInvalidValuesTest, "Landship.Comb
 
 bool FLSCombatStatsInvalidValuesTest::RunTest(const FString& Parameters)
 {
-	// 같은 패턴을 다시 등록하면 횟수가 누적되지 않으므로 전체 예상 횟수를 한 번 등록한다.
-	AddExpectedErrorPlain(FailureMessage, EAutomationExpectedErrorFlags::Contains, 47);
+	const TArray<FLSInvalidStatCase> UnitCases = MakeInvalidCases<FLSUnitStatRow>(*this);
+	const TArray<FLSInvalidStatCase> CastleCases = MakeInvalidCases<FLSCastleStatRow>(*this);
+	const TArray<FLSInvalidStatCase> OutpostCases = MakeInvalidCases<FLSOutpostStatRow>(*this);
+	const int32 ExpectedCount = UnitCases.Num() + CastleCases.Num() + OutpostCases.Num();
+	AddExpectedErrorPlain(FailureMessage, EAutomationExpectedErrorFlags::Contains, ExpectedCount);
 	FEnsureScope ExpectedEnsures([this](const FEnsureHandlerArgs& Args)
 	{
 		return HandleExpectedStatsEnsure(*this, Args);
 	});
-	CheckInvalidValues<FLSUnitStatRow>(*this);
-	CheckInvalidValues<FLSCastleStatRow>(*this);
-	CheckInvalidValues<FLSOutpostStatRow>(*this);
-	TestEqual(TEXT("Every invalid row emits an ensure"), ExpectedEnsures.GetCount(), 47);
+	CheckInvalidValues<FLSUnitStatRow>(*this, UnitCases);
+	CheckInvalidValues<FLSCastleStatRow>(*this, CastleCases);
+	CheckInvalidValues<FLSOutpostStatRow>(*this, OutpostCases);
+	TestEqual(TEXT("Every invalid row emits an ensure"), ExpectedEnsures.GetCount(), ExpectedCount);
 	return true;
 }
 
