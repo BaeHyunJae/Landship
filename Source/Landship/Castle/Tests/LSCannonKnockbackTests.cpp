@@ -5,6 +5,7 @@
 #include "Combat/LSCombatDeveloperSettings.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Combat/Tests/LSHealthTestObserver.h"
 #include "Components/CapsuleComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -122,6 +123,7 @@ bool FLSCannonKnockbackVelocityTest::RunTest(const FString& Parameters)
 		const FVector Start = Case.bVerticalShot ? Impact + FVector(0, 0, 500) : FVector(0, 0, 100);
 		auto* Source = MakeCannonSource(World, FVector(-1000, 0, 100));
 		auto* Recipient = World->SpawnActor<ALSTroopUnit>(Impact + Case.Offset, FRotator::ZeroRotator);
+		if (!TestTrue(TEXT("병력 스탯 설정"), LSCombatStatTestFixture::ConfigureUnit(Recipient, LSCombatStatTestFixture::UnitStats(180.f)))) return false;
 		if (!Fixture.BeginPlayInTestWorld()) return false;
 		FreezeCannonRecipient(Recipient);
 		auto* Observer = ObserveCannonDamage(Recipient);
