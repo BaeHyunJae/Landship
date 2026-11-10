@@ -12,7 +12,10 @@ TArray<FLSCommandEntry> ULSCastleCommandProviderComponent::GetCommands_Implement
 		return Result;
 	const TCHAR* WeaponNames[] = {TEXT("일반 대포"), TEXT("산탄"), TEXT("발리스타")};
 	const TCHAR* TroopNames[] = {TEXT("창병"), TEXT("궁병"), TEXT("기마병")};
-	const FKey WeaponKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
+	const FKey WeaponKeys[] = {
+        PC->UsesDirectCastleControl() ? EKeys::One : EKeys::Q,
+        PC->UsesDirectCastleControl() ? EKeys::Two : EKeys::W,
+        PC->UsesDirectCastleControl() ? EKeys::Three : EKeys::E};
 	const FKey ProductionKeys[] = {EKeys::F1, EKeys::F2, EKeys::F3};
 	for (int32 Index = 0; Index < 3; ++Index)
 	{

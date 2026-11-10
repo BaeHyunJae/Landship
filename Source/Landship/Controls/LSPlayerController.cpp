@@ -4,6 +4,7 @@
 #include "Controls/LSCommandCardComponent.h"
 
 #include "Castle/LSCastle.h"
+#include "Navigation/LSCastleMovementComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Components/InputComponent.h"
@@ -62,6 +63,9 @@ ALSPlayerController::ALSPlayerController()
 
 bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
+	if (UsesDirectCastleControl() &&
+	    (Params.Key == EKeys::W || Params.Key == EKeys::A || Params.Key == EKeys::S || Params.Key == EKeys::D))
+		return Super::InputKey(Params);
 	if (Params.Event == IE_Pressed && CanUseWorldInput(true, true))
 	{
 		if (Params.Key == EKeys::Tab)
@@ -74,7 +78,10 @@ bool ALSPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		if (!Modifiers.IsShiftDown() && !Modifiers.IsControlDown() && !Modifiers.IsAltDown() &&
 		    !Modifiers.IsCommandDown())
 		{
-			const FKey WeaponKeys[] = {EKeys::Q, EKeys::W, EKeys::E};
+			const FKey WeaponKeys[] = {
+			    UsesDirectCastleControl() ? EKeys::One : EKeys::Q,
+			    UsesDirectCastleControl() ? EKeys::Two : EKeys::W,
+			    UsesDirectCastleControl() ? EKeys::Three : EKeys::E};
 			for (int32 Index = 0; Index < UE_ARRAY_COUNT(WeaponKeys); ++Index)
 				if (Params.Key == WeaponKeys[Index])
 				{
@@ -449,6 +456,33 @@ void ALSPlayerController::PlayerTick(float DeltaSeconds)
 	     AimingCastle->Weapons->GetStatus(PendingWeapon) != ELSWeaponCastResult::Ready))
 		CancelInput();
 	ALSRTSCameraPawn* CameraPawn = Cast<ALSRTSCameraPawn>(GetPawn());
+	if (UsesDirectCastleControl())
+	{
+		if (!DrivenCastle.IsValid())
+			DrivenCastle = GetConfiguredBattlefieldCastle();
+		if (ALSCastle* Castle = DrivenCastle.Get())
+		{
+			if (CameraPawn)
+				CameraPawn->SetFollowTarget(Castle);
+			if (auto* Movement = Cast<ULSCastleMovementComponent>(Castle->GetMovementComponent()))
+			{
+				if (!Movement->IsPlayerDriveEnabled())
+				{
+					Castle->Orders->SubmitOrder(FLSOrder());
+					ApplySelection({Castle});
+				}
+				const bool bDrive = CanUseWorldInput(false, true) &&
+				    ULSCombatTargetLibrary::IsCombatAlive(Castle);
+				const float Throttle = bDrive ? static_cast<int32>(IsInputKeyDown(EKeys::W)) -
+				    static_cast<int32>(IsInputKeyDown(EKeys::S)) : 0;
+				const float Steering = bDrive ? static_cast<int32>(IsInputKeyDown(EKeys::D)) -
+				    static_cast<int32>(IsInputKeyDown(EKeys::A)) : 0;
+				Movement->SetPlayerDriveInput(Throttle, Steering);
+			}
+		}
+		bWasDraggingCamera = false;
+		return;
+	}
 	if (CameraPawn && !CanUseWorldInput() && CanUseWorldInput(false, true))
 	{
 		const FVector2D Keys(
@@ -800,6 +834,7 @@ void ALSPlayerController::SelectSameType()
 
 void ALSPlayerController::ArmAttack()
 {
+	if (UsesDirectCastleControl()) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
 	if (CVarRTSInputDebug.GetValueOnGameThread())
@@ -821,6 +856,7 @@ void ALSPlayerController::ArmAttack()
 
 void ALSPlayerController::ArmMove()
 {
+	if (UsesDirectCastleControl()) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
 	if (!CanUseWorldInput(false, true))
@@ -940,6 +976,7 @@ void ALSPlayerController::OnRightClick()
 
 void ALSPlayerController::StopSelected()
 {
+	if (UsesDirectCastleControl()) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
 	if (CanUseWorldInput(false, true))
@@ -951,6 +988,7 @@ void ALSPlayerController::StopSelected()
 
 void ALSPlayerController::HoldSelected()
 {
+	if (UsesDirectCastleControl()) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return;
 	if (CanUseWorldInput(false, true))
@@ -962,6 +1000,7 @@ void ALSPlayerController::HoldSelected()
 
 bool ALSPlayerController::IssueSelectionOrder(ELSOrderKind Kind, const FVector& Location, AActor* Target, bool bQueue)
 {
+	if (UsesDirectCastleControl()) return false;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld()))
 		return false;
 	if (Kind == ELSOrderKind::Disarm)

@@ -8,7 +8,9 @@
 
 ALSRTSCameraPawn::ALSRTSCameraPawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -32,6 +34,20 @@ void ALSRTSCameraPawn::BeginPlay()
 	}
 	FocusLocation(GetActorLocation());
 	Zoom(0.0f);
+}
+
+void ALSRTSCameraPawn::SetFollowTarget(AActor* Target)
+{
+	if (FollowTarget.Get() == Target) return;
+	FollowTarget = Target;
+	SetActorTickEnabled(FollowTarget.IsValid());
+}
+
+void ALSRTSCameraPawn::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (FollowTarget.IsValid())
+		SetActorLocation(FollowTarget->GetActorLocation());
 }
 
 FVector ALSRTSCameraPawn::ScreenToWorldDirection(const FVector2D& Direction) const
@@ -85,6 +101,7 @@ void ALSRTSCameraPawn::SetBattlefieldBounds(const FBox2D& Bounds, float GroundHe
 
 void ALSRTSCameraPawn::FocusLocation(const FVector& Location)
 {
+	if (FollowTarget.IsValid()) return;
 	if (LSBattleOutcome::AreActionsStopped(GetWorld())) { return; }
 	if (Location.ContainsNaN()) { return; }
 	const double X = FMath::Clamp(Location.X, FMath::Min(BoundsMin.X, BoundsMax.X), FMath::Max(BoundsMin.X, BoundsMax.X));

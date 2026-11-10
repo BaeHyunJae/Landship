@@ -7,7 +7,7 @@
 class UCameraComponent;
 class USpringArmComponent;
 
-/** 성이나 병력의 이동과 독립적으로 전장을 관찰한다. */
+/** 전장을 독립 관찰하거나 지정 성을 화면 중앙에서 추적한다. */
 UCLASS(Blueprintable)
 class LANDSHIP_API ALSRTSCameraPawn : public APawn
 {
@@ -19,6 +19,7 @@ public:
 	void Drag(const FVector2D& MouseDelta);
 	void Zoom(float WheelDelta);
 	void SetBattlefieldBounds(const FBox2D& Bounds, float GroundHeight);
+	void SetFollowTarget(AActor* Target);
 
 	UFUNCTION(BlueprintCallable, Category = "Landship|Camera")
 	void FocusLocation(const FVector& Location);
@@ -31,6 +32,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landship|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -56,5 +58,6 @@ protected:
 	FVector2D BoundsMax = FVector2D(2400, 2000);
 
 private:
+	TWeakObjectPtr<AActor> FollowTarget;
 	FVector ScreenToWorldDirection(const FVector2D& Direction) const;
 };
