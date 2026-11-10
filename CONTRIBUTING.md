@@ -2,9 +2,10 @@
 
 이 문서는 Landship 저장소에서 작업하는 사람과 코딩 에이전트가 따르는 규칙이다. 브랜치와 병합, 커밋과 PR 제목, Task와 PR의 연결, 폴더와 담당, 저장소 문서(폴더 계약, 절차, ADR), PR 리뷰를 정하고, 팀원이 읽는 글을 쓰는 기준을 정한다.
 
-이 문서가 정하지 않는 것은 다음 두 문서가 정한다. 각 문서에 적힌 일을 하기 전에 그 문서를 읽는다.
+이 문서가 정하지 않는 것은 다음 세 문서가 정한다. 각 문서에 적힌 일을 하기 전에 그 문서를 읽는다.
 
 - **Notion [프로젝트 사용 및 운영 가이드](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae)**: 작업 관리 규칙. Epic·Feature·Task의 구분, Task 속성과 Task 템플릿(본문 1~5절)을 쓰는 법, 상태를 바꾸는 시점과 Done 조건, Sprint와 회의, 버그 등록과 재검증, 플레이테스트 기록, Notion 페이지 작성 원칙을 다룬다. Notion 페이지(Task 본문, 속성, 댓글 포함)를 만들거나 고치기 전에 가이드 첫머리의 할 일별 표에서 그 일에 해당하는 절을 찾아 읽는다.
+- **Notion [GDD (게임 기획서)](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3)**: 게임 사양의 원본. 기능을 구현하거나 고치기 전에 Task가 가리키는 GDD 절을 읽는다. Task나 Feature에 적힌 사양이 GDD와 다르면 GDD를 따른다([가이드 「G. 프로젝트 문서 관리 (Notion vs GitHub)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3fea48d76e344187b8cd518e2de3b1b2)의 '기획 사양의 원본은 GDD입니다'). 사양 문장 옆의 미결 표기는 GDD 첫머리의 [표시 범례](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3#3fad5512e30a80ddac4ccbee14bc99e1)가 뜻을 정한다.
 - **[코딩 규칙](docs/coding-conventions.md)**: C++ 타입·파일·에셋의 이름, 새 소스 폴더의 include 경로, C++과 블루프린트에 각각 둘 것, 플레이하며 조정할 수치를 노출하는 방법, 코드 주석 쓰는 법을 다룬다. C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전과 코드 주석을 쓰기 전에 읽는다.
 
 ## 팀원이 읽는 글
@@ -26,14 +27,14 @@
 
 | 브랜치 | 용도 |
 | --- | --- |
-| `main` | 단계를 마친 결과를 모으는 브랜치. 통합 브랜치가 열려 있는 동안에는 그 단계가 끝날 때 통합 브랜치를 한 번 병합받는다 |
-| `prototype` | 현재 통합 브랜치(첫 전투 프로토타입) |
+| 통합 브랜치 | 원격 저장소(GitHub)의 기본 브랜치. 작업 브랜치를 만들고 병합받는 브랜치. 어느 브랜치인지는 `git remote show origin`의 'HEAD branch'로 확인한다 |
+| `main` | 릴리스 버전을 관리하는 브랜치. GitHub Release를 만들 때 통합 브랜치를 병합받고, 릴리스 태그는 `main`의 커밋에 단다. `main`이 기본 브랜치이면 통합 브랜치를 겸한다 |
 | `폴더/작업` | 작업 브랜치. 앞부분은 고칠 폴더 이름(소문자)이며 PR 제목의 범위와 달라도 된다. 예: `castle/move`, `vision/fog-of-war`, `combat/damage` |
-| `exp/task-<번호>-<이름>` | 실험 브랜치. 아래 '실험 브랜치' 절을 따른다 |
+| `exp/task-<번호>-<이름>` | 실험 브랜치. 아래 '실험 브랜치' 절을 따른다. 실험 브랜치가 아닌 브랜치를 정규 브랜치라 한다 |
 
 - 폴더 트리 밖(문서, 설정)만 고치는 브랜치는 앞부분에 커밋 타입을 쓴다. 예: `docs/coding-conventions`, `chore/build-settings`
 - `main`과 통합 브랜치에는 PR로만 병합한다.
-- 작업 브랜치는 문서나 설정만 고치는 브랜치를 포함해 모두 저장소 기본 브랜치에서 만들고 기본 브랜치로 병합한다(실험 브랜치는 제외). 기본 브랜치는 통합 브랜치가 열려 있는 동안 그 브랜치이고, 아니면 `main`이다. `main`을 통합 브랜치로 옮겨 오는 동기화 PR은 열지 않는다.
+- 작업 브랜치는 문서나 설정만 고치는 브랜치를 포함해 모두 통합 브랜치에서 만들고 통합 브랜치로 병합한다. `main`을 통합 브랜치로 옮겨 오는 동기화 PR은 열지 않는다.
 - 병합 방식은 스쿼시 병합만 쓴다. 통합 브랜치에는 PR 하나가 커밋 하나로 들어가므로, 문제가 생기면 그 커밋만 되돌려 확인할 수 있다.
 
 ### 실험 브랜치
@@ -41,18 +42,20 @@
 업무 유형이 '실험'인 Task(정의는 Notion [가이드 「C-1. Task 속성」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#6c6a8fe131f94893ad655e80eff83b60))가 저장소를 바꿀 때 쓴다. 실험 결과를 5절에 정리하는 형식과 통합을 정하는 방법은 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)을 따른다.
 
 - 이름은 `exp/task-<번호>-<이름>`이다. 예: `exp/task-52-shell-combo`. 브랜치 이름의 `task-<번호>-`로 GitHub 브랜치 목록에서 그 Task의 브랜치를 찾는다.
-- 기본 브랜치에서 만든다. PR 없이 원격에 계속 둔다(병합 대상이 아니다). 실험 중에 기본 브랜치의 변경을 받아와도 된다.
+- 통합 브랜치에서 만든다. PR 없이 원격에 계속 둔다(병합 대상이 아니다). 실험 중에 통합 브랜치의 변경을 받아와도 된다.
 - 바이너리(`Content/`)는 `Content/Landship/Experiment/task-<번호>-<이름>/` 안에서만 만들고 고친다. 기존 에셋은 그 폴더로 복사하거나 블루프린트 상속으로 쓴다.
 - 코드(`Source/`)는 어느 폴더든 고칠 수 있다. 실험에만 쓰는 새 파일(코드, 문서)은 `Source/Landship/Experiment/task-<번호>-<이름>/`에 둔다.
 - `Experiment/` 폴더는 어느 정규 브랜치에도 들어가지 않는다. 대상 브랜치와 관계없이 `Experiment/` 폴더 아래 파일을 담은 PR은 [`experiment-path.yml`](.github/workflows/experiment-path.yml)의 `experiment-path` 검사가 실패시킨다. 실패하면 그 파일을 PR에서 뺀다.
 - ADR은 통합 PR에서 쓴다('문서' 절의 'ADR').
-- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)을 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 기본 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
+- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)을 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 통합 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
   - 실험에서 새로 만든 에셋은 정규 폴더로 옮기고 리다이렉터를 정리한다.
   - 기존 에셋의 복사본과 자식 블루프린트는 그 변경을 원본에 반영한 뒤 버린다.
 
 ## Task와 PR
 
-- 작업을 시작하기 전에 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)에서 해당 Task를 열어 범위와 완료 기준을 확인한다. Tasks에 해당 Task가 없으면 [가이드 「B-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 '작업 방식을 바꾸는 일'을 읽고, 그 일이면 [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)를 열어 범위와 완료 기준을 확인한다.
+- PR이 담는 작업에는 그 작업을 관리하는 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)의 Task가 있어야 한다. 작업 방식을 바꾸는 일([가이드 「B-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 '작업 방식을 바꾸는 일')이면 Task 대신 [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)가 있어야 한다.
+  - 해당 Task나 이슈가 있으면 작업을 시작하기 전에 열어 범위와 완료 기준을 확인한다.
+  - 없으면 PR을 열기 전에 만든다. 작업하다가 따로 다룰 일이 생겨 브랜치를 나눈 경우도 같다. Task는 [가이드 「B-3. 새 Task를 Backlog에 등록하기」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#b6ebdec6f07642378d84a20a60633a9e)를 따라 만들고, 이슈는 워크플로우 이슈 DB에 만든다.
 - PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task나 이슈를 여러 PR로 나눌 수 있다.
 - PR 본문은 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)의 절 순서대로 쓰고 체크 항목을 확인한다. 웹 화면이 아니라 `gh`나 API로 PR을 열 때도 같다.
 - Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「C-5. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#60e4330be3244e2b8b22a8b193c4442c)을 따른다.
@@ -66,7 +69,7 @@
 - PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식으로 쓰고, 범위(scope)에는 PR이 바꾼 파일이 가장 많은 폴더 이름을 소문자로 적는다. 폴더 트리 밖만 고쳤으면 범위를 생략한다.
   - 형식: `타입(폴더): 요약 (ID)`. ID는 PR이 하는 일의 `TASK-번호` 또는 워크플로우 이슈의 `WORKFLOW-번호`다. Notion의 ‘PR’ 속성이 제목의 ID로 PR을 찾으므로 ID가 빠지면 Notion에서 그 PR이 보이지 않는다. 예: `docs: 코딩 규칙 추가 (TASK-38)`, `docs: 문서 위치 규칙 추가 (WORKFLOW-4)`
   - 한 PR이 여러 Task나 이슈에 걸치면 ID마다 괄호로 감싸 한 칸씩 띄어 모두 붙인다. 예: `feat(troops): 병종과 생산 UI (TASK-41) (TASK-42)`
-  - 통합 브랜치를 `main`에 병합하는 PR은 ID를 붙이지 않는다. 형식: `chore: <단계 이름> 단계 병합`
+  - 통합 브랜치를 `main`에 병합하는 PR은 ID를 붙이지 않는다. 형식: `chore: <릴리스 버전> 릴리스 병합`
   - 타입: `feat`(기능), `fix`(버그 수정), `refactor`(동작 변화 없는 구조 변경), `docs`(문서), `chore`(설정·빌드), `test`(테스트)
 - 스쿼시 병합은 PR 제목을 대상 브랜치의 커밋 제목으로 쓴다. 제목 형식은 PR마다 [`pr-title.yml`](.github/workflows/pr-title.yml)이 검사하며, 검사를 통과해야 병합된다. 검사가 실패하면 제목을 고쳐 통과시키고, 병합 화면에서 커밋 제목은 PR 제목 그대로 둔다.
 - 작업 브랜치 안의 중간 커밋은 형식을 강제하지 않는다.

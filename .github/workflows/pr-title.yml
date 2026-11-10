@@ -21,7 +21,7 @@ jobs:
           # 타입(폴더): 요약 (TASK-번호 또는 WORKFLOW-번호) ...
           pattern="^${types}(\([a-z0-9-]+\))?: .+( \((TASK|WORKFLOW)-[0-9]+\))+$"
           if [ "$BASE" = "main" ]; then
-            pattern="${pattern}|^chore: .+ 단계 병합$"
+            pattern="${pattern}|^chore: .+ 릴리스 병합$"
           fi
           if printf '%s' "$TITLE" | grep -Eq "$pattern"; then
             echo "제목 형식이 맞습니다: $TITLE"
