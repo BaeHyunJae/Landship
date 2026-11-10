@@ -13,6 +13,7 @@
 #include "Combat/LSBasicProjectile.h"
 #include "Combat/LSHealthComponent.h"
 #include "Combat/Tests/LSBasicAttackTestActor.h"
+#include "Combat/Tests/LSCombatStatTestFixture.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Controls/LSOrderComponent.h"
@@ -659,6 +660,10 @@ bool FLSBattleOutcomeShotgunKnockbackTest::RunTest(const FString& Parameters)
 	SpawnOutcomeFloor(World);
 	ALSTroopUnit* Enemy = SpawnOutcomeActor<ALSTroopUnit>(World, FVector(20000, 0, 100));
 	Enemy->SetInitialFaction(ELSFaction::Enemy);
+	FLSUnitStatRow EnemyStats = LSCombatStatTestFixture::UnitStats(180.0f);
+	EnemyStats.Armor = 2.0f;
+	EnemyStats.ArmorPenetration = 0.0f;
+	if (!TestTrue(TEXT("산탄 대상 고정 능력치 지정"), LSCombatStatTestFixture::ConfigureUnit(Enemy, EnemyStats))) return false;
 	ALSGameState* State = BeginOutcomeWorld(TestWorld, *this);
 	if (!State) return false;
 	const float RestHeight = Enemy->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2;
@@ -676,15 +681,18 @@ bool FLSBattleOutcomeShotgunKnockbackTest::RunTest(const FString& Parameters)
 	const FTransform Transform(Start - FVector(600, 0, 0));
 	ALSCastleProjectile* Volley = World->SpawnActorDeferred<ALSCastleProjectile>(
 		ALSCastleProjectile::StaticClass(), Transform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	FLSDamageRequest Request = ULSHealthComponent::MakeDamageRequest(Settings.Damage, Setup->PlayerCastle, Setup->PlayerCastle);
+	Request.ArmorPenetration = 0.0f;
+	Request.bIgnoreArmor = false;
 	if (!TestTrue(TEXT("결과 전에 실제 산탄 발사"), Volley->Launch(ELSCastleWeapon::Shotgun, Settings,
-		ULSHealthComponent::MakeDamageRequest(Settings.Damage, Setup->PlayerCastle, Setup->PlayerCastle), Start))) return false;
+		Request, Start))) return false;
 	Volley->FinishSpawning(Transform);
 	DamageOutcomeActor(Setup->CoreOutpost, OutcomeHealth(Setup->CoreOutpost));
 	TickOutcomeWorld(World);
 	TestEqual(TEXT("산탄 명중 전에 승리 확정"), State->GetBattleOutcome(), ELSBattleOutcome::Victory);
 	TestEqual(TEXT("확정 시 적은 아직 피해 없음"), OutcomeHealth(Enemy), InitialHealth);
 	for (int32 Index = 0; Index < 100 && OutcomeHealth(Enemy) == InitialHealth; ++Index) TickOutcomeWorld(World);
-	if (!TestEqual(TEXT("종료 뒤 실제 산탄 명중 피해"), OutcomeHealth(Enemy), InitialHealth - Settings.Damage)) return false;
+	if (!TestEqual(TEXT("종료 뒤 실제 산탄 명중 피해"), OutcomeHealth(Enemy), 177.0f)) return false;
 	TestTrue(TEXT("명중 뒤 넉백 상태"), Enemy->Orders->IsKnockedBack());
 	TestTrue(TEXT("명중 뒤 보류 Launch 또는 낙하 속도 존재"), !Enemy->GetCharacterMovement()->PendingLaunchVelocity.IsNearlyZero() || !Enemy->GetVelocity().IsNearlyZero());
 	Enemy->Restart();
