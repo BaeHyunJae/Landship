@@ -10,7 +10,6 @@ class LANDSHIP_API ALSTurret : public ALSPathObstacle
 	GENERATED_BODY()
   public:
 	ALSTurret();
-	virtual bool CanBeAutomaticallyAcquired() const override { return true; }
 	virtual FString GetConfigurationError() const override;
 	void StopObstacleActions();
 #if WITH_DEV_AUTOMATION_TESTS
