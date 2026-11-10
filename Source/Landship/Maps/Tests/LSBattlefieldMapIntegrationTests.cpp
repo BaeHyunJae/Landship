@@ -13,6 +13,7 @@
 #include "Combat/LSBasicAttackComponent.h"
 #include "Combat/LSCombatTargetLibrary.h"
 #include "Combat/LSHealthComponent.h"
+#include "Combat/Tests/LSHealthTestObserver.h"
 #include "Combat/LSCollisionChannels.h"
 #include "Components/SceneComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -60,6 +61,7 @@
 #include "Obstacles/LSMineHazardSubsystem.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "UObject/Package.h"
+#include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 #include "Vision/LSVisionParticipantComponent.h"
 #include "Vision/LSVisionSubsystem.h"
@@ -498,9 +500,10 @@ bool CheckLocalBarricadeDetour(FAutomationTestBase& Test, const FString& Label, 
 class FLSBattlefieldPIECommand : public IAutomationLatentCommand
 {
 public:
-	FLSBattlefieldPIECommand(TSharedRef<FLSBattlefieldMapTestState> InState, FName InPreset, bool bInDefeat = false)
-		: State(InState), Preset(InPreset), bDefeat(bInDefeat) {}
-	virtual ~FLSBattlefieldPIECommand() override { RemoveObstacleObserver(); }
+	FLSBattlefieldPIECommand(TSharedRef<FLSBattlefieldMapTestState> InState, FName InPreset, bool bInDefeat = false,
+		FName InFocusGuardId = NAME_None, FName InFocusOutpostId = NAME_None)
+		: State(InState), Preset(InPreset), bDefeat(bInDefeat), FocusGuardId(InFocusGuardId), FocusOutpostId(InFocusOutpostId) {}
+	virtual ~FLSBattlefieldPIECommand() override { RemoveObstacleObserver(); ClearWorkerObserver(); }
 	virtual bool Update() override
 	{
 		if (!State->bReady) return true;
@@ -575,8 +578,11 @@ public:
 			Test.TestTrue(TEXT("Configured Core alive"), ULSCombatTargetLibrary::IsCombatAlive(Setup->CoreOutpost));
 			Home = Castle->GetActorLocation();
 			HomeGround = Castle->GetNavAgentLocation();
-			MeleeEnemy = FindNamedActor<ALSEnemyTroop>(World.Get(), RegistryNames.FindRef(TEXT("E_L1_GUARD_SPEARMAN_01")));
-			if (!Test.TestTrue(TEXT("Named authored melee Guard available"), MeleeEnemy.IsValid() && MeleeEnemy->GetTroopType() == ELSTroopType::Spearman)) return Finish();
+			const FName GuardId = FocusGuardId.IsNone() ? FName(TEXT("E_L1_GUARD_SPEARMAN_01")) : FocusGuardId;
+			MeleeEnemy = FindNamedActor<ALSEnemyTroop>(World.Get(), RegistryNames.FindRef(GuardId));
+			if (!Test.TestTrue(GuardId.ToString() + TEXT(" named authored Guard available"), MeleeEnemy.IsValid() &&
+				(MeleeEnemy->GetTroopType() == ELSTroopType::Spearman || (!FocusGuardId.IsNone() &&
+					(MeleeEnemy->GetTroopType() == ELSTroopType::Archer || MeleeEnemy->GetTroopType() == ELSTroopType::Cavalry))))) return Finish();
 			// 복제 맵의 한 Guard만 공격을 유지해 큰 성의 실제 접근·반복 피해를 분리 관찰한다.
 			for (TActorIterator<AActor> It(World.Get()); It; ++It)
 				if (*It != MeleeEnemy.Get())
@@ -637,6 +643,19 @@ public:
 			}
 			if (!Test.TestTrue(TEXT("Distinct correctly sized NavData"), Data && TroopData && Data != TroopData)) return Finish();
 			Test.TestTrue(TEXT("Actual 500cm castle matches castle NavData"), Nav->GetNavDataForProps(Castle->GetNavAgentPropertiesRef(), Castle->GetNavAgentLocation()) == Data);
+			if (!FocusGuardId.IsNone())
+			{
+				for (TActorIterator<ALSEnemyTroop> It(World.Get()); It; ++It)
+				{
+					It->Behavior->SetComponentTickEnabled(false);
+					It->GetCharacterMovement()->StopMovementImmediately();
+				}
+				for (TActorIterator<ALSTroopUnit> It(World.Get()); It; ++It)
+					if (It->GetFaction() == ELSFaction::Ally && It->GetTroopType() == ELSTroopType::Spearman) { Worker = *It; break; }
+				if (!Test.TestNotNull(TEXT("Authored allied worker available"), Worker.Get()) || !BeginGuardEncounter(Nav, Data)) return Finish();
+				AdvanceTo(10);
+				return false;
+			}
 
 			CheckInitialConditions();
 			if (!CheckFrontApproachIsolation(TroopData) || !CheckNativeMouthWidths() || !CheckIntendedCombatBays(Nav, Data)) return Finish();
@@ -682,6 +701,7 @@ public:
 		}
 		if (Phase == 10)
 		{
+			if (!FocusGuardId.IsNone()) ObserveGuardLeash();
 			FLSHealthSnapshot Health;
 			Castle->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health);
 			if (Health.CurrentHealth >= EncounterHealth)
@@ -690,13 +710,25 @@ public:
 					Test.AddInfo(FString::Printf(TEXT("Guard approach timeout actor=%s position=%s castle=%s state=%d tick=%d target=%s stopReason=%s distance=%.3f"),
 						*MeleeEnemy->GetActorLabel(), *MeleeEnemy->GetActorLocation().ToString(), *Castle->GetActorLocation().ToString(), static_cast<int32>(MeleeEnemy->Behavior->GetState()),
 						MeleeEnemy->Behavior->IsComponentTickEnabled(), *GetNameSafe(MeleeEnemy->Behavior->GetTarget()), *MeleeEnemy->Behavior->GetLastStopReason(), ULSCombatTargetLibrary::GetAttackDistance(MeleeEnemy.Get(), Castle.Get())));
+				if (!FocusGuardId.IsNone() && FPlatformTime::Seconds() - PhaseStarted >= 15)
+					Test.AddInfo(FString::Printf(TEXT("Focused Guard leash id=%s max=%.1f allowed=%.1f"), *FocusGuardId.ToString(), MaxGuardDistance, GuardLeashLimit));
 				return WaitOrFail(TEXT("Isolated authored Guard reaches and damages large castle"), 15);
 			}
 			EncounterHealth = Health.CurrentHealth;
 			++EncounterHits;
 			if (EncounterHits < 2) return false;
-			Test.TestTrue(TEXT("Actual melee Guard repeatedly damages the 500cm castle"), MeleeEnemy->BasicAttack->GetAttackTarget() == Castle.Get() && Health.CurrentHealth > 0);
-			Test.TestTrue(TEXT("Melee Guard reaches actual body-boundary range"), ULSCombatTargetLibrary::GetAttackDistance(MeleeEnemy.Get(), Castle.Get()) <= MeleeEnemy->BasicAttack->GetAttackSettings().Range);
+			const bool bFocusedArcher = !FocusGuardId.IsNone() && MeleeEnemy->GetTroopType() == ELSTroopType::Archer;
+			Test.TestTrue(bFocusedArcher ? TEXT("Actual Guard repeatedly fires and damages the 500cm castle") : TEXT("Actual melee Guard repeatedly damages the 500cm castle"), MeleeEnemy->BasicAttack->GetAttackTarget() == Castle.Get() && Health.CurrentHealth > 0);
+			Test.TestTrue(bFocusedArcher ? TEXT("Guard fires within actual body-boundary range") : TEXT("Melee Guard reaches actual body-boundary range"), ULSCombatTargetLibrary::GetAttackDistance(MeleeEnemy.Get(), Castle.Get()) <= MeleeEnemy->BasicAttack->GetAttackSettings().Range);
+			if (!FocusGuardId.IsNone())
+			{
+				Test.TestTrue(FocusGuardId.ToString() + TEXT(" stays within its defense leash through two hits"), MaxGuardDistance <= GuardLeashLimit);
+				Test.AddInfo(FString::Printf(TEXT("Focused Guard two hits id=%s max=%.1f allowed=%.1f"), *FocusGuardId.ToString(), MaxGuardDistance, GuardLeashLimit));
+				Castle->GetMovementComponent()->StopMovementImmediately();
+				Castle->SetActorLocation(Home, false, nullptr, ETeleportType::TeleportPhysics);
+				AdvanceTo(21);
+				return false;
+			}
 			MeleeEnemy->BasicAttack->EndBattleActions();
 			for (TActorIterator<AActor> It(World.Get()); It; ++It)
 				if (ULSEnemyBehaviorComponent* Behavior = It->FindComponentByClass<ULSEnemyBehaviorComponent>()) Behavior->EndBattleActions();
@@ -705,6 +737,30 @@ public:
 			Test.AddInfo(TEXT("Subsequent movement/production/obstacle checks isolate geometry with authored enemy attacks disabled; the preceding two melee hits used a live authored Guard."));
 			if (!BeginGroundWeaponHit(ELSCastleWeapon::Shotgun, TEXT("E_L1_GUARD_SPEARMAN_02"))) return Finish();
 			AdvanceTo(11);
+			return false;
+		}
+		if (Phase == 21)
+		{
+			ObserveGuardLeash();
+			const ULSEnemyBehaviorComponent* Behavior = MeleeEnemy->Behavior;
+			const float ReturnDistance = FVector::Dist2D(MeleeEnemy->GetActorLocation(), Behavior->GetInitialPosition());
+			const bool bReturned = !Behavior->GetTarget() && Behavior->GetState() == ELSEnemyState::GuardIdle && ReturnDistance <= Behavior->ReturnAreaRadius;
+			if (!bReturned)
+			{
+				if (FPlatformTime::Seconds() - PhaseStarted >= 30)
+					Test.AddInfo(FString::Printf(TEXT("Focused Guard return timeout id=%s state=%d target=%s distance=%.1f radius=%.1f max=%.1f allowed=%.1f"),
+						*FocusGuardId.ToString(), static_cast<int32>(Behavior->GetState()), *GetNameSafe(Behavior->GetTarget()), ReturnDistance, Behavior->ReturnAreaRadius, MaxGuardDistance, GuardLeashLimit));
+				return WaitOrFail(TEXT("Focused Guard releases target and returns home"), 30);
+			}
+			Test.TestTrue(FocusGuardId.ToString() + TEXT(" releases its target and returns to GuardIdle within its authored return radius"), bReturned);
+			Test.TestTrue(FocusGuardId.ToString() + TEXT(" stays within its defense leash through return"), MaxGuardDistance <= GuardLeashLimit);
+			Test.AddInfo(FString::Printf(TEXT("Focused Guard return id=%s state=%d target=%s distance=%.1f radius=%.1f max=%.1f allowed=%.1f"),
+				*FocusGuardId.ToString(), static_cast<int32>(Behavior->GetState()), *GetNameSafe(Behavior->GetTarget()), ReturnDistance, Behavior->ReturnAreaRadius, MaxGuardDistance, GuardLeashLimit));
+			for (TActorIterator<AActor> It(World.Get()); It; ++It)
+				if (ULSEnemyBehaviorComponent* EnemyBehavior = It->FindComponentByClass<ULSEnemyBehaviorComponent>()) EnemyBehavior->EndBattleActions();
+			if (FocusOutpostId.IsNone()) return Finish();
+			if (!BeginCoreMelee()) return Finish();
+			AdvanceTo(17);
 			return false;
 		}
 		if (Phase == 11 || Phase == 13)
@@ -840,8 +896,15 @@ public:
 		}
 		if (Phase == 17)
 		{
+			if (!Worker.IsValid() || !ULSCombatTargetLibrary::IsCombatAlive(Worker.Get()) ||
+				!MeleeOutpost.IsValid() || !ULSCombatTargetLibrary::IsCombatAlive(MeleeOutpost.Get()))
+			{
+				Test.AddError(FString::Printf(TEXT("Facility observation lost a living worker or target: worker=%s target=%s"),
+					*GetNameSafe(Worker.Get()), *GetNameSafe(MeleeOutpost.Get())));
+				return Finish();
+			}
 			FLSHealthSnapshot Health;
-			Setup->CoreOutpost->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health);
+			MeleeOutpost->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health);
 			if (Health.CurrentHealth >= CoreHealth)
 			{
 				if (FPlatformTime::Seconds() - PhaseStarted >= 30)
@@ -850,14 +913,15 @@ public:
 					Test.AddInfo(FString::Printf(TEXT("Core melee timeout worker=%s location=%s velocity=%s order=%d failure=%d destination=%s attackTarget=%s engaged=%s distance=%.6f range=%.6f attackActive=%d configured=%d controllerStatus=%d knockedBack=%d"),
 						*Worker->GetPathName(), *Worker->GetActorLocation().ToString(), *Worker->GetVelocity().ToString(), static_cast<int32>(Worker->Orders->GetOrderKind()), static_cast<int32>(Worker->Orders->GetLastFailure()),
 						*Worker->Orders->GetOrderDestination().ToString(), *GetPathNameSafe(Worker->BasicAttack->GetAttackTarget()), *GetPathNameSafe(Worker->Orders->GetEngagedTarget()),
-						ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), Setup->CoreOutpost), Worker->BasicAttack->GetAttackSettings().Range, Worker->BasicAttack->IsActive(), Worker->BasicAttack->IsConfigured(),
+						ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), MeleeOutpost.Get()), Worker->BasicAttack->GetAttackSettings().Range, Worker->BasicAttack->IsActive(), Worker->BasicAttack->IsConfigured(),
 						AI ? static_cast<int32>(AI->GetMoveStatus()) : -1, Worker->Orders->IsKnockedBack()));
 				}
 				return WaitOrFail(TEXT("Actual staged Core melee approach and damage"), 30);
 			}
 			Test.TestTrue(TEXT("Public facility attack traverses approach before damage"), FVector::Dist2D(CoreMeleeStart, Worker->GetActorLocation()) > 300);
-			Test.TestTrue(TEXT("Actual facility damage occurs within unmodified melee range"), ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), Setup->CoreOutpost) <= Worker->BasicAttack->GetAttackSettings().Range);
+			Test.TestTrue(TEXT("Actual facility damage occurs within unmodified melee range"), ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), MeleeOutpost.Get()) <= Worker->BasicAttack->GetAttackSettings().Range);
 			Controller->HoldSelected();
+			if (!FocusGuardId.IsNone()) return Finish();
 			if (!BeginBarricadeAttack()) return Finish();
 			AdvanceTo(8);
 			return false;
@@ -1146,7 +1210,8 @@ private:
 	bool BeginGuardEncounter(UNavigationSystemV1* Nav, const ANavigationData* Data)
 	{
 		FAutomationTestBase& Test = *State->Test;
-		Worker->BasicAttack->EndBattleActions();
+		if (FocusGuardId.IsNone()) Worker->BasicAttack->EndBattleActions();
+		else Worker->BasicAttack->StopAttack();
 		FLSOrder Hold;
 		Hold.Kind = ELSOrderKind::Hold;
 		Worker->Orders->SubmitOrder(Hold);
@@ -1157,14 +1222,21 @@ private:
 		FLSUnitStatRow EnemyStats;
 		if (!Test.TestTrue(TEXT("Chosen authored Guard retains initialized real stats"), MeleeEnemy->TryGetStats(EnemyStats))) return false;
 		const ULSEnemyBehaviorComponent* Behavior = MeleeEnemy->Behavior;
-		const AActor* Anchor = Behavior->GuardAnchor ? Behavior->GuardAnchor.Get() : static_cast<AActor*>(Behavior->GuardedOutpost.Get());
+		AActor* Anchor = Behavior->GuardAnchor ? Behavior->GuardAnchor.Get() : static_cast<AActor*>(Behavior->GuardedOutpost.Get());
 		const float DomainRadius = Behavior->GuardAnchor ? Behavior->GuardAnchorRadius : Behavior->GuardedOutpost ? Behavior->GuardedOutpost->GetDefenseRadius() : 0;
 		if (!Test.TestTrue(TEXT("Guard calibration has its actual authored defense domain"), Anchor && DomainRadius > 0)) return false;
+		if (!FocusGuardId.IsNone())
+		{
+			GuardAnchor = Anchor;
+			GuardLeashLimit = DomainRadius + Behavior->BoundaryAllowance;
+			ObserveGuardLeash();
+		}
 		Test.AddInfo(FString::Printf(TEXT("Guard fixture actor=%s position=%s anchor=%s anchorPosition=%s domainRadius=%.1f detection=%.1f meleeRange=%.1f"),
 			*MeleeEnemy->GetActorLabel(), *MeleeEnemy->GetActorLocation().ToString(), *Anchor->GetActorLabel(), *Anchor->GetActorLocation().ToString(), DomainRadius, EnemyStats.DetectionRange, MeleeEnemy->BasicAttack->GetAttackSettings().Range));
 		UCapsuleComponent* Capsule = Castle->GetCapsuleComponent();
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(LSGuardCastleFixtureStation), false, Castle.Get());
 		const TArray<FLSMineSphere> Mines = LSMineAvoidance::Snapshot(World.Get());
+		const bool bFocusedArcher = !FocusGuardId.IsNone() && MeleeEnemy->GetTroopType() == ELSTroopType::Archer;
 		for (int32 Index = 0; Index < 16; ++Index)
 		{
 			const double Angle = -PI * 0.5 + 2 * PI * Index / 16;
@@ -1177,8 +1249,7 @@ private:
 			}
 			const FVector Station = Contact.Location + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight());
 			const double MeleeDistance = ULSCombatTargetLibrary::GetAttackDistanceAtLocation(Castle.Get(), MeleeEnemy.Get(), Station);
-			if (MeleeDistance <= MeleeEnemy->BasicAttack->GetAttackSettings().Range || FVector::Distance(Station, MeleeEnemy->GetActorLocation()) > EnemyStats.DetectionRange ||
-				FVector::Dist2D(Contact.Location, Anchor->GetActorLocation()) > DomainRadius)
+			if ((!bFocusedArcher && MeleeDistance <= MeleeEnemy->BasicAttack->GetAttackSettings().Range) || FVector::Distance(Station, MeleeEnemy->GetActorLocation()) > EnemyStats.DetectionRange)
 			{
 				Test.AddInfo(FString::Printf(TEXT("Guard fixture rejects radial station %d at=%s: boundaryDistance=%.1f detectionDistance=%.1f domainDistance=%.1f"), Index,
 					*Station.ToString(), MeleeDistance, FVector::Distance(Station, MeleeEnemy->GetActorLocation()), FVector::Dist2D(Contact.Location, Anchor->GetActorLocation())));
@@ -1193,19 +1264,25 @@ private:
 			}
 			Castle->SetActorLocation(Station, false, nullptr, ETeleportType::TeleportPhysics);
 			FVector AttackGoal;
+			// 표적 중심이 방어 영역 밖에 있어도 공격 위치가 영역 안이면 Guard가 교전할 수 있다.
 			if (!FLSEnemySupportTestAccess::FindAttackGoal(Behavior, Castle.Get(), AttackGoal) || FVector::Dist2D(AttackGoal, Anchor->GetActorLocation()) > DomainRadius)
 			{
 				Test.AddInfo(FString::Printf(TEXT("Guard fixture rejects radial station %d: native Guard cannot resolve an attack goal inside its actual domain"), Index));
 				continue;
 			}
-			Test.AddInfo(FString::Printf(TEXT("Guard fixture chooses radial station %d castle=%s nativeAttackGoal=%s boundaryDistance=%.1f; natural Guard AI must approach and damage without an injected target/order."),
-				Index, *Station.ToString(), *AttackGoal.ToString(), MeleeDistance));
+			Test.AddInfo(FString::Printf(TEXT("Guard fixture chooses radial station %d castle=%s nativeAttackGoal=%s boundaryDistance=%.1f; %s"),
+				Index, *Station.ToString(), *AttackGoal.ToString(), MeleeDistance,
+				bFocusedArcher ? TEXT("natural Guard AI must fire and damage without an injected target/order.") : TEXT("natural Guard AI must approach and damage without an injected target/order.")));
 			MeleeEnemy->Behavior->SetComponentTickEnabled(true);
 			return true;
 		}
 		Castle->SetActorLocation(Home, false, nullptr, ETeleportType::TeleportPhysics);
-		Test.AddError(TEXT("No valid Castle580 navigation station among16 radius880cm candidates outside melee and inside Guard detection/domain with collision/mine-safe placement."));
+		Test.AddError(TEXT("No Castle580 station among 16 radius880cm candidates satisfies navigation, detection, collision, mine safety, applicable melee range, and native attack goal inside the Guard domain."));
 		return false;
+	}
+	void ObserveGuardLeash()
+	{
+		MaxGuardDistance = FMath::Max(MaxGuardDistance, static_cast<float>(FVector::Dist2D(MeleeEnemy->GetActorLocation(), GuardAnchor->GetActorLocation())));
 	}
 
 	void CheckInitialConditions()
@@ -1397,9 +1474,19 @@ private:
 	bool Finish()
 	{
 		RemoveObstacleObserver();
+		ClearWorkerObserver();
 		GEditor->RequestEndPlayMap();
 		AdvanceTo(7);
 		return false;
+	}
+	void ClearWorkerObserver()
+	{
+		if (WorkerObserver.IsValid())
+		{
+			WorkerObserver->DamageCallback = nullptr;
+			WorkerObserver->DeathCallback = nullptr;
+			WorkerObserver.Reset();
+		}
 	}
 	void RemoveObstacleObserver()
 	{
@@ -1483,45 +1570,81 @@ private:
 	bool BeginCoreMelee()
 	{
 		FAutomationTestBase& Test = *State->Test;
-		for (int32 Angle = 0; Angle < 16; ++Angle)
+		MeleeOutpost = FocusOutpostId.IsNone() ? Setup->CoreOutpost.Get() : FindNamedActor<ALSOutpost>(World.Get(), RegistryNames.FindRef(FocusOutpostId));
+		if (!Test.TestNotNull(TEXT("Facility melee target"), MeleeOutpost.Get())) return false;
+		if (!FocusOutpostId.IsNone())
 		{
-			if (!TeleportWorkerNear(Setup->CoreOutpost->GetActorLocation(), 1600, Angle, 1)) continue;
-			if (ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), Setup->CoreOutpost) <= Worker->BasicAttack->GetAttackSettings().Range + 300) continue;
+			ULSHealthComponent* Health = Worker->FindComponentByClass<ULSHealthComponent>();
+			if (!Test.TestNotNull(TEXT("Facility worker health"), Health)) return false;
+			WorkerObserver.Reset(NewObject<ULSHealthTestObserver>(World.Get()));
+			auto RecordWorkerDamage = [TestState = State, GuardId = FocusGuardId](const TCHAR* Event, const FLSDamageResult& Damage)
+			{
+				TestState->Test->AddInfo(FString::Printf(TEXT("Focused facility worker %s guard=%s requested=%.1f applied=%.1f health=%.1f previous=%.1f receiver=%s source=%s causer=%s time=%.3f"),
+					Event, *GuardId.ToString(), Damage.RequestedDamage, Damage.AppliedDamage, Damage.CurrentHealth, Damage.PreviousHealth,
+					*GetPathNameSafe(Damage.Receiver.Get()), *GetPathNameSafe(Damage.SourceActor.Get()), *GetPathNameSafe(Damage.DamageCauser.Get()), Damage.TimestampSeconds));
+			};
+			WorkerObserver->DamageCallback = [RecordWorkerDamage](const FLSDamageResult& Damage) { RecordWorkerDamage(TEXT("damage"), Damage); };
+			WorkerObserver->DeathCallback = [RecordWorkerDamage](const FLSDamageResult& Damage) { RecordWorkerDamage(TEXT("death"), Damage); };
+			Health->OnDamagedEvent.AddDynamic(WorkerObserver.Get(), &ULSHealthTestObserver::OnDamage);
+			Health->OnDiedEvent.AddDynamic(WorkerObserver.Get(), &ULSHealthTestObserver::OnDeath);
+		}
+		const float FocusRadii[] = {1200, 1000, 900};
+		const int32 CandidateCount = FocusOutpostId.IsNone() ? 16 : 48;
+		const TArray<FLSMineSphere> Mines = LSMineAvoidance::Snapshot(World.Get());
+		for (int32 Candidate = 0; Candidate < CandidateCount; ++Candidate)
+		{
+			const int32 Angle = Candidate % 16;
+			const float Radius = FocusOutpostId.IsNone() ? 1600 : FocusRadii[Candidate / 16];
+			if (!TeleportWorkerNear(MeleeOutpost->GetActorLocation(), Radius, Angle, 1)) continue;
+			if (ULSCombatTargetLibrary::GetAttackDistance(Worker.Get(), MeleeOutpost.Get()) <= Worker->BasicAttack->GetAttackSettings().Range + 300) continue;
 			World->GetSubsystem<ULSVisionSubsystem>()->RequestRefresh();
 			Controller->ApplySelection({Worker.Get()});
-			if (!Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, Setup->CoreOutpost->GetActorLocation(), Setup->CoreOutpost, false)) continue;
+			if (!Controller->IssueSelectionOrder(ELSOrderKind::AttackTarget, MeleeOutpost->GetActorLocation(), MeleeOutpost.Get(), false))
+			{
+				Test.AddInfo(FString::Printf(TEXT("Facility staging angle %d order rejected: friendlySight=%d failure=%d"), Angle,
+					ULSVisionSubsystem::PassesFriendlySight(Worker.Get(), MeleeOutpost.Get()), static_cast<int32>(Worker->Orders->GetLastFailure())));
+				continue;
+			}
 			AAIController* AI = Cast<AAIController>(Worker->GetController());
 			const FNavPathSharedPtr Path = AI && AI->GetPathFollowingComponent() ? AI->GetPathFollowingComponent()->GetPath() : nullptr;
 			if (!Path.IsValid() || !Path->IsValid() || Path->IsPartial() || Path->GetPathPoints().Num() < 2) continue;
 			const UCapsuleComponent* Capsule = Worker->GetCapsuleComponent();
 			FCollisionQueryParams Query(SCENE_QUERY_STAT(LSCoreMeleeFixtureApproach), false, Worker.Get());
-			Query.AddIgnoredActor(Setup->CoreOutpost);
+			Query.AddIgnoredActor(MeleeOutpost.Get());
 			const FVector Offset(0, 0, Worker->GetActorLocation().Z - Worker->GetNavAgentLocation().Z);
 			FVector From = Worker->GetActorLocation();
+			FVector NavFrom = Worker->GetNavAgentLocation();
 			bool bBlocked = false;
 			for (const FNavPathPoint& Point : Path->GetPathPoints())
 			{
+				if (!LSMineAvoidance::IsSegmentSafe(Worker.Get(), NavFrom, Point.Location, Mines))
+				{
+					Test.AddInfo(FString::Printf(TEXT("Facility staging radius %.0f angle %d rejects mine-unsafe path segment from=%s to=%s"), Radius, Angle, *NavFrom.ToString(), *Point.Location.ToString()));
+					bBlocked = true;
+					break;
+				}
 				const FVector To = Point.Location + Offset;
 				FHitResult Hit;
 				if (World->SweepSingleByChannel(Hit, From, To, Worker->GetActorQuat(), Capsule->GetCollisionObjectType(),
 					FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()), Query,
 					FCollisionResponseParams(Capsule->GetCollisionResponseToChannels())))
 				{
-					Test.AddInfo(FString::Printf(TEXT("Core fixture staging angle %d has an actual body blocking its accepted NavData path: actor=%s component=%s hit=%s actorLocation=%s"), Angle, *GetPathNameSafe(Hit.GetActor()), *GetPathNameSafe(Hit.GetComponent()), *Hit.Location.ToString(), Hit.GetActor() ? *Hit.GetActor()->GetActorLocation().ToString() : TEXT("none")));
+					Test.AddInfo(FString::Printf(TEXT("Facility fixture staging radius %.0f angle %d has an actual body blocking its accepted NavData path: actor=%s component=%s hit=%s actorLocation=%s"), Radius, Angle, *GetPathNameSafe(Hit.GetActor()), *GetPathNameSafe(Hit.GetComponent()), *Hit.Location.ToString(), Hit.GetActor() ? *Hit.GetActor()->GetActorLocation().ToString() : TEXT("none")));
 					bBlocked = true;
 					break;
 				}
 				From = To;
+				NavFrom = Point.Location;
 			}
 			if (bBlocked) { Controller->HoldSelected(); continue; }
 			CoreMeleeStart = Worker->GetActorLocation();
 			FLSHealthSnapshot Health;
-			if (!Test.TestTrue(TEXT("Core health before actual worker attack"), Setup->CoreOutpost->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health))) return false;
+			if (!Test.TestTrue(TEXT("Facility health before actual worker attack"), MeleeOutpost->FindComponentByClass<ULSHealthComponent>()->TryGetHealth(Health))) return false;
 			CoreHealth = Health.CurrentHealth;
-			Test.AddInfo(FString::Printf(TEXT("Core melee uses freshly produced worker %s and physically clear complete approach at angle %d, start=%s endpoint=%s"), *Worker->GetPathName(), Angle, *CoreMeleeStart.ToString(), *Path->GetPathPoints().Last().Location.ToString()));
+			Test.AddInfo(FString::Printf(TEXT("Facility melee uses worker %s and physically clear mine-safe complete approach at radius %.0f angle %d, start=%s endpoint=%s"), *Worker->GetPathName(), Radius, Angle, *CoreMeleeStart.ToString(), *Path->GetPathPoints().Last().Location.ToString()));
 			return true;
 		}
-		Test.AddError(TEXT("No physically clear complete Core melee approach among 16 staged positions; frozen defenders retain collision."));
+		Test.AddError(FString::Printf(TEXT("No physically clear mine-safe complete facility melee approach among %d staged positions; frozen defenders retain collision."), CandidateCount));
 		return false;
 	}
 
@@ -1896,6 +2019,8 @@ private:
 	TSharedRef<FLSBattlefieldMapTestState> State;
 	FName Preset;
 	bool bDefeat = false;
+	FName FocusGuardId;
+	FName FocusOutpostId;
 	int32 Phase = 0;
 	double PhaseStarted = FPlatformTime::Seconds();
 	TUniquePtr<FStartPIEForAutomationCommand> Starter;
@@ -1908,6 +2033,11 @@ private:
 	FVector HomeGround = FVector::ZeroVector;
 	TMap<FName, FName> RegistryNames;
 	TWeakObjectPtr<ALSTroopUnit> Worker;
+	TStrongObjectPtr<ULSHealthTestObserver> WorkerObserver;
+	TWeakObjectPtr<ALSOutpost> MeleeOutpost;
+	TWeakObjectPtr<AActor> GuardAnchor;
+	float GuardLeashLimit = 0;
+	float MaxGuardDistance = 0;
 	TWeakObjectPtr<ALSEnemyTroop> MeleeEnemy;
 	TWeakObjectPtr<ALSEnemyTroop> WeaponTarget;
 	TWeakObjectPtr<ALSTroopUnit> YieldTroop;
@@ -1943,21 +2073,19 @@ private:
 };
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBattlefieldMapIntegrationTest,
-	"Landship.Maps.Battlefield.RealMapEditorAndPIE",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FLSBattlefieldMapIntegrationTest::RunTest(const FString& Parameters)
+namespace
 {
-	if (!TestTrue(TEXT("Idle editor required"), GEditor && !GEditor->PlayWorld && !GEditor->IsPlaySessionInProgress())) return false;
+bool QueueBattlefieldMapTest(FAutomationTestBase& Test, FName FocusGuardId = NAME_None, FName FocusOutpostId = NAME_None)
+{
+	if (!Test.TestTrue(TEXT("Idle editor required"), GEditor && !GEditor->PlayWorld && !GEditor->IsPlaySessionInProgress())) return false;
 	UWorld* OriginalWorld = GEditor->GetEditorWorldContext().World();
 	if (OriginalWorld)
 		for (ULevel* Level : OriginalWorld->GetLevels())
-			if (!TestFalse(TEXT("Test refuses to replace an editor map with unsaved changes"), Level->GetOutermost()->IsDirty())) return false;
+			if (!Test.TestFalse(TEXT("Test refuses to replace an editor map with unsaved changes"), Level->GetOutermost()->IsDirty())) return false;
 	TSharedRef<FLSBattlefieldMapTestState> State = MakeShared<FLSBattlefieldMapTestState>();
-	State->Test = this;
+	State->Test = &Test;
 	if (OriginalWorld) FPackageName::DoesPackageExist(OriginalWorld->GetOutermost()->GetName(), &State->OriginalFilename);
-	if (!TestTrue(TEXT("Real battlefield map exists on disk"), FPackageName::DoesPackageExist(BattlefieldMap, &State->SourceFilename))) return false;
+	if (!Test.TestTrue(TEXT("Real battlefield map exists on disk"), FPackageName::DoesPackageExist(BattlefieldMap, &State->SourceFilename))) return false;
 	State->SourceHash = FMD5Hash::HashFile(*State->SourceFilename);
 	const FString RunId = FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	State->Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Automation/BattlefieldMap") / RunId) + TEXT("/");
@@ -1966,51 +2094,102 @@ bool FLSBattlefieldMapIntegrationTest::RunTest(const FString& Parameters)
 	IFileManager::Get().MakeDirectory(*State->Directory, true);
 	FPackageName::RegisterMountPoint(State->MountRoot, State->Directory);
 	// 템플릿으로 읽은 복제본만 바꾸고 저장한다. 원본 맵 경로는 SaveMap에 넘기지 않는다.
-	if (TestTrue(TEXT("Load actual battlefield map as editor template"), FEditorFileUtils::LoadMap(State->SourceFilename, true, false)))
+	if (Test.TestTrue(TEXT("Load actual battlefield map as editor template"), FEditorFileUtils::LoadMap(State->SourceFilename, true, false)))
 	{
 		UWorld* World = GEditor->GetEditorWorldContext().World();
 		State->EditorCopy = World;
 		ALSBattlefieldLayoutAuthoring* Layout = FindOnlyActor<ALSBattlefieldLayoutAuthoring>(World);
-		if (TestTrue(TEXT("Template uses a distinct package"), World->GetOutermost()->GetName() != BattlefieldMap) && ValidateMap(*this, World) && Layout)
+		if (Test.TestTrue(TEXT("Template uses a distinct package"), World->GetOutermost()->GetName() != BattlefieldMap) && ValidateMap(Test, World) && Layout)
 		{
-			TestEqual(TEXT("Exactly 368 authored registry actors"), Layout->Registry.Num(), 368);
-			CheckPresetDefinitions(*this, Layout);
+			Test.TestEqual(TEXT("Exactly 368 authored registry actors"), Layout->Registry.Num(), 368);
+			CheckPresetDefinitions(Test, Layout);
 			const FLSBattlefieldSnapshot Before = CaptureRegistry(Layout);
 			const int32 ActorCount = CountActors(World);
 			for (const FName PresetId : {FName(TEXT("V0"))})
 			{
 				Layout->SelectedPreset = PresetId;
 				const FLSBattlefieldLayoutPreset* Preset = Layout->Presets.FindByPredicate([PresetId](const FLSBattlefieldLayoutPreset& Candidate) { return Candidate.PresetId == PresetId; });
-				if (!TestNotNull(TEXT("Authored preset exists"), Preset)) continue;
+				if (!Test.TestNotNull(TEXT("Authored preset exists"), Preset)) continue;
 				Layout->ApplySelectedPreset();
-				CheckRegistry(*this, Layout, Before, Preset);
-				TestEqual(TEXT("Preset does not create or destroy actors"), CountActors(World), ActorCount);
-				ValidateMap(*this, World);
+				CheckRegistry(Test, Layout, Before, Preset);
+				Test.TestEqual(TEXT("Preset does not create or destroy actors"), CountActors(World), ActorCount);
+				ValidateMap(Test, World);
 			}
-			if (TestTrue(TEXT("Save template only to unique temporary map"), FEditorFileUtils::SaveMap(World, State->CopyFilename)))
+			if (Test.TestTrue(TEXT("Save template only to unique temporary map"), FEditorFileUtils::SaveMap(World, State->CopyFilename)))
 			{
 				const FLSBattlefieldSnapshot Saved = CaptureRegistry(Layout);
-				if (TestTrue(TEXT("Reload saved temporary map"), FEditorFileUtils::LoadMap(State->CopyFilename, false, false)))
+				if (Test.TestTrue(TEXT("Reload saved temporary map"), FEditorFileUtils::LoadMap(State->CopyFilename, false, false)))
 				{
 					World = GEditor->GetEditorWorldContext().World();
 					State->EditorCopy = World;
 					Layout = FindOnlyActor<ALSBattlefieldLayoutAuthoring>(World);
-					if (ValidateMap(*this, World) && Layout)
+					if (ValidateMap(Test, World) && Layout)
 					{
-						CheckRegistry(*this, Layout, Saved);
-						CheckPresetDefinitions(*this, Layout);
-						TestEqual(TEXT("Reload preserves selected preset"), Layout->SelectedPreset, FName(TEXT("V0")));
+						CheckRegistry(Test, Layout, Saved);
+						CheckPresetDefinitions(Test, Layout);
+						Test.TestEqual(TEXT("Reload preserves selected preset"), Layout->SelectedPreset, FName(TEXT("V0")));
 						State->bReady = true;
 					}
 				}
 			}
 		}
 	}
-	for (FName Preset : {FName(TEXT("V0"))})
-		FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldPIECommand>(State, Preset));
-	FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldPIECommand>(State, FName(TEXT("V0")), true));
+	if (FocusGuardId.IsNone())
+	{
+		for (FName Preset : {FName(TEXT("V0"))})
+			FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldPIECommand>(State, Preset));
+		FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldPIECommand>(State, FName(TEXT("V0")), true));
+	}
+	else
+		FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldPIECommand>(State, FName(TEXT("V0")), false, FocusGuardId, FocusOutpostId));
 	FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FLSBattlefieldCleanupCommand>(State));
 	return true;
 }
 
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSBattlefieldMapIntegrationTest,
+	"Landship.Maps.Battlefield.RealMapEditorAndPIE",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSBattlefieldMapIntegrationTest::RunTest(const FString& Parameters)
+{
+	return QueueBattlefieldMapTest(*this);
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSFrontGuardC1MeleeTest,
+	"Landship.Maps.Battlefield.FrontGuardCombat.C1MeleeAndOutpost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSFrontGuardC1MeleeTest::RunTest(const FString& Parameters)
+{
+	return QueueBattlefieldMapTest(*this, FName(TEXT("E_C1_GUARD_SPEARMAN_10")), FName(TEXT("G_C1")));
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSFrontGuardR1MeleeTest,
+	"Landship.Maps.Battlefield.FrontGuardCombat.R1MeleeAndOutpost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSFrontGuardR1MeleeTest::RunTest(const FString& Parameters)
+{
+	return QueueBattlefieldMapTest(*this, FName(TEXT("E_R1_GUARD_CAVALRY_01")), FName(TEXT("G_R1")));
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSFrontGuardC1ArcherTest,
+	"Landship.Maps.Battlefield.FrontGuardCombat.C1Archer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSFrontGuardC1ArcherTest::RunTest(const FString& Parameters)
+{
+	return QueueBattlefieldMapTest(*this, FName(TEXT("E_C1_GUARD_ARCHER_05")));
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSFrontGuardR1ArcherTest,
+	"Landship.Maps.Battlefield.FrontGuardCombat.R1Archer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLSFrontGuardR1ArcherTest::RunTest(const FString& Parameters)
+{
+	return QueueBattlefieldMapTest(*this, FName(TEXT("E_R1_GUARD_ARCHER_08")));
+}
 #endif
