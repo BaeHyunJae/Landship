@@ -7,7 +7,11 @@
 #include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "Editor.h"
+#include "Engine/Level.h"
+#include "FileHelpers.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/PackageName.h"
+#include "Misc/ScopeExit.h"
 #include "Tests/AutomationEditorCommon.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSAutoBattlePlacementToolTest, "Landship.AutoBattle.EnemyPlacementTool",
@@ -15,7 +19,22 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLSAutoBattlePlacementToolTest, "Landship.AutoB
 
 bool FLSAutoBattlePlacementToolTest::RunTest(const FString& Parameters)
 {
+	if (!TestTrue(TEXT("Idle editor required"), GEditor && !GEditor->PlayWorld && !GEditor->IsPlaySessionInProgress())) return false;
+	UWorld* OriginalWorld = GEditor->GetEditorWorldContext().World();
+	if (OriginalWorld)
+		for (ULevel* Level : OriginalWorld->GetLevels())
+			if (!TestFalse(TEXT("Test refuses to replace an editor map with unsaved changes"), Level->GetOutermost()->IsDirty())) return false;
+	FString OriginalFilename;
+	if (OriginalWorld) FPackageName::DoesPackageExist(OriginalWorld->GetOutermost()->GetName(), &OriginalFilename);
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	ON_SCOPE_EXIT
+	{
+		if (World && GEditor->GetEditorWorldContext().World() == World) World->GetOutermost()->SetDirtyFlag(false);
+		const bool bRestored = OriginalFilename.IsEmpty()
+			? FAutomationEditorCommonUtils::CreateNewMap() != nullptr
+			: FEditorFileUtils::LoadMap(OriginalFilename, false, false);
+		TestTrue(TEXT("Restore previous clean editor map"), bRestored);
+	};
 	if (!World)
 	{
 		return false;
