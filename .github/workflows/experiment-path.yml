@@ -1,12 +1,11 @@
 # 실험 폴더 아래 파일이 정규 브랜치로 들어가지 않는지 검사한다.
 # CONTRIBUTING.md의 '실험 브랜치'를 따른다. 모든 PR에서 실행하고(경로 필터 없음) PR이 바꾼 파일 목록으로 판정한다.
 # 필수 검사로 지정해도 다른 PR이 대기 상태로 막히지 않는다.
-# 필수 검사 이름은 job 이름 experiment-path다.
 name: Experiment 경로 검사
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   pull-requests: read
