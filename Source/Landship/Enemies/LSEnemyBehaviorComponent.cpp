@@ -14,7 +14,6 @@
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
-#include "NavigationPath.h"
 #include "NavigationData.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -433,13 +432,16 @@ bool ULSEnemyBehaviorComponent::ResolvePath(const FVector& Desired, FVector& Out
 		OutGoal = Point.Location;
 		return true;
 	}
-	UNavigationPath* Path = Nav->FindPathToLocationSynchronously(GetWorld(), Pawn->GetNavAgentLocation(), Point.Location, GetOwner());
-	if (!Path || !Path->IsValid() || Path->IsPartial()) { return false; }
+	if (!Nav->GetDefaultNavDataInstance()) { return false; }
+	// 검사 경로는 함수 범위에서 해제해 NavMesh 변경 시 불필요한 재탐색 요청이 쌓이지 않게 한다.
+	const FPathFindingResult Result = Nav->FindPathSync(FPathFindingQuery(GetOwner(), *NavData, Pawn->GetNavAgentLocation(), Point.Location));
+	const FNavPathSharedPtr& Path = Result.Path;
+	if (!Result.IsSuccessful() || !Path.IsValid() || !Path->IsValid() || Path->IsPartial()) { return false; }
 	float PreviousRadius = bDomain ? FVector::Dist2D(Pawn->GetNavAgentLocation(), Center) : 0;
 	const bool bReturning = State == ELSEnemyState::Returning || State == ELSEnemyState::ReturnBlocked || State == ELSEnemyState::ReenteringDomain;
-	for (int32 Index = 0; bDomain && Index < Path->PathPoints.Num(); ++Index)
+	for (int32 Index = 0; bDomain && Index < Path->GetPathPoints().Num(); ++Index)
 	{
-		const float PointRadius = FVector::Dist2D(Path->PathPoints[Index], Center);
+		const float PointRadius = FVector::Dist2D(Path->GetPathPoints()[Index].Location, Center);
 		// 실제 이탈 뒤에는 바깥쪽 꼭짓점이 더 멀어지지 않는 복귀 경로만 허용한다.
 		if (PointRadius > Radius && !(bReturning && PointRadius <= PreviousRadius + KINDA_SMALL_NUMBER) &&
 		    !(Index == 0 && PointRadius <= Radius + BoundaryAllowance)) { return false; }
@@ -700,11 +702,16 @@ uint32 ULSEnemyBehaviorComponent::GetRouteConditions(const FVector& Goal) const
 	FBox RouteBounds(ForceInit);
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	UNavigationPath* Path = Nav && Pawn ? Nav->FindPathToLocationSynchronously(GetWorld(), Pawn->GetNavAgentLocation(), Goal, GetOwner()) : nullptr;
-	if (Path)
+	const ANavigationData* NavData = Nav && Pawn && Nav->GetDefaultNavDataInstance()
+		? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
+	const FPathFindingResult Result = NavData
+		? Nav->FindPathSync(FPathFindingQuery(GetOwner(), *NavData, Pawn->GetNavAgentLocation(), Goal))
+		: FPathFindingResult(ENavigationQueryResult::Invalid);
+	if (Result.IsSuccessful() && Result.Path.IsValid())
 	{
-		for (const FVector& Point : Path->PathPoints)
+		for (const FNavPathPoint& PathPoint : Result.Path->GetPathPoints())
 		{
+			const FVector& Point = PathPoint.Location;
 			RouteBounds += Point;
 			Hash = HashCombine(Hash, GetTypeHash(FIntVector(FMath::RoundToInt(Point.X), FMath::RoundToInt(Point.Y), FMath::RoundToInt(Point.Z))));
 		}
@@ -848,8 +855,13 @@ void ULSEnemyBehaviorComponent::March()
 		{
 			UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 			const APawn* Pawn = Cast<APawn>(GetOwner());
-			UNavigationPath* Path = Nav->FindPathToLocationSynchronously(GetWorld(), Pawn->GetNavAgentLocation(), Goal, GetOwner());
-			if (!Path || !Path->IsValid() || Path->IsPartial())
+			const ANavigationData* NavData = Nav && Pawn && Nav->GetDefaultNavDataInstance()
+				? Nav->GetNavDataForProps(Pawn->GetNavAgentPropertiesRef(), Pawn->GetNavAgentLocation()) : nullptr;
+			const FPathFindingResult Result = NavData
+				? Nav->FindPathSync(FPathFindingQuery(GetOwner(), *NavData, Pawn->GetNavAgentLocation(), Goal))
+				: FPathFindingResult(ENavigationQueryResult::Invalid);
+			const FNavPathSharedPtr& Path = Result.Path;
+			if (!Result.IsSuccessful() || !Path.IsValid() || !Path->IsValid() || Path->IsPartial())
 			{
 				StopMovement();
 				State = ELSEnemyState::WaitingForPath;
@@ -857,7 +869,11 @@ void ULSEnemyBehaviorComponent::March()
 				return;
 			}
 			RecoveryProgressBase = RecoveryProgress;
-			RecoveryRoute = Path->PathPoints;
+			RecoveryRoute.Reset(Path->GetPathPoints().Num());
+			for (const FNavPathPoint& Point : Path->GetPathPoints())
+			{
+				RecoveryRoute.Add(Point.Location);
+			}
 			RecoveryGoal = Goal;
 		}
 		// 실제 전략 공격 위치에 도착하면 짧은 경로의 목적을 달성한 것이다.
