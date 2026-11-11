@@ -5,7 +5,7 @@
 이 문서가 정하지 않는 것은 다음 세 문서가 정한다. 각 문서에 적힌 일을 하기 전에 그 문서를 읽는다.
 
 - **Notion [프로젝트 사용 및 운영 가이드](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae)**: 작업 관리 규칙. Epic·Feature·Task의 구분, Task 속성과 Task 템플릿(본문 1~5절)을 쓰는 법, 상태를 바꾸는 시점과 Done 조건, Sprint와 회의, 버그 등록과 재검증, 플레이테스트 기록, Notion 페이지 작성 원칙을 다룬다. Notion 페이지(Task 본문, 속성, 댓글 포함)를 만들거나 고치기 전에 가이드 첫머리의 할 일별 표에서 그 일에 해당하는 절을 찾아 읽는다.
-- **Notion [GDD (게임 기획서)](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3)**: 게임 사양의 원본. 기능을 구현하거나 고치기 전에 Task가 가리키는 GDD 절을 읽는다. Task나 Feature에 적힌 사양이 GDD와 다르면 GDD를 따른다([가이드 「G. 프로젝트 문서 관리 (Notion vs GitHub)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3fea48d76e344187b8cd518e2de3b1b2)의 '기획 사양의 원본은 GDD입니다'). 사양 문장 옆의 미결 표기는 GDD 첫머리의 [표시 범례](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3#3fad5512e30a80ddac4ccbee14bc99e1)가 뜻을 정한다.
+- **Notion [GDD (게임 기획서)](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3)**: 게임 사양의 원본. 기능을 구현하거나 고치기 전에 Task가 가리키는 GDD 절을 읽는다. Task나 Feature에 적힌 사양이 GDD와 다르면 GDD를 따른다([가이드 「B-3. 문서별 원본 위치」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#450cf29a5c5547db94e300b78f4a2eda)의 '기획 사양의 원본은 GDD입니다'). 사양 문장 옆의 미결 표기는 GDD 첫머리의 [표시 범례](https://app.notion.com/p/a3815ea69b604c03ae35be8dafd883e3#3fad5512e30a80ddac4ccbee14bc99e1)가 뜻을 정한다.
 - **[코딩 규칙](docs/coding-conventions.md)**: C++ 타입·파일·에셋의 이름, 새 소스 폴더의 include 경로, C++과 블루프린트에 각각 둘 것, 플레이하며 조정할 수치를 노출하는 방법, 코드 주석 쓰는 법을 다룬다. C++ 코드, 블루프린트, 에셋을 만들거나 고치기 전과 코드 주석을 쓰기 전에 읽는다.
 
 ## 팀원이 읽는 글
@@ -14,9 +14,9 @@
 
 - 참조는 팀원 모두가 열 수 있는 것만 한다. 저장소에 커밋된 파일, 팀 Notion 페이지, 공개 웹 페이지가 그렇다. 한 사람에게만 있는 것(커밋하지 않은 파일, Git이 무시하는 경로, 개인 메모, 에이전트와의 대화나 작업 기록)에 담긴 내용이 필요하면 그 내용을 글에 직접 쓴다.
 - 개인 기록에서만 뜻을 정한 용어, 번호, 약어를 쓸 때는 글 안에서 그 뜻을 풀어 쓴다.
-- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한 형식을 따른다. 확인하지 못한 결론은 [가이드 「A-3. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)의 '사실과 추정'에 따라 추정으로 표시한다.
+- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)이 정한 형식을 따른다. 확인하지 못한 결론은 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)의 '사실과 추정'에 따라 추정으로 표시한다.
 - 글에는 읽는 사람이 그 글을 보고 할 일(리뷰, 확인, 결정, 이어서 작업)에 필요한 것을 쓴다. 다 쓴 뒤 문장마다 지워 보고, 지워도 읽는 사람이 할 일이 같으면 그 문장을 지운다. 시도한 순서, 결론의 근거가 되지 않는 점검 내역, 문장을 고친 경위 같은 작업 과정의 서술은 지워도 읽는 사람이 할 일이 같은 경우가 많다.
-- Notion 페이지와 댓글에 무엇을 어디에 쓰는지는 [가이드 「A-3. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3eefde91cf254140b5f41f9da8ddfafd)과 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)이 정한다. 위 지우기 기준은 그 자리에 쓰는 문장마다 적용한다.
+- Notion 페이지와 댓글에 무엇을 어디에 쓰는지는 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)과 [가이드 「D-3. Task 본문과 진행 기록」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#35f05c5b0eeb43569ad3fe94839bacbc)이 정한다. 위 지우기 기준은 그 자리에 쓰는 문장마다 적용한다.
 
 ## 저장소
 
@@ -39,7 +39,7 @@
 
 ### 실험 브랜치
 
-업무 유형이 '실험'인 Task(정의는 Notion [가이드 「C-1. Task 속성」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#6c6a8fe131f94893ad655e80eff83b60))가 저장소를 바꿀 때 쓴다. 실험 결과를 5절에 정리하는 형식과 통합을 정하는 방법은 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)을 따른다.
+업무 유형이 '실험'인 Task(정의는 Notion [가이드 「D-2. Task 속성」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#02f5f1a698a646688f3301c7c88167b9)의 '조사와 실험')가 저장소를 바꿀 때 쓴다. 실험 결과를 5절에 정리하는 형식과 통합을 정하는 방법은 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다.
 
 - 이름은 `exp/task-<번호>-<이름>`이다. 예: `exp/task-52-shell-combo`. 브랜치 이름의 `task-<번호>-`로 GitHub 브랜치 목록에서 그 Task의 브랜치를 찾는다.
 - 통합 브랜치에서 만든다. PR 없이 원격에 계속 둔다(병합 대상이 아니다). 실험 중에 통합 브랜치의 변경을 받아와도 된다.
@@ -47,22 +47,22 @@
 - 코드(`Source/`)는 어느 폴더든 고칠 수 있다. 실험에만 쓰는 새 파일(코드, 문서)은 `Source/Landship/Experiment/task-<번호>-<이름>/`에 둔다.
 - `Experiment/` 폴더는 어느 정규 브랜치에도 들어가지 않는다. 대상 브랜치와 관계없이 `Experiment/` 폴더 아래 파일을 담은 PR은 [`experiment-path.yml`](.github/workflows/experiment-path.yml)의 `experiment-path` 검사가 실패시킨다. 실패하면 그 파일을 PR에서 뺀다.
 - ADR은 통합 PR에서 쓴다('문서' 절의 'ADR').
-- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)을 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 통합 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
+- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 통합 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
   - 실험에서 새로 만든 에셋은 정규 폴더로 옮기고 리다이렉터를 정리한다.
   - 기존 에셋의 복사본과 자식 블루프린트는 그 변경을 원본에 반영한 뒤 버린다.
 
 ## Task와 PR
 
-- PR이 담는 작업에는 그 작업을 관리하는 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)의 Task가 있어야 한다. 작업 방식을 바꾸는 일([가이드 「B-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)의 '작업 방식을 바꾸는 일')이면 Task 대신 [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)가 있어야 한다.
+- PR이 담는 작업에는 그 작업을 관리하는 Notion [Tasks](https://app.notion.com/p/a8e791d84a3d41c2b058d7ba49097c51)의 Task가 있어야 한다. 작업 방식에 관한 일(정의는 [가이드 「C-4. 워크플로우 이슈」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#3c98df18774946f988bce7cd78136c87))이면 Task 대신 [워크플로우 이슈](https://app.notion.com/p/1150d9dc8bd24f25b23554486a88df77)가 있어야 한다.
   - 해당 Task나 이슈가 있으면 작업을 시작하기 전에 열어 범위와 완료 기준을 확인한다.
-  - 없으면 PR을 열기 전에 만든다. 작업하다가 따로 다룰 일이 생겨 브랜치를 나눈 경우도 같다. Task는 [가이드 「B-3. 새 Task를 Backlog에 등록하기」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#b6ebdec6f07642378d84a20a60633a9e)를 따라 만들고, 이슈는 워크플로우 이슈 DB에 만든다.
+  - 없으면 PR을 열기 전에 만든다. 작업하다가 따로 다룰 일이 생겨 브랜치를 나눈 경우도 같다. Task는 [가이드 「D-1. 새 Task 만들기」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#742f2c4bbfee4e87abf406b5c5cfa2a0)를 따라 만들고, 이슈는 워크플로우 이슈 DB에 만든다.
 - PR 하나에는 함께 되돌려도 되는 변경만 담는다. 한 Task나 이슈를 여러 PR로 나눌 수 있다.
 - PR 본문은 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)의 절 순서대로 쓰고 체크 항목을 확인한다. 웹 화면이 아니라 `gh`나 API로 PR을 열 때도 같다.
-- Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「C-4. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#60e4330be3244e2b8b22a8b193c4442c)을 따른다.
-- 작업을 시작하거나 끝낼 때 Task 상태를 바꾸는 시점은 [가이드 「D-1. 상태별 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#6736ec73204042bb9d24d889b3b14711)을 따른다.
-- Task에 작업 중 경과를 쓸 때는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「C-2. Task 템플릿」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#920fc85e5a114cdf9750142d91a743db)과 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)을 따른다.
-- 버그 Task를 고친 PR을 병합한 뒤에는 [가이드 「I-1. 버그 등록과 재검증」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f1da939ab98f45c2acf29aa0cb13b79e)의 '수정 후 검증'을 한다.
-- PR을 병합한 뒤 Task를 Done으로 바꿀지는 [가이드 「D-3. Done 조건」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#0b407144b18e480892b9dfc9345c0ec4)을 따른다.
+- Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「D-6. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#ffeca4037b2a4bfca0ef834c8e69e60c)을 따른다.
+- 작업을 시작하거나 끝낼 때 Task 상태를 바꾸는 시점은 [가이드 「E-1. 상태별 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#1603738df56f401a9f30bead155e335a)을 따른다.
+- Task에 작업 중 경과를 쓸 때는 [가이드 「D-3. Task 본문과 진행 기록」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#35f05c5b0eeb43569ad3fe94839bacbc)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다.
+- 버그 Task를 고친 PR을 병합한 뒤에는 [가이드 「H-1. 버그 등록과 재검증」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f1da939ab98f45c2acf29aa0cb13b79e)의 '수정 후 검증'을 한다.
+- PR을 병합한 뒤 Task를 Done으로 바꿀지는 [가이드 「E-3. Done 조건」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f33b59a0cff148748a6a2351f0efe2b8)을 따른다.
 
 ## 커밋과 PR 제목
 
@@ -78,7 +78,7 @@
 
 폴더마다 담당을 정한다. 담당은 그 폴더의 변경을 리뷰할 책임이다. 폴더는 두 종류다.
 
-- **기능 폴더**: Notion의 Feature 하나에 대응한다(Feature의 정의는 [가이드 「B-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#399ec82bfcf94943ba1087e29089843f)).
+- **기능 폴더**: Notion의 Feature 하나에 대응한다(Feature의 정의는 [가이드 「C-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#c3f464b87688403eb7bfb20b5f2f0d44)).
 - **공용 폴더**: 여러 기능이 함께 쓰는 코드와 에셋을 둔다. 이름은 그 역할로 짓는다(`Combat/`, `Navigation/`, `SharedTestLevel/`). 공용 폴더의 담당은 팀원 모두다.
 
 - 한 폴더의 콘텐츠 폴더와 소스 폴더는 같은 이름으로 만든다. 콘텐츠 폴더는 에셋이 있을 때만 만들고, 기능 폴더의 소스 폴더는 코드가 없어도 만든다. 폴더 계약(`CONTRACT.md`)을 소스 폴더에 두기 때문이다.
@@ -140,7 +140,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 
 ### 쓸 때 지킬 것
 
-- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문과 Notion Task에 쓴다(Task 안의 위치는 [가이드 「C-3. 본문과 작업 결과 기록 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#d95fe6a91cb149f9a3961ca058af0d7b)). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
+- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문과 Notion Task에 쓴다(Task 안의 위치는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
 - 폴더 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다.
 - 절차 문서와 폴더 계약에서 확인에 쓸 맵을 지정할 때는 공용 테스트 맵(`Content/Landship/SharedTestLevel/`)만 지정한다. 개인 테스트 맵(`Content/Developers/<이니셜>/`)에서 실행하는 절차는 개인 절차로 보고 `docs/procedures/Developers/<이니셜>/`에 둔다. 그 맵을 공용 테스트 맵으로 옮기면 그 절차 문서도 `docs/procedures/`로 옮긴다.
 - 절차가 실행하는 스크립트는 '폴더와 담당'의 `Scripts/` 규칙대로 두고, 절차 문서에 그 경로를 적는다.
