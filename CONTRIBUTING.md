@@ -78,7 +78,7 @@
 
 폴더마다 담당을 정한다. 담당은 그 폴더의 변경을 리뷰할 책임이다. 폴더는 두 종류다.
 
-- **기능 폴더**: Notion의 Feature 하나에 대응한다(Feature의 정의는 [가이드 「C-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#c3f464b87688403eb7bfb20b5f2f0d44)).
+- **기능 폴더**: 게임 기능을 구현하는 폴더다. Notion의 Feature는 기능 폴더 하나에 속하고, 한 기능 폴더에 Feature가 여럿 있을 수 있다(Feature의 정의는 [가이드 「C-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#c3f464b87688403eb7bfb20b5f2f0d44)). 새 Feature가 기존 기능 폴더의 역할(아래 트리의 설명)에 들면 그 폴더에 두고, 들지 않을 때만 폴더를 추가한다.
 - **공용 폴더**: 여러 기능이 함께 쓰는 코드와 에셋을 둔다. 이름은 그 역할로 짓는다(`Combat/`, `Navigation/`, `SharedTestLevel/`). 공용 폴더의 담당은 팀원 모두다.
 
 - 한 폴더의 콘텐츠 폴더와 소스 폴더는 같은 이름으로 만든다. 콘텐츠 폴더는 에셋이 있을 때만 만들고, 기능 폴더의 소스 폴더는 코드가 없어도 만든다. 폴더 계약(`CONTRACT.md`)을 소스 폴더에 두기 때문이다.
@@ -110,8 +110,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 - 폴더를 추가하는 PR에는 다음을 함께 넣는다.
   - `CODEOWNERS`에 그 폴더의 담당
   - 위 트리에 그 폴더와 역할
-  - 소스 폴더의 `CONTRACT.md`('문서' 절)
-  - `Build.cs`의 include 경로([코딩 규칙](docs/coding-conventions.md))
+  - 소스 폴더를 만들면 그 소스 폴더의 `CONTRACT.md`('문서' 절)와 `Build.cs`의 include 경로([코딩 규칙](docs/coding-conventions.md))
   - 기능 폴더이면 Notion Features의 '기능 폴더' 속성에 그 폴더 이름의 선택 옵션
 - DataTable 원본 CSV와 절차가 실행하는 스크립트는 `Source/`·`Content/` 밖의 다음 두 폴더에 둔다.
   - `Data/<폴더>/`: DataTable 에셋의 원본 CSV. 하위 폴더 이름은 그 DataTable 에셋이 있는 기능·공용 폴더 이름과 같고(예: `Data/Troops/`는 `Content/Landship/Troops/Data/`의 원본), 담당도 그 폴더를 따른다. DataTable 에셋을 바꾸는 PR에서 원본 CSV도 같은 값으로 맞춘다.
