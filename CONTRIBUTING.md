@@ -14,7 +14,7 @@
 
 - 참조는 팀원 모두가 열 수 있는 것만 한다. 저장소에 커밋된 파일, 팀 Notion 페이지, 공개 웹 페이지가 그렇다. 한 사람에게만 있는 것(커밋하지 않은 파일, Git이 무시하는 경로, 개인 메모, 에이전트와의 대화나 작업 기록)에 담긴 내용이 필요하면 그 내용을 글에 직접 쓴다.
 - 개인 기록에서만 뜻을 정한 용어, 번호, 약어를 쓸 때는 글 안에서 그 뜻을 풀어 쓴다.
-- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)이 정한 형식을 따른다. 확인하지 못한 결론은 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)의 '사실과 추정'에 따라 추정으로 표시한다.
+- 결론에는 근거를 함께 쓴다. 근거는 확인한 결과(테스트 결과, 스크린샷, 로그)나 근거가 된 문서의 링크다. Task 5절의 '확인 근거'는 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)의 '완료 후에 쓰는 절'을 따른다. 확인하지 못한 결론은 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)의 '사실과 추정'에 따라 추정으로 표시한다.
 - 글에는 읽는 사람이 그 글을 보고 할 일(리뷰, 확인, 결정, 이어서 작업)에 필요한 것을 쓴다. 다 쓴 뒤 문장마다 지워 보고, 지워도 읽는 사람이 할 일이 같으면 그 문장을 지운다. 시도한 순서, 결론의 근거가 되지 않는 점검 내역, 문장을 고친 경위 같은 작업 과정의 서술은 지워도 읽는 사람이 할 일이 같은 경우가 많다.
 - Notion 페이지와 댓글에 무엇을 어디에 쓰는지는 [가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)과 [가이드 「D-3. Task 본문과 진행 기록」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#35f05c5b0eeb43569ad3fe94839bacbc)이 정한다. 위 지우기 기준은 그 자리에 쓰는 문장마다 적용한다.
 
@@ -39,7 +39,7 @@
 
 ### 실험 브랜치
 
-업무 유형이 '실험'인 Task(정의는 Notion [가이드 「D-2. Task 속성」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#02f5f1a698a646688f3301c7c88167b9)의 '조사와 실험')가 저장소를 바꿀 때 쓴다. 실험 결과를 5절에 정리하는 형식과 통합을 정하는 방법은 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다.
+업무 유형이 '실험'인 Task(정의는 Notion [가이드 「D-2. Task 속성」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#02f5f1a698a646688f3301c7c88167b9)의 '조사와 실험')가 저장소를 바꿀 때 쓴다. 실험 결과를 5절에 정리하는 형식과 통합을 정하는 방법은 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)를 따른다.
 
 - 이름은 `exp/task-<번호>-<이름>`이다. 예: `exp/task-52-shell-combo`. 브랜치 이름의 `task-<번호>-`로 GitHub 브랜치 목록에서 그 Task의 브랜치를 찾는다.
 - 통합 브랜치에서 만든다. PR 없이 원격에 계속 둔다(병합 대상이 아니다). 실험 중에 통합 브랜치의 변경을 받아와도 된다.
@@ -47,7 +47,7 @@
 - 코드(`Source/`)는 어느 폴더든 고칠 수 있다. 실험에만 쓰는 새 파일(코드, 문서)은 `Source/Landship/Experiment/task-<번호>-<이름>/`에 둔다.
 - `Experiment/` 폴더는 어느 정규 브랜치에도 들어가지 않는다. 대상 브랜치와 관계없이 `Experiment/` 폴더 아래 파일을 담은 PR은 [`experiment-path.yml`](.github/workflows/experiment-path.yml)의 `experiment-path` 검사가 실패시킨다. 실패하면 그 파일을 PR에서 뺀다.
 - ADR은 통합 PR에서 쓴다('문서' 절의 'ADR').
-- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 통합 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
+- 통합: 실험 결과를 정규 브랜치에 넣을지와 그때 만드는 개발 Task는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)를 따른다. 개발 Task가 만들어진 뒤에 그 개발 Task의 작업 브랜치를 최신 통합 브랜치에서 만들고, 실험 결과를 정규 폴더에 반영한 뒤 PR을 연다.
   - 실험에서 새로 만든 에셋은 정규 폴더로 옮기고 리다이렉터를 정리한다.
   - 기존 에셋의 복사본과 자식 블루프린트는 그 변경을 원본에 반영한 뒤 버린다.
 
@@ -60,7 +60,7 @@
 - PR 본문은 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)의 절 순서대로 쓰고 체크 항목을 확인한다. 웹 화면이 아니라 `gh`나 API로 PR을 열 때도 같다.
 - Task와 PR은 PR 제목의 ID로 연결된다('커밋과 PR 제목'). Notion에서 PR을 찾는 방법은 [가이드 「D-6. Task ID와 GitHub PR 연결」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#ffeca4037b2a4bfca0ef834c8e69e60c)을 따른다.
 - 작업을 시작하거나 끝낼 때 Task 상태를 바꾸는 시점은 [가이드 「E-1. 상태별 기준」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#1603738df56f401a9f30bead155e335a)을 따른다.
-- Task에 작업 중 경과를 쓸 때는 [가이드 「D-3. Task 본문과 진행 기록」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#35f05c5b0eeb43569ad3fe94839bacbc)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)을 따른다.
+- Task에 작업 중 경과를 쓸 때는 [가이드 「D-3. Task 본문과 진행 기록」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#35f05c5b0eeb43569ad3fe94839bacbc)을, 작업 결과(본문 5절 '결과')를 쓸 때는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)를 따른다.
 - 버그 Task를 고친 PR을 병합한 뒤에는 [가이드 「H-1. 버그 등록과 재검증」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f1da939ab98f45c2acf29aa0cb13b79e)의 '수정 후 검증'을 한다.
 - PR을 병합한 뒤 Task를 Done으로 바꿀지는 [가이드 「E-3. Done 조건」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#f33b59a0cff148748a6a2351f0efe2b8)을 따른다.
 
@@ -78,7 +78,7 @@
 
 폴더마다 담당을 정한다. 담당은 그 폴더의 변경을 리뷰할 책임이다. 폴더는 두 종류다.
 
-- **기능 폴더**: 게임 기능을 구현하는 폴더다. Notion의 Feature는 기능 폴더 하나에 속하고, 한 기능 폴더에 Feature가 여럿 있을 수 있다(Feature의 정의는 [가이드 「C-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#c3f464b87688403eb7bfb20b5f2f0d44)). 새 Feature가 기존 기능 폴더의 역할(아래 트리의 설명)에 들면 그 폴더에 두고, 들지 않을 때만 폴더를 추가한다.
+- **기능 폴더**: 게임 기능을 구현하는 폴더다. Notion의 Feature는 기능 폴더 하나에 속하고, 한 기능 폴더에 Feature가 여럿 있을 수 있다(Feature의 정의는 [가이드 「C-1. Epic → Feature → Task」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#c3f464b87688403eb7bfb20b5f2f0d44)). 새 Feature가 기존 기능 폴더(아래 트리에서 '(공용)'이 붙지 않은 폴더)의 역할에 들면 그 폴더에 두고, 들지 않을 때만 폴더를 추가한다.
 - **공용 폴더**: 여러 기능이 함께 쓰는 코드와 에셋을 둔다. 이름은 그 역할로 짓는다(`Combat/`, `Navigation/`, `SharedTestLevel/`). 공용 폴더의 담당은 팀원 모두다.
 
 - 한 폴더의 콘텐츠 폴더와 소스 폴더는 같은 이름으로 만든다. 콘텐츠 폴더는 에셋이 있을 때만 만들고, 기능 폴더의 소스 폴더는 코드가 없어도 만든다. 폴더 계약(`CONTRACT.md`)을 소스 폴더에 두기 때문이다.
@@ -86,18 +86,18 @@
 
 ```
 Content/Landship/          Source/Landship/
-├── Combat/     전투 공통 규칙: 진영, 체력·피해, 기본 공격, 전투 수치, 쿨타임
+├── Combat/     (공용) 전투 공통 규칙: 진영, 체력·피해, 기본 공격, 전투 수치, 쿨타임
 ├── Castle/     성 이동, 무장 조준·발사
 ├── Troops/     병력 투입, 병종, 교전 반응
 ├── Controls/   카메라, 선택·명령
-├── Navigation/ 경로 탐색 설정
+├── Navigation/ (공용) 경로 탐색 설정
 ├── Vision/     전장의 안개, 미니맵
 ├── Enemies/    적 거점, 적 분대
 ├── Obstacles/  경로 장애물: 터렛, 지뢰, 바리케이드
 ├── Maps/       전장 맵, 적 배치안
 ├── Match/      승패 판정
 ├── HUD/        HUD, 전투 알림
-├── SharedTestLevel/   공용 테스트 맵(콘텐츠만). 여러 사람이 확인에 쓰는 맵
+├── SharedTestLevel/   (공용) 테스트 맵(콘텐츠만). 여러 사람이 확인에 쓰는 맵
 └── Experiment/        실험 브랜치에서만 쓰는 폴더. 쓰는 방법은 '실험 브랜치' 절
 
 Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
@@ -111,7 +111,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
   - `CODEOWNERS`에 그 폴더의 담당
   - 위 트리에 그 폴더와 역할
   - 소스 폴더를 만들면 그 소스 폴더의 `CONTRACT.md`('문서' 절)와 `Build.cs`의 include 경로([코딩 규칙](docs/coding-conventions.md))
-  - 기능 폴더이면 Notion Features의 '기능 폴더' 속성에 그 폴더 이름의 선택 옵션
+- 기능 폴더를 추가하는 PR이 병합되면 Notion Features의 '기능 폴더' 속성에 그 폴더 이름의 선택 옵션을 추가한다.
 - DataTable 원본 CSV와 절차가 실행하는 스크립트는 `Source/`·`Content/` 밖의 다음 두 폴더에 둔다.
   - `Data/<폴더>/`: DataTable 에셋의 원본 CSV. 하위 폴더 이름은 그 DataTable 에셋이 있는 기능·공용 폴더 이름과 같고(예: `Data/Troops/`는 `Content/Landship/Troops/Data/`의 원본), 담당도 그 폴더를 따른다. DataTable 에셋을 바꾸는 PR에서 원본 CSV도 같은 값으로 맞춘다.
   - `Scripts/<절차 이름>/`: 절차 문서 `docs/procedures/<절차 이름>.md`가 실행하는 스크립트. 폴더 이름은 그 절차 문서의 이름과 같게 하고, 한 절차가 실행하는 스크립트는 모두 이 폴더에 둔다. `Scripts/`에는 절차 문서가 실행하는 스크립트만 둔다. 개인 절차('문서' 절)의 스크립트는 `Scripts/Developers/<이니셜>/<절차 이름>/`에 둔다.
@@ -139,7 +139,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
 
 ### 쓸 때 지킬 것
 
-- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문과 Notion Task에 쓴다(Task 안의 위치는 [가이드 「D-4. Task 결과(5절)」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#e4f61678b4034b138943f424672057c3)). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
+- 검증 결과(확인한 절차와 그 출력)는 저장소 문서가 아니라 PR 본문에 쓰고, Notion Task에서는 그 PR을 링크한다([가이드 「B-1. 문서 작성 원칙」](https://app.notion.com/p/18efdb4b18db4dc99d4d389cead153ae#cccae77160494401a01aaf6824f40e51)의 '완료 후에 쓰는 절'). 수치는 데이터 에셋과 GDD에, 내부 구현 설명은 코드 주석에 쓴다.
 - 폴더 계약과 절차 문서에는 지금 유효한 내용만 쓴다. 그 내용을 바꾸는 PR에서 함께 덮어쓴다.
 - 절차 문서와 폴더 계약에서 확인에 쓸 맵을 지정할 때는 공용 테스트 맵(`Content/Landship/SharedTestLevel/`)만 지정한다. 개인 테스트 맵(`Content/Developers/<이니셜>/`)에서 실행하는 절차는 개인 절차로 보고 `docs/procedures/Developers/<이니셜>/`에 둔다. 그 맵을 공용 테스트 맵으로 옮기면 그 절차 문서도 `docs/procedures/`로 옮긴다.
 - 절차가 실행하는 스크립트는 '폴더와 담당'의 `Scripts/` 규칙대로 두고, 절차 문서에 그 경로를 적는다.
