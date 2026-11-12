@@ -113,7 +113,7 @@ Content/Developers/(이니셜)/   개인 테스트 맵과 에셋. 예: BHJ
   - 소스 폴더를 만들면 그 소스 폴더의 `CONTRACT.md`('문서' 절)와 `Build.cs`의 include 경로([코딩 규칙](docs/coding-conventions.md))
 - 기능 폴더를 추가하는 PR이 병합되면 Notion Features의 '기능 폴더' 속성에 그 폴더 이름의 선택 옵션을 추가한다.
 - DataTable 원본 CSV와 절차가 실행하는 스크립트는 `Source/`·`Content/` 밖의 다음 두 폴더에 둔다.
-  - `Data/<폴더>/`: DataTable 에셋의 원본 CSV. 하위 폴더 이름은 그 DataTable 에셋이 있는 기능·공용 폴더 이름과 같고(예: `Data/Troops/`는 `Content/Landship/Troops/Data/`의 원본), 담당도 그 폴더를 따른다. DataTable 에셋을 바꾸는 PR에서 원본 CSV도 같은 값으로 맞춘다.
+  - `Data/<폴더>/`: DataTable 에셋의 원본 CSV. 하위 폴더 이름은 그 DataTable 에셋이 있는 기능·공용 폴더 이름과 같고(예: `Data/Troops/`는 `Content/Landship/Troops/Data/`의 원본), 담당도 그 폴더를 따른다. 값은 CSV에서 고쳐도 되고 에디터에서 DataTable 에셋을 고쳐도 되지만, PR을 병합할 때는 CSV와 DataTable 에셋이 같은 값이어야 한다. 둘이 다르면 CSV를 따르고, DataTable 에셋을 CSV로 다시 채운다. 에셋은 병합할 수 없어서, 두 사람이 고친 값을 합칠 수 있는 곳은 CSV뿐이기 때문이다.
   - `Scripts/<절차 이름>/`: 절차 문서 `docs/procedures/<절차 이름>.md`가 실행하는 스크립트. 폴더 이름은 그 절차 문서의 이름과 같게 하고, 한 절차가 실행하는 스크립트는 모두 이 폴더에 둔다. `Scripts/`에는 절차 문서가 실행하는 스크립트만 둔다. 개인 절차('문서' 절)의 스크립트는 `Scripts/Developers/<이니셜>/<절차 이름>/`에 둔다.
 - 프로젝트를 만들 때 템플릿이 만든 에셋과 클래스(저장소 첫 커밋에 들어 있는 `Content/` 아래 파일과 `Source/Landship/` 아래 클래스)는 참고용으로 두고, 쓰려면 담당 폴더로 복사한다. 모듈 파일(`Landship.Build.cs`, `Landship.h`, `Landship.cpp`), `Config/`, `.uproject`는 여기에 들지 않는다.
 
